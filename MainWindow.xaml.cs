@@ -32,23 +32,11 @@ public sealed partial class MainWindow : Window
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (args.IsSettingsSelected)
-        {
-            NavFrame.Navigate(typeof(SettingsPage));
-        }
-        else if (args.SelectedItem is NavigationViewItem item)
-        {
-            switch (item.Tag)
-            {
-                case "home":
-                    NavFrame.Navigate(typeof(HomePage));
-                    break;
-                case "about":
-                    NavFrame.Navigate(typeof(AboutPage));
-                    break;
-                default:
-                    throw new InvalidOperationException($"Unknown navigation item tag: {item.Tag}");
-            }
-        }
+        if (args.SelectedItem is not NavigationViewItem item || item.Tag is not string tag)
+            return;
+
+        // Both items are the same page in different modes; the tag is the navigation parameter.
+        NavFrame.Navigate(typeof(TaskListPage), tag);
+        NavFrame.BackStack.Clear(); // flat navigation — no back history between the two lists
     }
 }
