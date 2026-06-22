@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Cue.Domain;
 using Cue.Storage.Index;
@@ -23,6 +24,8 @@ public partial class TaskRowViewModel : ObservableObject
     public string Title { get; }
     public string Schedule { get; }
     public bool HasSchedule => Schedule.Length > 0;
+    public ObservableCollection<TaskRowViewModel> Subtasks { get; } = new();
+    public bool HasSubtasks => Subtasks.Count > 0;
 
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
@@ -53,6 +56,12 @@ public partial class TaskRowViewModel : ObservableObject
         _suppressToggle = true;
         IsCompleted = value;
         _suppressToggle = false;
+    }
+
+    public void AddSubtask(TaskRowViewModel subtask)
+    {
+        Subtasks.Add(subtask);
+        OnPropertyChanged(nameof(HasSubtasks));
     }
 
     private static string BuildSchedule(TaskListItem item)

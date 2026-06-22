@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Cue.ViewModels;
 using Cue.Services;
 using Windows.System;
@@ -57,6 +59,57 @@ public sealed partial class TaskListPage : Page
             await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(id));
     }
 
+    private async void TaskList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is TaskRowViewModel row)
+            await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(row.Id));
+    }
+
+    private void TaskList_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is ListView list && list.Tag is not "row-hit-test-ready")
+        {
+            list.Tag = "row-hit-test-ready";
+            list.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(TaskList_PointerPressed), true);
+        }
+    }
+
+    private async void TaskList_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not ListView list || IsInteractiveElement(e.OriginalSource as DependencyObject))
+            return;
+
+        var point = e.GetCurrentPoint(list).Position;
+        for (var index = 0; index < list.Items.Count; index++)
+        {
+            if (list.ContainerFromIndex(index) is not FrameworkElement container)
+                continue;
+
+            var origin = container.TransformToVisual(list).TransformPoint(new Windows.Foundation.Point());
+            if (point.Y < origin.Y || point.Y > origin.Y + container.ActualHeight)
+                continue;
+
+            if (list.Items[index] is TaskRowViewModel row)
+            {
+                e.Handled = true;
+                await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(row.Id));
+            }
+            return;
+        }
+    }
+
+    private static bool IsInteractiveElement(DependencyObject? element)
+    {
+        for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is Button or CheckBox)
+                return true;
+            if (current is ListViewItem)
+                break;
+        }
+        return false;
+    }
+
     private void CloseDetail_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => ViewModel.Detail.Close();
 
@@ -65,6 +118,19 @@ public sealed partial class TaskListPage : Page
 
     private async void AddSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null));
+
+    private async void AddLabel_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        await RunSafelyAsync(async () =>
+        {
+            var name = await PromptNameAsync("새 라벨", "라벨 이름");
+            if (name is not null)
+                await ViewModel.Detail.AddLabelCommand.ExecuteAsync(name);
+        });
+    }
+
+    private async void OpenParent_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        => await RunSafelyAsync(() => ViewModel.Detail.OpenParentCommand.ExecuteAsync(null));
 
     private async void OpenSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {

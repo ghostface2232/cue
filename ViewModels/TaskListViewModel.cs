@@ -199,12 +199,10 @@ public partial class TaskListViewModel : ObservableObject
         var eveningIds = eveningItems.Select(item => item.Id).ToHashSet();
 
         Tasks.Clear();
-        foreach (var item in items.Where(item => !eveningIds.Contains(item.Id)))
-            Tasks.Add(CreateRow(item));
+        AddHierarchicalRows(Tasks, items.Where(item => !eveningIds.Contains(item.Id)));
 
         EveningTasks.Clear();
-        foreach (var item in eveningItems)
-            EveningTasks.Add(CreateRow(item));
+        AddHierarchicalRows(EveningTasks, eveningItems);
 
         HasEveningTasks = EveningTasks.Count > 0;
 
@@ -264,8 +262,34 @@ public partial class TaskListViewModel : ObservableObject
     private TaskRowViewModel CreateRow(TaskListItem item)
         => new(item, row => ToggleCompleteCommand.Execute(row));
 
+    private void AddHierarchicalRows(
+        ObservableCollection<TaskRowViewModel> destination,
+        IEnumerable<TaskListItem> source)
+    {
+        var items = source.ToList();
+        var rows = items.ToDictionary(item => item.Id, CreateRow);
+
+        foreach (var item in items)
+        {
+            var row = rows[item.Id];
+            if (item.ParentTaskId is { } parentId && rows.TryGetValue(parentId, out var parent))
+                parent.AddSubtask(row);
+            else
+                destination.Add(row);
+        }
+    }
+
     [RelayCommand]
-    private Task SelectTaskAsync(Guid id) => Detail.OpenAsync(id);
+    private async Task SelectTaskAsync(Guid id)
+    {
+        if (Detail.IsOpen && Detail.CurrentTaskId != id)
+        {
+            Detail.Close();
+            await Task.Delay(90);
+        }
+
+        await Detail.OpenAsync(id);
+    }
 
     /// <summary>
     /// Applies a row's completion change to the store, then refreshes. Serialized through a gate so

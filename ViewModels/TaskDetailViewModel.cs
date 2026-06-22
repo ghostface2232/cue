@@ -91,6 +91,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private bool _loadedIsEvening;
     private DateTimeOffset? _loadedDeadlineDate;
     private TimeSpan? _loadedDeadlineTime;
+    private bool _isLoading;
 
     public IReadOnlyList<Priority> Priorities { get; } = Enum.GetValues<Priority>();
     public IReadOnlyList<WhenEditorOption> WhenOptions { get; } =
@@ -105,6 +106,7 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<ProjectEditorOption> Projects { get; } = new();
     public ObservableCollection<LabelEditorOption> Labels { get; } = new();
     public ObservableCollection<SubtaskRowViewModel> Subtasks { get; } = new();
+    public Guid? CurrentTaskId => _taskId;
 
     [ObservableProperty]
     public partial bool IsOpen { get; set; }
@@ -131,6 +133,9 @@ public partial class TaskDetailViewModel : ObservableObject
     public partial bool IsEvening { get; set; }
 
     [ObservableProperty]
+    public partial bool IsSomeday { get; set; }
+
+    [ObservableProperty]
     public partial DateTimeOffset? DeadlineDate { get; set; }
 
     [ObservableProperty]
@@ -142,9 +147,13 @@ public partial class TaskDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial string NewSubtaskTitle { get; set; } = string.Empty;
 
+    [ObservableProperty]
+    public partial Guid? ParentTaskId { get; set; }
+
     public bool IsSpecificDate => SelectedWhenOption.Mode == WhenEditorMode.SpecificDate;
     public bool HasConcreteWhen => SelectedWhenOption.Mode is WhenEditorMode.Today or WhenEditorMode.ThisEvening or WhenEditorMode.SpecificDate;
     public bool HasDeadline => DeadlineDate is not null;
+    public bool HasParentTask => ParentTaskId is not null;
 
     public TaskDetailViewModel(
         ITaskStore store,
@@ -175,6 +184,36 @@ public partial class TaskDetailViewModel : ObservableObject
         OnPropertyChanged(nameof(HasConcreteWhen));
     }
 
+    partial void OnWhenDateChanged(DateTimeOffset? value)
+    {
+        if (_isLoading) return;
+        if (value is not null)
+        {
+            IsSomeday = false;
+            SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
+            WhenTime ??= TimeSpan.FromHours(12);
+        }
+        else if (!IsSomeday)
+        {
+            SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
+        }
+    }
+
+    partial void OnIsSomedayChanged(bool value)
+    {
+        if (_isLoading) return;
+        if (value)
+        {
+            WhenDate = null;
+            IsEvening = false;
+            SelectedWhenOption = FindOption(WhenEditorMode.Someday);
+        }
+        else if (SelectedWhenOption.Mode == WhenEditorMode.Someday)
+        {
+            SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
+        }
+    }
+
     partial void OnDeadlineDateChanged(DateTimeOffset? value)
     {
         if (value is not null && DeadlineTime is null)
@@ -191,7 +230,10 @@ public partial class TaskDetailViewModel : ObservableObject
             return;
         }
 
+        _isLoading = true;
         _taskId = task.Id;
+        ParentTaskId = task.ParentTaskId;
+        OnPropertyChanged(nameof(HasParentTask));
         Title = task.Title;
         Notes = task.Notes ?? string.Empty;
         SelectedPriority = task.Priority;
@@ -200,6 +242,7 @@ public partial class TaskDetailViewModel : ObservableObject
         DeadlineDate = task.Deadline?.ToLocal();
         DeadlineTime = task.Deadline?.ToLocal().TimeOfDay;
         IsEvening = task.When.IsEvening;
+        IsSomeday = task.When.Kind == WhenKind.SomeDay;
         SelectedWhenOption = OptionFor(task.When);
 
         _originalWhen = task.When;
@@ -210,6 +253,7 @@ public partial class TaskDetailViewModel : ObservableObject
         _loadedIsEvening = IsEvening;
         _loadedDeadlineDate = DeadlineDate;
         _loadedDeadlineTime = DeadlineTime;
+        _isLoading = false;
 
         await LoadProjectsAsync(task.ProjectId);
         await LoadLabelsAsync(task.LabelIds);
@@ -266,6 +310,16 @@ public partial class TaskDetailViewModel : ObservableObject
         await LoadSubtasksAsync(parentId);
     }
 
+    [RelayCommand]
+    private async Task AddLabelAsync(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var label = new Label { Name = name.Trim() };
+        await _store.SaveAsync(label);
+        var selected = Labels.Where(item => item.IsSelected).Select(item => item.Id).Append(label.Id);
+        await LoadLabelsAsync(selected);
+    }
+
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleSubtaskAsync(SubtaskRowViewModel row)
     {
@@ -295,6 +349,10 @@ public partial class TaskDetailViewModel : ObservableObject
 
     [RelayCommand]
     private Task OpenSubtaskAsync(Guid id) => _openTask(id);
+
+    [RelayCommand]
+    private Task OpenParentAsync()
+        => ParentTaskId is { } id ? _openTask(id) : Task.CompletedTask;
 
     private ScheduledWhen BuildWhen()
     {

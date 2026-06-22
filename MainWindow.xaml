@@ -78,6 +78,9 @@
                     Content="Projects"
                     IsExpanded="True"
                     SelectsOnInvoked="False">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8B7;" />
+                    </NavigationViewItem.Icon>
                     <NavigationViewItem.MenuItems>
                         <NavigationViewItem Content="+ 새 프로젝트" Tag="create-project" />
                     </NavigationViewItem.MenuItems>
@@ -87,6 +90,9 @@
                     Content="Labels"
                     IsExpanded="True"
                     SelectsOnInvoked="False">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8EC;" />
+                    </NavigationViewItem.Icon>
                     <NavigationViewItem.MenuItems>
                         <NavigationViewItem Content="+ 새 라벨" Tag="create-label" />
                     </NavigationViewItem.MenuItems>
