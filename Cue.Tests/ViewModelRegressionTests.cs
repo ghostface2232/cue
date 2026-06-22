@@ -179,6 +179,23 @@ public sealed class ViewModelRegressionTests
         Assert.True((await store.GetAsync<Project>(project.Id))!.IsDeleted);
     }
 
+    [Fact]
+    public async Task QueuedSectionCannotAttachToDeletedProject()
+    {
+        using var temp = new TempDirectory();
+        var options = new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") };
+        await using var store = await IndexedTaskStore.OpenAsync(options, timeZone: TimeZoneInfo.Utc);
+        var project = new Project { Name = "project" };
+        await store.SaveAsync(project);
+        var queuedSection = new Section { Name = "late section", ProjectId = project.Id };
+
+        await store.DeleteAsync<Project>(project.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.SaveAsync(queuedSection));
+        Assert.Empty(await store.GetSectionsByProjectAsync(project.Id));
+        Assert.Null(await store.GetAsync<Section>(queuedSection.Id));
+    }
+
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

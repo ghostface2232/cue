@@ -90,6 +90,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
 
         if (record is TaskItem task)
             await NormalizeTaskReferencesAsync(task, cancellationToken).ConfigureAwait(false);
+        else if (record is Section section)
+        {
+            var project = await _files.GetAsync<Project>(section.ProjectId, cancellationToken).ConfigureAwait(false);
+            if (project?.IsDeleted == true)
+                throw new InvalidOperationException("A section cannot be saved under a deleted project.");
+        }
 
         await _files.SaveAsync(record, cancellationToken).ConfigureAwait(false);
         await ReflectAsync(record, cancellationToken).ConfigureAwait(false);
