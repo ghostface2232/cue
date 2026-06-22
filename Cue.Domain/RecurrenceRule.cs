@@ -1,24 +1,26 @@
 namespace Cue.Domain;
 
 /// <summary>
-/// A simple recurrence specification ("every 2 weeks", "every month until …").
+/// A recurrence specification: an RFC 5545 RRULE string plus the anchor date the rule is
+/// measured from.
 /// </summary>
 /// <remarks>
-/// Deliberately minimal for the foundation phase — enough to express the common cases without
-/// committing to a full RRULE engine. It can grow (by-weekday, by-month-day, count limits)
-/// without changing the records that reference it.
+/// The model only stores the rule and its anchor. Computing the next occurrence — and the
+/// "advance this record's When to the next cycle on completion" behavior — is deliberately left
+/// to the storage/logic layer; the domain stays a pure data holder.
+/// <para>
+/// <see cref="Anchor"/> is a user-specified scheduled date, so it follows the project-wide rule
+/// of storing UTC plus the original time zone.
+/// </para>
 /// </remarks>
 public sealed class RecurrenceRule
 {
-    /// <summary>The unit of repetition.</summary>
-    public RecurrenceFrequency Frequency { get; set; }
+    /// <summary>
+    /// The recurrence rule in RFC 5545 RRULE form, e.g. <c>"FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"</c>.
+    /// An end can be expressed inside the rule itself (<c>UNTIL=…</c> or <c>COUNT=…</c>).
+    /// </summary>
+    public string Rule { get; set; } = string.Empty;
 
-    /// <summary>Repeat every N units (every 1 day, every 2 weeks, …). Must be ≥ 1.</summary>
-    public int Interval { get; set; } = 1;
-
-    /// <summary>Whether the next occurrence follows the calendar or the completion time.</summary>
-    public RecurrenceMode Mode { get; set; } = RecurrenceMode.FixedSchedule;
-
-    /// <summary>Optional end of the series. <c>null</c> means it repeats indefinitely.</summary>
-    public ZonedDateTime? Until { get; set; }
+    /// <summary>The anchor (DTSTART-equivalent) the rule is evaluated from.</summary>
+    public ZonedDateTime Anchor { get; set; }
 }

@@ -18,6 +18,9 @@ public sealed class Section : RecordBase
     /// <summary>Display name (the heading text).</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Manual ordering weight within the project. Lower sorts first.</summary>
-    public double SortOrder { get; set; }
+    /// <summary>
+    /// Manual ordering rank within the project — a LexoRank-style fractional string (see
+    /// <see cref="TaskItem.SortOrder"/>). Assigned by the store; the domain only holds it.
+    /// </summary>
+    public string SortOrder { get; set; } = string.Empty;
 }

@@ -13,6 +13,9 @@ public sealed class Area : RecordBase
     /// <summary>Accent color as a hex string (e.g. "#4F8CC9"). <c>null</c> uses the default.</summary>
     public string? Color { get; set; }
 
-    /// <summary>Manual ordering weight in the sidebar. Lower sorts first.</summary>
-    public double SortOrder { get; set; }
+    /// <summary>
+    /// Manual ordering rank in the sidebar — a LexoRank-style fractional string (see
+    /// <see cref="TaskItem.SortOrder"/>). Assigned by the store; the domain only holds it.
+    /// </summary>
+    public string SortOrder { get; set; } = string.Empty;
 }

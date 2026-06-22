@@ -4,14 +4,13 @@ namespace Cue.Domain;
 /// A single to-do — the core record of the app.
 /// </summary>
 /// <remarks>
-/// Membership is flexible, mirroring Things: a task can live directly in an <see cref="Area"/>
-/// (<see cref="AreaId"/>), inside a <see cref="Project"/> (<see cref="ProjectId"/>, optionally
-/// grouped under a <see cref="Section"/>), or in neither — an unclassified Inbox item. All of
-/// those id fields are optional.
+/// A task's container is a single optional <see cref="ProjectId"/>: it either belongs to one
+/// project (optionally grouped under a <see cref="Section"/>) or, when null, is unclassified
+/// (free / Inbox).
 /// <para>
 /// Sub-tasks are <i>not</i> a lightweight checklist: each is its own <see cref="TaskItem"/>
 /// record (own file) pointing at its parent via <see cref="ParentTaskId"/>, so a sub-task can
-/// carry its own deadline, labels, priority, and recurrence.
+/// carry its own dates, labels, priority, and recurrence.
 /// </para>
 /// </remarks>
 public sealed class TaskItem : RecordBase
@@ -22,36 +21,35 @@ public sealed class TaskItem : RecordBase
     /// <summary>Free-form notes, stored as Markdown. <c>null</c> when empty.</summary>
     public string? Notes { get; set; }
 
-    /// <summary>Whether the task is checked off.</summary>
-    public bool IsCompleted { get; set; }
-
-    /// <summary>When the task was completed (UTC). <c>null</c> while incomplete.</summary>
+    /// <summary>
+    /// When the task was completed (UTC instant). <c>null</c> means it is not done. Completion is
+    /// represented solely by this field; there is no separate boolean.
+    /// </summary>
     public DateTimeOffset? CompletedAt { get; set; }
 
+    /// <summary>Whether the task is done — derived from <see cref="CompletedAt"/> being set.</summary>
+    public bool IsCompleted => CompletedAt is not null;
+
     /// <summary>
-    /// Hard due date — the date something is actually <i>due</i> (Things' "Deadline").
-    /// In the default single-date workflow this is the only date used.
+    /// Hard due date — when something is actually <i>due</i> (Things' "Deadline"). In the default
+    /// single-date workflow this is the only date used. Stores UTC plus the original time zone.
     /// </summary>
     public ZonedDateTime? Deadline { get; set; }
 
     /// <summary>
-    /// Optional scheduled / start date — when the task should surface in Today/Upcoming
-    /// (Things' "When"), independent of the <see cref="Deadline"/>. Left null unless the user
-    /// chooses to split the two.
+    /// Scheduled date — when the user intends to work on the task, and the basis for
+    /// Today/Upcoming (Things' "When"). Defaults to <see cref="WhenKind.Unscheduled"/>.
     /// </summary>
-    public ZonedDateTime? When { get; set; }
+    public ScheduledWhen When { get; set; } = ScheduledWhen.Unscheduled;
 
     /// <summary>Priority flag.</summary>
     public Priority Priority { get; set; } = Priority.None;
 
-    /// <summary>Owning project, if any. <c>null</c> means the task is not in a project.</summary>
+    /// <summary>Owning project, if any. <c>null</c> means the task is unclassified (free).</summary>
     public Guid? ProjectId { get; set; }
 
     /// <summary>Grouping section/heading within the project, if any.</summary>
     public Guid? SectionId { get; set; }
-
-    /// <summary>Owning area for tasks placed directly in an area (not via a project).</summary>
-    public Guid? AreaId { get; set; }
 
     /// <summary>Parent task when this is a sub-task; <c>null</c> for a top-level task.</summary>
     public Guid? ParentTaskId { get; set; }
@@ -62,6 +60,10 @@ public sealed class TaskItem : RecordBase
     /// <summary>Recurrence rule, if the task repeats. <c>null</c> for a one-off task.</summary>
     public RecurrenceRule? Recurrence { get; set; }
 
-    /// <summary>Manual ordering weight within its list. Lower sorts first.</summary>
-    public double SortOrder { get; set; }
+    /// <summary>
+    /// Manual ordering rank within its list. A LexoRank-style fractional string so a new rank can
+    /// always be generated between two neighbors without renumbering. Assigned by the store/rank
+    /// service; the domain only holds it.
+    /// </summary>
+    public string SortOrder { get; set; } = string.Empty;
 }

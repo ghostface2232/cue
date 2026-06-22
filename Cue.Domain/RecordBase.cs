@@ -38,4 +38,16 @@ public abstract class RecordBase
 
     /// <summary>True when the record has been soft-deleted (tombstoned).</summary>
     public bool IsDeleted => DeletedAt is not null;
+
+    /// <summary>
+    /// Records have <i>identity</i> equality: two instances are equal when they are the same
+    /// record type with the same <see cref="Id"/>, regardless of their other field values. This
+    /// keeps de-duplication and lookups (<c>Distinct</c>, <c>HashSet</c>, <c>Contains</c>)
+    /// keyed on Id rather than on whole-object value comparison.
+    /// </summary>
+    public override bool Equals(object? obj)
+        => obj is RecordBase other && other.GetType() == GetType() && other.Id == Id;
+
+    /// <inheritdoc cref="Equals(object?)"/>
+    public override int GetHashCode() => Id.GetHashCode();
 }

@@ -12,26 +12,48 @@ public class DomainModelTests
         Assert.NotEqual(Guid.Empty, task.Id);
         Assert.Equal(string.Empty, task.Title);
         Assert.Null(task.Notes);
-        Assert.False(task.IsCompleted);
         Assert.Null(task.CompletedAt);
+        Assert.False(task.IsCompleted);
         Assert.Null(task.Deadline);
-        Assert.Null(task.When);
+        Assert.Equal(WhenKind.Unscheduled, task.When.Kind);
+        Assert.False(task.When.IsScheduled);
         Assert.Equal(Priority.None, task.Priority);
         Assert.Null(task.ProjectId);
         Assert.Null(task.SectionId);
-        Assert.Null(task.AreaId);
         Assert.Null(task.ParentTaskId);
         Assert.Null(task.Recurrence);
         Assert.NotNull(task.LabelIds);
         Assert.Empty(task.LabelIds);
+        Assert.Equal(string.Empty, task.SortOrder);
         Assert.Equal(RecordBase.CurrentSchemaVersion, task.SchemaVersion);
+    }
+
+    [Fact]
+    public void Completion_IsDerivedFromCompletedAt()
+    {
+        var task = new TaskItem();
+        Assert.False(task.IsCompleted);
+
+        task.CompletedAt = new DateTimeOffset(2026, 6, 22, 3, 0, 0, TimeSpan.Zero);
+        Assert.True(task.IsCompleted);
+
+        task.CompletedAt = null; // re-opened
+        Assert.False(task.IsCompleted);
+    }
+
+    [Fact]
+    public void Project_Completion_IsDerivedFromCompletedAt()
+    {
+        var project = new Project();
+        Assert.False(project.IsCompleted);
+
+        project.CompletedAt = new DateTimeOffset(2026, 6, 22, 3, 0, 0, TimeSpan.Zero);
+        Assert.True(project.IsCompleted);
     }
 
     [Fact]
     public void EveryRecordType_CarriesTheCommonAuditFields()
     {
-        // Compile-time guarantee that each record inherits the shared shape, plus a
-        // runtime check that the tombstone field exists and starts alive.
         RecordBase[] records = { new TaskItem(), new Project(), new Area(), new Label(), new Section() };
 
         foreach (var record in records)
@@ -56,11 +78,25 @@ public class DomainModelTests
     }
 
     [Fact]
-    public void UniqueIds_AreGeneratedPerInstance()
+    public void Records_HaveIdentityEqualityByIdAndType()
     {
-        var a = new TaskItem();
-        var b = new TaskItem();
-        Assert.NotEqual(a.Id, b.Id);
+        var id = Guid.NewGuid();
+        var a = new TaskItem { Id = id, Title = "first copy" };
+        var b = new TaskItem { Id = id, Title = "second copy, different fields" };
+        var other = new TaskItem { Id = Guid.NewGuid() };
+
+        // Same type + same Id => equal, even though Title differs.
+        Assert.Equal(a, b);
+        Assert.Equal(a.GetHashCode(), b.GetHashCode());
+        Assert.NotEqual(a, other);
+
+        // De-duplication keys on Id, not whole-object value.
+        var distinct = new[] { a, b, other }.Distinct().ToList();
+        Assert.Equal(2, distinct.Count);
+
+        // A different record type with the same Guid is not equal.
+        var section = new Section { Id = id };
+        Assert.False(a.Equals(section));
     }
 
     [Fact]
@@ -71,12 +107,12 @@ public class DomainModelTests
         {
             Title = "Book flights",
             ParentTaskId = parent.Id,
-            Priority = Priority.High,
+            Priority = Priority.P1,
             Deadline = ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 18, 0, 0), "Asia/Seoul"),
         };
 
         Assert.Equal(parent.Id, child.ParentTaskId);
-        Assert.Equal(Priority.High, child.Priority);
+        Assert.Equal(Priority.P1, child.Priority);
         Assert.NotNull(child.Deadline);
     }
 
