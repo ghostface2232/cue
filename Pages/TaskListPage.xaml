@@ -8,6 +8,29 @@
     xmlns:vm="using:Cue.ViewModels"
     mc:Ignorable="d">
 
+    <Page.Resources>
+        <DataTemplate x:Key="TaskRowTemplate" x:DataType="vm:TaskRowViewModel">
+            <Grid ColumnSpacing="12" Padding="0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <CheckBox
+                    MinWidth="0"
+                    VerticalAlignment="Top"
+                    IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind Title}" TextWrapping="Wrap" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind Schedule}"
+                        Visibility="{x:Bind ScheduleVisibility}" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
     <Grid Padding="24,16,24,16" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -25,36 +48,28 @@
 
         <Grid Grid.Row="2">
             <ListView
+                ItemTemplate="{StaticResource TaskRowTemplate}"
                 ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
                 SelectionMode="None">
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="vm:TaskRowViewModel">
-                        <Grid ColumnSpacing="12" Padding="0,6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <CheckBox
-                                MinWidth="0"
-                                VerticalAlignment="Top"
-                                IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="{x:Bind Title}" TextWrapping="Wrap" />
-                                <TextBlock
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind Schedule}"
-                                    Visibility="{x:Bind ScheduleVisibility}" />
-                            </StackPanel>
-                        </Grid>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
+                <ListView.Footer>
+                    <StackPanel
+                        Margin="0,16,0,0"
+                        Visibility="{x:Bind ViewModel.HasEveningTasks, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock
+                            Margin="12,0,0,4"
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="This Evening" />
+                        <ItemsControl
+                            ItemTemplate="{StaticResource TaskRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.EveningTasks, Mode=OneWay}" />
+                    </StackPanel>
+                </ListView.Footer>
             </ListView>
 
             <TextBlock
                 Margin="4,8,0,0"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="할 일이 없습니다. 위에 입력해 추가하세요."
+                Text="표시할 할 일이 없습니다."
                 Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
         </Grid>
     </Grid>

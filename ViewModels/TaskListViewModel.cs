@@ -16,6 +16,18 @@ public enum TaskListMode
 
     /// <summary>Today — open tasks due or scheduled today or earlier.</summary>
     Today,
+
+    /// <summary>Open tasks scheduled for a future day or carrying a future deadline.</summary>
+    Upcoming,
+
+    /// <summary>Open tasks without a scheduled When date.</summary>
+    Anytime,
+
+    /// <summary>Open tasks parked for Someday.</summary>
+    Someday,
+
+    /// <summary>Completed tasks.</summary>
+    Logbook,
 }
 
 /// <summary>
@@ -39,6 +51,9 @@ public partial class TaskListViewModel : ObservableObject
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
+    /// <summary>The evening-flagged subset of Today, displayed as a section on that page.</summary>
+    public ObservableCollection<TaskRowViewModel> EveningTasks { get; } = new();
+
     [ObservableProperty]
     public partial string Title { get; set; }
 
@@ -47,6 +62,9 @@ public partial class TaskListViewModel : ObservableObject
 
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasEveningTasks { get; set; }
 
     public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, TimeProvider clock, TimeZoneInfo zone)
     {
@@ -64,7 +82,16 @@ public partial class TaskListViewModel : ObservableObject
     public void SetMode(TaskListMode mode)
     {
         _mode = mode;
-        Title = mode == TaskListMode.Inbox ? "Cue" : "Today";
+        Title = mode switch
+        {
+            TaskListMode.Inbox => "Cue",
+            TaskListMode.Today => "Today",
+            TaskListMode.Upcoming => "Upcoming",
+            TaskListMode.Anytime => "Anytime",
+            TaskListMode.Someday => "Someday",
+            TaskListMode.Logbook => "Logbook",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
+        };
     }
 
     /// <summary>Quick-add: parse the line, create + save a task, then refresh from the index.</summary>
@@ -94,15 +121,52 @@ public partial class TaskListViewModel : ObservableObject
     [RelayCommand]
     public async Task LoadAsync()
     {
-        var items = _mode == TaskListMode.Inbox
-            ? await _index.GetInboxAsync()
-            : await _index.GetTodayAsync();
+        IReadOnlyList<TaskListItem> items;
+        IReadOnlyList<TaskListItem> eveningItems = Array.Empty<TaskListItem>();
+
+        switch (_mode)
+        {
+            case TaskListMode.Inbox:
+                items = await _index.GetInboxAsync();
+                break;
+            case TaskListMode.Today:
+                items = await _index.GetTodayAsync();
+                eveningItems = await _index.GetThisEveningAsync();
+                break;
+            case TaskListMode.Upcoming:
+                items = await _index.GetUpcomingAsync();
+                break;
+            case TaskListMode.Anytime:
+                items = await _index.GetAnytimeAsync();
+                break;
+            case TaskListMode.Someday:
+                items = await _index.GetSomedayAsync();
+                break;
+            case TaskListMode.Logbook:
+                items = await _index.GetLogbookAsync();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
+
+        // This Evening is already a subset query of Today. Keep it in its own section without
+        // rendering those same rows twice on the Today page.
+        var eveningIds = eveningItems.Select(item => item.Id).ToHashSet();
 
         Tasks.Clear();
-        foreach (var item in items)
-            Tasks.Add(new TaskRowViewModel(item, row => ToggleCompleteCommand.Execute(row)));
-        IsEmpty = Tasks.Count == 0;
+        foreach (var item in items.Where(item => !eveningIds.Contains(item.Id)))
+            Tasks.Add(CreateRow(item));
+
+        EveningTasks.Clear();
+        foreach (var item in eveningItems)
+            EveningTasks.Add(CreateRow(item));
+
+        HasEveningTasks = EveningTasks.Count > 0;
+        IsEmpty = Tasks.Count == 0 && !HasEveningTasks;
     }
+
+    private TaskRowViewModel CreateRow(TaskListItem item)
+        => new(item, row => ToggleCompleteCommand.Execute(row));
 
     /// <summary>
     /// Applies a row's completion change to the store, then refreshes. Serialized through a gate so

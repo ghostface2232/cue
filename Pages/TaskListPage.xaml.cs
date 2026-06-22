@@ -8,7 +8,7 @@ using Windows.System;
 namespace Cue.Pages;
 
 /// <summary>
-/// Hosts one task list (Cue / Today): the quick-add line and the list below. The view model is
+/// Hosts one index-backed task list: the quick-add line and the list below. The view model is
 /// resolved from DI; the navigation parameter selects which index view it reflects.
 /// </summary>
 public sealed partial class TaskListPage : Page
@@ -24,7 +24,9 @@ public sealed partial class TaskListPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        var mode = e.Parameter as string == "today" ? TaskListMode.Today : TaskListMode.Inbox;
+        var mode = Enum.TryParse<TaskListMode>(e.Parameter as string, ignoreCase: true, out var parsed)
+            ? parsed
+            : TaskListMode.Inbox;
         ViewModel.SetMode(mode);
         await ViewModel.LoadCommand.ExecuteAsync(null);
     }
