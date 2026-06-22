@@ -106,7 +106,9 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         }
         else if (match.Groups["monthly_dom"].Success)
         {
-            var dom = int.Parse(match.Groups["mdom"].Value);
+            // BYMONTHDAY must be 1..31 (RFC 5545); "매월 99일" is not a valid rule — leave it as text.
+            if (!int.TryParse(match.Groups["mdom"].Value, out var dom) || dom is < 1 or > 31)
+                return false;
             rule = $"FREQ=MONTHLY;BYMONTHDAY={dom}";
             anchor = AnchorOn(context, context.UpcomingDayOfMonth(dom), hasTime, h, min);
         }
@@ -122,12 +124,17 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         }
         else if (match.Groups["minutely"].Success)
         {
-            rule = $"FREQ=MINUTELY;INTERVAL={int.Parse(match.Groups["minutely"].Value)}";
+            // INTERVAL must be a positive integer (RFC 5545); "0분마다" is not a valid rule.
+            if (!int.TryParse(match.Groups["minutely"].Value, out var interval) || interval < 1)
+                return false;
+            rule = $"FREQ=MINUTELY;INTERVAL={interval}";
             anchor = context.ZonedNow;
         }
         else if (match.Groups["hourly"].Success)
         {
-            rule = $"FREQ=HOURLY;INTERVAL={int.Parse(match.Groups["hourly"].Value)}";
+            if (!int.TryParse(match.Groups["hourly"].Value, out var interval) || interval < 1)
+                return false;
+            rule = $"FREQ=HOURLY;INTERVAL={interval}";
             anchor = context.ZonedNow;
         }
         else
@@ -157,9 +164,16 @@ public sealed class DeadlineRule : IQuickAddRule
     {
         DateOnly date;
         if (match.Groups["within"].Success)
-            date = context.Today.AddDays(int.Parse(match.Groups["within"].Value));
-        else
-            date = Korean.ResolveDate(match, context);
+        {
+            if (!int.TryParse(match.Groups["within"].Value, out var n) || n < 0)
+                return false;
+            try { date = context.Today.AddDays(n); }
+            catch (ArgumentOutOfRangeException) { return false; }
+        }
+        else if (!Korean.TryResolveDate(match, context, out date))
+        {
+            return false;
+        }
 
         Korean.TryResolveTime(match, out var h, out var min, out _, out var hasTime);
         return result.TrySetDeadline(context.Zoned(date, hasTime ? h : 0, hasTime ? min : 0));
@@ -179,7 +193,8 @@ public sealed class WhenDateRule : IQuickAddRule
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
     {
-        var date = Korean.ResolveDate(match, context);
+        if (!Korean.TryResolveDate(match, context, out var date))
+            return false; // out-of-range date ("99일", "13월 40일") — leave it in the title
         Korean.TryResolveTime(match, out var h, out var min, out var evening, out var hasTime);
         var when = hasTime
             ? ScheduledWhen.On(context.Zoned(date, h, min), evening)

@@ -32,6 +32,9 @@ public partial class TaskListViewModel : ObservableObject
     private readonly TimeProvider _clock;
     private readonly string _timeZoneId;
 
+    // Serializes completion toggles so concurrent/rapid checks can't reorder their saves.
+    private readonly SemaphoreSlim _toggleGate = new(1, 1);
+
     private TaskListMode _mode = TaskListMode.Inbox;
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
@@ -97,18 +100,39 @@ public partial class TaskListViewModel : ObservableObject
 
         Tasks.Clear();
         foreach (var item in items)
-            Tasks.Add(new TaskRowViewModel(item, ToggleCompleteAsync));
+            Tasks.Add(new TaskRowViewModel(item, row => ToggleCompleteCommand.Execute(row)));
         IsEmpty = Tasks.Count == 0;
     }
 
-    private async Task ToggleCompleteAsync(TaskRowViewModel row, bool completed)
+    /// <summary>
+    /// Applies a row's completion change to the store, then refreshes. Serialized through a gate so
+    /// rapid toggles can't reorder their writes (concurrent executions are allowed so none are
+    /// dropped — they queue on the gate); on failure the row's checkbox is restored so the UI never
+    /// disagrees with what's on disk.
+    /// </summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task ToggleCompleteAsync(TaskRowViewModel row)
     {
-        var task = await _store.GetAsync<TaskItem>(row.Id);
-        if (task is null)
-            return;
-
-        task.CompletedAt = completed ? _clock.GetUtcNow() : null;
-        await _store.SaveAsync(task);
-        await LoadAsync();
+        var completed = row.IsCompleted;
+        await _toggleGate.WaitAsync();
+        try
+        {
+            var task = await _store.GetAsync<TaskItem>(row.Id);
+            if (task is not null)
+            {
+                task.CompletedAt = completed ? _clock.GetUtcNow() : null;
+                await _store.SaveAsync(task);
+            }
+            await LoadAsync();
+        }
+        catch
+        {
+            // Save/reload failed — put the checkbox back so it reflects the real (unchanged) state.
+            row.SetCompletedSilently(!completed);
+        }
+        finally
+        {
+            _toggleGate.Release();
+        }
     }
 }

@@ -130,30 +130,71 @@ internal static class Korean
     /// <summary>A bare part-of-day with no clock ("저녁", "점심때", "오전").</summary>
     public const string DayPart = @"(?<daypart>새벽|아침|점심|오전|오후|저녁|밤)(?:에|때)?";
 
-    /// <summary>Resolves the matched date alternative in <paramref name="m"/> to an absolute day.</summary>
-    public static DateOnly ResolveDate(Match m, ParseContext ctx)
+    /// <summary>The largest valid day for a month (leap-permissive for February).</summary>
+    public static int MaxDayOfMonth(int month) => month switch
     {
-        if (m.Groups["rel"].Success)
-            return ctx.Today.AddDays(m.Groups["rel"].Value switch
+        2 => 29,
+        4 or 6 or 9 or 11 => 30,
+        _ => 31,
+    };
+
+    /// <summary>
+    /// Resolves the matched date alternative in <paramref name="m"/> to an absolute day. Returns
+    /// false when a numeric component is out of range (e.g. "99일", "13월 40일") or the arithmetic
+    /// overflows — the caller then declines the match, leaving the text in the title rather than
+    /// inventing a clamped date.
+    /// </summary>
+    public static bool TryResolveDate(Match m, ParseContext ctx, out DateOnly date)
+    {
+        date = ctx.Today;
+        try
+        {
+            if (m.Groups["rel"].Success)
             {
-                "오늘" => 0,
-                "내일" => 1,
-                "모레" or "내일모레" => 2,
-                "글피" => 3,
-                _ => 0,
-            });
-        if (m.Groups["weekend"].Success) return ctx.UpcomingWeekday(DayOfWeek.Saturday);
-        if (m.Groups["nwwd"].Success) return ctx.NextWeekWeekday(Weekdays[m.Groups["nwwd"].Value[0]]);
-        if (m.Groups["nextweek"].Success) return ctx.Today.AddDays(7);
-        if (m.Groups["nextmonth"].Success) return ctx.NextMonthSameDay();
-        if (m.Groups["endmonth"].Success) return ctx.EndOfThisMonth();
-        if (m.Groups["mon"].Success) return ctx.MonthDay(int.Parse(m.Groups["mon"].Value), int.Parse(m.Groups["domd"].Value));
-        if (m.Groups["wd"].Success) return ctx.UpcomingWeekday(Weekdays[m.Groups["wd"].Value[0]]);
-        if (m.Groups["ndays"].Success) return ctx.Today.AddDays(int.Parse(m.Groups["ndays"].Value));
-        if (m.Groups["nweeks"].Success) return ctx.Today.AddDays(7 * int.Parse(m.Groups["nweeks"].Value));
-        if (m.Groups["oneweek"].Success) return ctx.Today.AddDays(7);
-        if (m.Groups["nmonths"].Success) return ctx.AddMonths(int.Parse(m.Groups["nmonths"].Value));
-        if (m.Groups["domonly"].Success) return ctx.UpcomingDayOfMonth(int.Parse(m.Groups["domonly"].Value));
-        return ctx.Today;
+                date = ctx.Today.AddDays(m.Groups["rel"].Value switch
+                {
+                    "오늘" => 0,
+                    "내일" => 1,
+                    "모레" or "내일모레" => 2,
+                    "글피" => 3,
+                    _ => 0,
+                });
+                return true;
+            }
+            if (m.Groups["weekend"].Success) { date = ctx.UpcomingWeekday(DayOfWeek.Saturday); return true; }
+            if (m.Groups["nwwd"].Success) { date = ctx.NextWeekWeekday(Weekdays[m.Groups["nwwd"].Value[0]]); return true; }
+            if (m.Groups["nextweek"].Success) { date = ctx.Today.AddDays(7); return true; }
+            if (m.Groups["nextmonth"].Success) { date = ctx.NextMonthSameDay(); return true; }
+            if (m.Groups["endmonth"].Success) { date = ctx.EndOfThisMonth(); return true; }
+            if (m.Groups["mon"].Success)
+            {
+                if (!int.TryParse(m.Groups["mon"].Value, out var month) || !int.TryParse(m.Groups["domd"].Value, out var day))
+                    return false;
+                if (month is < 1 or > 12 || day < 1 || day > MaxDayOfMonth(month))
+                    return false;
+                date = ctx.MonthDay(month, day);
+                return true;
+            }
+            if (m.Groups["wd"].Success) { date = ctx.UpcomingWeekday(Weekdays[m.Groups["wd"].Value[0]]); return true; }
+            if (m.Groups["ndays"].Success) { date = ctx.Today.AddDays(ParsePositive(m.Groups["ndays"].Value)); return true; }
+            if (m.Groups["nweeks"].Success) { date = ctx.Today.AddDays(7 * ParsePositive(m.Groups["nweeks"].Value)); return true; }
+            if (m.Groups["oneweek"].Success) { date = ctx.Today.AddDays(7); return true; }
+            if (m.Groups["nmonths"].Success) { date = ctx.AddMonths(ParsePositive(m.Groups["nmonths"].Value)); return true; }
+            if (m.Groups["domonly"].Success)
+            {
+                if (!int.TryParse(m.Groups["domonly"].Value, out var dom) || dom is < 1 or > 31)
+                    return false;
+                date = ctx.UpcomingDayOfMonth(dom);
+                return true;
+            }
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // Absurd offsets ("99999999일 후") overflow DateOnly — treat as not-a-date.
+            return false;
+        }
     }
+
+    private static int ParsePositive(string s) => int.TryParse(s, out var n) ? n : throw new ArgumentOutOfRangeException(nameof(s));
 }

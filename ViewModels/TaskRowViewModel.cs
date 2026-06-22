@@ -17,7 +17,7 @@ namespace Cue.ViewModels;
 /// </remarks>
 public partial class TaskRowViewModel : ObservableObject
 {
-    private readonly Func<TaskRowViewModel, bool, Task> _onToggle;
+    private readonly Action<TaskRowViewModel> _onUserToggled;
     private bool _suppressToggle;
 
     public Guid Id { get; }
@@ -28,9 +28,9 @@ public partial class TaskRowViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
 
-    public TaskRowViewModel(TaskListItem item, Func<TaskRowViewModel, bool, Task> onToggle)
+    public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled)
     {
-        _onToggle = onToggle;
+        _onUserToggled = onUserToggled;
         Id = item.Id;
         Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
         Schedule = BuildSchedule(item);
@@ -44,7 +44,16 @@ public partial class TaskRowViewModel : ObservableObject
     {
         if (_suppressToggle)
             return;
-        _ = _onToggle(this, value);
+        // Hand off to the list, which serializes the save and reverts us if it fails.
+        _onUserToggled(this);
+    }
+
+    /// <summary>Sets the checkbox state without triggering a save — used to revert a failed toggle.</summary>
+    public void SetCompletedSilently(bool value)
+    {
+        _suppressToggle = true;
+        IsCompleted = value;
+        _suppressToggle = false;
     }
 
     private static string BuildSchedule(TaskListItem item)

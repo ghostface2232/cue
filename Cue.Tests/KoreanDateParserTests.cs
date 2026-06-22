@@ -217,6 +217,32 @@ public sealed class KoreanDateParserTests
         Assert.Null(r.Recurrence);
     }
 
+    // ---- Out-of-range guards (RFC 5545 / calendar) --------------------------
+
+    [Theory]
+    [InlineData("매월 99일 가계부 정산")]   // BYMONTHDAY out of 1..31
+    [InlineData("0분마다 스트레칭")]          // INTERVAL must be >= 1
+    [InlineData("13월 40일 약속 잡기")]      // month/day out of range
+    [InlineData("4월 31일 나들이")]           // day exceeds the month's length
+    [InlineData("32일에 헬스장 등록")]        // day-of-month out of 1..31
+    public void OutOfRangeDateOrRecurrence_StaysInTitle(string input)
+    {
+        var r = Parse(input);
+        Assert.Equal(input, r.Title);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.Null(r.Deadline);
+        Assert.Null(r.Recurrence);
+    }
+
+    [Fact]
+    public void BoundaryValid_MonthlyDay31_IsAccepted()
+    {
+        var r = Parse("매월 31일 정산");
+        Assert.Equal("정산", r.Title);
+        Assert.NotNull(r.Recurrence);
+        Assert.Equal("FREQ=MONTHLY;BYMONTHDAY=31", r.Recurrence!.Rule);
+    }
+
     // ---- 9. Word order + 11. composite --------------------------------------
 
     [Fact]
