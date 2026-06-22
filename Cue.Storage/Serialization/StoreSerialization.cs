@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -17,6 +18,10 @@ public static class StoreSerialization
         {
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            // Write non-ASCII (Korean titles/notes) as real characters, not \uXXXX escapes, so the
+            // per-record files are genuinely human-readable. Safe here: these are local files, not
+            // HTML-embedded output.
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             // Drop computed/derived properties (IsCompleted, IsDeleted, HasDate, …) without the
             // domain ever knowing about serialization: they have no setter, so they are removed
             // from the contract here. Real fields (IsArchived, etc.) have a setter and stay.
