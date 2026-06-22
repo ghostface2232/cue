@@ -38,19 +38,26 @@ public enum WhenKind
 /// <see cref="WhenKind.Unscheduled"/>.
 /// </para>
 /// </remarks>
+/// <remarks>
+/// The setters are private so the only ways to build a value are the factories below
+/// (<see cref="Unscheduled"/>, <see cref="SomeDay"/>, <see cref="On"/>) — and the struct's
+/// <c>default</c>, which is <see cref="Unscheduled"/>. This makes the invalid combinations
+/// (OnDate without a date, or a dateless state carrying a date / evening flag) unrepresentable.
+/// The guard is pure domain logic; it pulls in no serialization concern.
+/// </remarks>
 public readonly record struct ScheduledWhen
 {
     /// <summary>Which stored state this scheduling is in.</summary>
-    public WhenKind Kind { get; init; }
+    public WhenKind Kind { get; private init; }
 
-    /// <summary>The concrete date, set only when <see cref="Kind"/> is <see cref="WhenKind.OnDate"/>.</summary>
-    public ZonedDateTime? Date { get; init; }
+    /// <summary>The concrete date, present only for <see cref="WhenKind.OnDate"/>.</summary>
+    public ZonedDateTime? Date { get; private init; }
 
     /// <summary>
     /// Things' "This Evening" — an evening marker on an <see cref="WhenKind.OnDate"/> value. Only
-    /// meaningful when a date is present; false otherwise.
+    /// ever set when a date is present.
     /// </summary>
-    public bool IsEvening { get; init; }
+    public bool IsEvening { get; private init; }
 
     /// <summary>미정 — the default, no scheduled date.</summary>
     public static readonly ScheduledWhen Unscheduled = default;
@@ -66,6 +73,6 @@ public readonly record struct ScheduledWhen
     public static ScheduledWhen On(ZonedDateTime date, bool evening = false)
         => new() { Kind = WhenKind.OnDate, Date = date, IsEvening = evening };
 
-    /// <summary>True when a concrete date is pinned (<see cref="WhenKind.OnDate"/>).</summary>
-    public bool HasDate => Kind == WhenKind.OnDate;
+    /// <summary>True when a concrete date is pinned. Reflects the actual presence of <see cref="Date"/>.</summary>
+    public bool HasDate => Date is not null;
 }

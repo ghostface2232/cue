@@ -55,4 +55,17 @@ public class ScheduledWhenTests
         Assert.True(eveningWhen.IsEvening);
         Assert.Equal(today, eveningWhen.Date!.Value);
     }
+
+    // The invalid combinations (OnDate without a date, a dateless state carrying a date) are
+    // unrepresentable because construction is factory-only: the setters are not public, so no
+    // external object initializer / `with` can assemble an inconsistent value.
+    [Theory]
+    [InlineData(nameof(ScheduledWhen.Kind))]
+    [InlineData(nameof(ScheduledWhen.Date))]
+    [InlineData(nameof(ScheduledWhen.IsEvening))]
+    public void Setters_AreNotPubliclyAccessible(string propertyName)
+    {
+        var setter = typeof(ScheduledWhen).GetProperty(propertyName)!.SetMethod;
+        Assert.True(setter is null || !setter.IsPublic, $"{propertyName} must not have a public setter");
+    }
 }
