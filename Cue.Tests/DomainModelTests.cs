@@ -100,6 +100,24 @@ public class DomainModelTests
     }
 
     [Fact]
+    public void EqualityOperators_MatchIdentityAndHandleNull()
+    {
+        var id = Guid.NewGuid();
+        var a = new TaskItem { Id = id, Title = "one" };
+        var b = new TaskItem { Id = id, Title = "another" };
+        var other = new TaskItem { Id = Guid.NewGuid() };
+
+        Assert.True(a == b);
+        Assert.False(a != b);
+        Assert.True(a != other);
+
+        TaskItem? nullRef = null;
+        Assert.False(a == nullRef);
+        Assert.True(a != nullRef);
+        Assert.True(nullRef == null);
+    }
+
+    [Fact]
     public void Subtask_PointsAtParentAndKeepsItsOwnProperties()
     {
         var parent = new TaskItem { Title = "Plan trip" };

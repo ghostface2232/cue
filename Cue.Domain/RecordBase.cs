@@ -44,13 +44,23 @@ public abstract class RecordBase : IEquatable<RecordBase>
     public bool IsDeleted => DeletedAt is not null;
 
     /// <summary>
-    /// Records have <i>identity</i> equality: two instances are equal when they are the same
-    /// record type with the same <see cref="Id"/>, regardless of their other field values. This
-    /// keeps de-duplication and lookups (<c>Distinct</c>, <c>HashSet</c>, <c>Contains</c>)
-    /// keyed on Id rather than on whole-object value comparison.
+    /// Records have <i>identity</i> equality: two instances are equal when they are the exact
+    /// same record type with the same <see cref="Id"/>, regardless of their other field values.
+    /// This keeps de-duplication and lookups (<c>Distinct</c>, <c>HashSet</c>, <c>Contains</c>,
+    /// <c>==</c>) keyed on Id rather than on whole-object value comparison.
     /// <para>
-    /// Note: the <c>==</c> operator is left as reference equality (the C# default for classes);
-    /// use <see cref="Equals(RecordBase?)"/> / collection membership for identity comparison.
+    /// The type check uses exact <see cref="object.GetType"/> equality (not <c>is</c>), so a
+    /// record never compares equal to one of a different concrete type that happens to share its
+    /// Id. <see cref="GetHashCode"/> hashes only the immutable <see cref="Id"/>, so it stays
+    /// stable for the lifetime of the instance.
+    /// </para>
+    /// <para>
+    /// <b>Do not use equality to detect content changes.</b> Because equality is Id-only, two
+    /// versions of the <i>same</i> record — e.g. a local copy and one arriving from sync that
+    /// differ in <see cref="UpdatedAt"/> or any other field — are still "equal" here. Index
+    /// refresh and sync reconciliation must compare <see cref="UpdatedAt"/> (or specific fields),
+    /// never <c>old.Equals(new)</c>, which would always report "unchanged" and silently drop the
+    /// update.
     /// </para>
     /// </summary>
     public bool Equals(RecordBase? other)
@@ -61,4 +71,11 @@ public abstract class RecordBase : IEquatable<RecordBase>
 
     /// <inheritdoc cref="Equals(RecordBase?)"/>
     public override int GetHashCode() => Id.GetHashCode();
+
+    /// <summary>Identity equality (see <see cref="Equals(RecordBase?)"/>), null-safe.</summary>
+    public static bool operator ==(RecordBase? left, RecordBase? right)
+        => left is null ? right is null : left.Equals(right);
+
+    /// <summary>Negation of <see cref="operator ==(RecordBase?, RecordBase?)"/>.</summary>
+    public static bool operator !=(RecordBase? left, RecordBase? right) => !(left == right);
 }
