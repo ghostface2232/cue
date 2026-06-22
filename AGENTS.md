@@ -48,13 +48,30 @@ Read flow: every query (Today, Upcoming, by project, by label, completed/incompl
 Domain types are pure C# with zero knowledge of persistence: `TaskItem`, `Project`, `Section`, `Label`. The hierarchy is Project contains TaskItems (optionally grouped under a Section), and Label is cross-cutting. A task's container is a single nullable `ProjectId`; null means unclassified (free). An Area level above Project is intentionally deferred for the foundation phase — it can be added later as an additive record type plus an optional `Project.AreaId`, with no rewrite.
  
 Every record carries these fields from day one:
- 
+
 - `Id` (GUID)
 - `CreatedAt`
 - `UpdatedAt`
 - `DeletedAt` (tombstone for soft delete; null means alive)
 - `SchemaVersion` (int)
-Due dates store UTC plus the original timezone, and are rendered in local time only at display. This protects DST correctness now and feeds last-write-wins reconciliation later.
+
+Records compare by **identity**: two instances are equal when they are the same concrete type with the same `Id` (exact `GetType()` match), and the hash is over the immutable, init-only `Id` only. Because equality is Id-only it cannot tell whether content changed — a local record and an incoming synced one with the same Id are "equal" even if every other field differs. Index refresh and sync reconciliation must therefore compare `UpdatedAt` (or specific fields), never `old.Equals(new)`.
+
+Timestamps and user dates are stored differently:
+
+- System timestamps — `CreatedAt`, `UpdatedAt`, `CompletedAt` — are UTC instants only; a timezone carries no meaning for them.
+- Every user-chosen scheduled date — a task's When date, a task's and a project's `Deadline`, a recurrence anchor — stores UTC plus the original timezone, rendered in local time only at display. This protects DST correctness now and feeds last-write-wins reconciliation later.
+
+Per-type specifics:
+
+- **Completion is a nullable `CompletedAt`, not a boolean.** `IsCompleted` is a derived read-only property (true once `CompletedAt` is set), on both `TaskItem` and `Project`.
+- **Two optional date fields.** `Deadline` is the hard due date (the default workflow uses only this). `When` is the scheduled date that drives Today/Upcoming, with three stored states: unscheduled, a concrete (zoned) date, or Someday. "Today" and "This Evening" are not stored states — the caller stamps the current day in the user's timezone as a concrete date, "This Evening" adding an evening flag. Whether something is today / upcoming / overdue is view logic comparing the stored date to the current day, never a stored flag.
+- **Recurrence** is an RFC 5545 RRULE string plus a zoned anchor. Computing the next occurrence — and advancing a completed task's When to the next cycle — is deferred to the store/logic layer; the domain only holds the rule and anchor.
+- **Priority** is an explicit enum: `None`, `P1`, `P2`, `P3`, `P4` (P1 most urgent), default `None`.
+- **Sub-tasks** are full `TaskItem` records linked by `ParentTaskId`, not a lightweight checklist, so each carries its own dates, labels, priority, and recurrence.
+- **`SortOrder`** on every manually-ordered entity (tasks, projects, sections, labels) is a LexoRank-style fractional string rank, so a new rank always fits between two neighbors without renumbering. The store/rank service assigns it.
+
+Domain types are pure data holders with no clock or persistence access: they never self-stamp `UpdatedAt` — that is the store's job on save.
  
 ## Storage layer
  
@@ -88,8 +105,8 @@ Due dates store UTC plus the original timezone, and are rendered in local time o
 4. All mutations go through `ITaskStore`.
 5. Soft delete only via `DeletedAt`. Never hard-delete.
 6. Every record carries Id, CreatedAt, UpdatedAt, DeletedAt, and SchemaVersion.
-7. Due dates are stored as UTC plus original timezone.
-8. Domain types have no persistence knowledge.
+7. Every user-chosen scheduled date (task When/Deadline, project Deadline, recurrence anchor) is stored as UTC plus original timezone; system timestamps (CreatedAt/UpdatedAt/CompletedAt) are UTC instants only.
+8. Domain types have no persistence knowledge, and are pure data holders: they never self-stamp UpdatedAt or read the clock — the store does on save.
 9. Dependencies point top-down only: View, ViewModel, Store, files/index.
 10. Do not introduce CRDTs or a server backend. The planned sync is cloud-folder plus last-write-wins, not collaborative editing.
 ## Gotchas
