@@ -23,11 +23,16 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
 {
     private readonly ITaskStore _files;
     private readonly SqliteTaskIndex _index;
+    private readonly ContainerDeletionJournal? _deletionJournal;
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
 
     public IndexedTaskStore(ITaskStore files, SqliteTaskIndex index)
     {
         _files = files ?? throw new ArgumentNullException(nameof(files));
         _index = index ?? throw new ArgumentNullException(nameof(index));
+        _deletionJournal = files is FileTaskStore fileStore
+            ? new ContainerDeletionJournal(fileStore.RootPath)
+            : null;
     }
 
     /// <summary>
@@ -51,6 +56,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         var index = new SqliteTaskIndex(indexPath, timeProvider, timeZone);
         var store = new IndexedTaskStore(files, index);
         await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await store.ResumeContainerDeletionsAsync(cancellationToken).ConfigureAwait(false);
         return store;
     }
 
@@ -71,21 +77,99 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
 
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
     {
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await SaveCoreAsync(record, cancellationToken).ConfigureAwait(false); }
+        finally { _mutationGate.Release(); }
+    }
+
+    private async Task SaveCoreAsync<T>(T record, CancellationToken cancellationToken) where T : RecordBase
+    {
+        var existing = await _files.GetAsync<T>(record.Id, cancellationToken).ConfigureAwait(false);
+        if (existing?.IsDeleted == true && !record.IsDeleted)
+            throw new InvalidOperationException($"A deleted {typeof(T).Name} cannot be restored through SaveAsync.");
+
+        if (record is TaskItem task)
+            await NormalizeTaskReferencesAsync(task, cancellationToken).ConfigureAwait(false);
+
         await _files.SaveAsync(record, cancellationToken).ConfigureAwait(false);
         await ReflectAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task NormalizeTaskReferencesAsync(TaskItem task, CancellationToken cancellationToken)
+    {
+        if (task.ProjectId is { } projectId)
+        {
+            var project = await _files.GetAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
+            if (project?.IsDeleted == true)
+            {
+                task.ProjectId = null;
+                task.SectionId = null;
+            }
+        }
+
+        if (task.SectionId is { } sectionId)
+        {
+            var section = await _files.GetAsync<Section>(sectionId, cancellationToken).ConfigureAwait(false);
+            if (section?.IsDeleted == true)
+            {
+                task.ProjectId = null;
+                task.SectionId = null;
+            }
+        }
+
+        if (task.LabelIds.Count > 0)
+        {
+            var retainedLabels = new List<Guid>(task.LabelIds.Count);
+            foreach (var labelId in task.LabelIds.Distinct())
+            {
+                var label = await _files.GetAsync<Label>(labelId, cancellationToken).ConfigureAwait(false);
+                if (label?.IsDeleted != true) retainedLabels.Add(labelId);
+            }
+            task.LabelIds = retainedLabels;
+        }
+    }
+
     public async Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
     {
-        if (typeof(T) == typeof(Project))
-            await DeleteProjectAsync(id, cancellationToken).ConfigureAwait(false);
-        else if (typeof(T) == typeof(Section))
-            await DeleteSectionAsync(id, cancellationToken).ConfigureAwait(false);
-        else if (typeof(T) == typeof(Label))
-            await DeleteLabelAsync(id, cancellationToken).ConfigureAwait(false);
-        else
-            await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (typeof(T) == typeof(Project)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Project, id, cancellationToken).ConfigureAwait(false);
+            else if (typeof(T) == typeof(Section)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Section, id, cancellationToken).ConfigureAwait(false);
+            else if (typeof(T) == typeof(Label)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Label, id, cancellationToken).ConfigureAwait(false);
+            else await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _mutationGate.Release(); }
     }
+
+    private async Task RunContainerDeletionCoreAsync(ContainerDeletionKind kind, Guid id, CancellationToken cancellationToken)
+    {
+        var operation = new ContainerDeletionOperation { Kind = kind, TargetId = id };
+        if (_deletionJournal is not null) await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
+        await ApplyContainerDeletionAsync(operation, cancellationToken).ConfigureAwait(false);
+        operation.IsCompleted = true;
+        if (_deletionJournal is not null) await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ResumeContainerDeletionsAsync(CancellationToken cancellationToken)
+    {
+        if (_deletionJournal is null) return;
+        foreach (var operation in await _deletionJournal.GetPendingAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await ApplyContainerDeletionAsync(operation, cancellationToken).ConfigureAwait(false);
+            operation.IsCompleted = true;
+            await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private Task ApplyContainerDeletionAsync(ContainerDeletionOperation operation, CancellationToken cancellationToken)
+        => operation.Kind switch
+        {
+            ContainerDeletionKind.Project => DeleteProjectAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.Section => DeleteSectionAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.Label => DeleteLabelAsync(operation.TargetId, cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation.Kind)),
+        };
 
     private async Task ReflectAsync<T>(T record, CancellationToken cancellationToken) where T : RecordBase
     {
@@ -115,10 +199,10 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         foreach (var taskId in await _index.GetTaskIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
         {
             var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
-            if (task is null) continue;
+            if (task is null || task.ProjectId != projectId) continue;
             task.ProjectId = null;
             task.SectionId = null;
-            await SaveAsync(task, cancellationToken).ConfigureAwait(false);
+            await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var sectionId in await _index.GetSectionIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
@@ -134,10 +218,10 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         foreach (var taskId in await _index.GetTaskIdsBySectionAsync(sectionId, cancellationToken).ConfigureAwait(false))
         {
             var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
-            if (task is null) continue;
+            if (task is null || task.SectionId != sectionId) continue;
             task.ProjectId = null;
             task.SectionId = null;
-            await SaveAsync(task, cancellationToken).ConfigureAwait(false);
+            await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
 
         await SoftDeleteAndReflectAsync<Section>(sectionId, cancellationToken).ConfigureAwait(false);
@@ -151,7 +235,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         {
             var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
             if (task is null || task.LabelIds.RemoveAll(id => id == labelId) == 0) continue;
-            await SaveAsync(task, cancellationToken).ConfigureAwait(false);
+            await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
 
         await SoftDeleteAndReflectAsync<Label>(labelId, cancellationToken).ConfigureAwait(false);
