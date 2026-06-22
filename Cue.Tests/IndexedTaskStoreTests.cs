@@ -51,11 +51,13 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
             // the machine's local zone — keeps the date comparisons deterministic on any host.
             TimeZoneInfo.Utc);
 
+    /// <summary>A zoned instant whose calendar day (in UTC) is <paramref name="day"/>.</summary>
+    private static ZonedDateTime OnDayZoned(DateOnly day)
+        => ZonedDateTime.FromUtc(new DateTimeOffset(day.Year, day.Month, day.Day, 9, 0, 0, TimeSpan.Zero), "UTC");
+
     /// <summary>An OnDate "When" whose calendar day (in UTC) is <paramref name="day"/>.</summary>
     private static ScheduledWhen OnDay(DateOnly day, bool evening = false)
-        => ScheduledWhen.On(
-            ZonedDateTime.FromUtc(new DateTimeOffset(day.Year, day.Month, day.Day, 9, 0, 0, TimeSpan.Zero), "UTC"),
-            evening);
+        => ScheduledWhen.On(OnDayZoned(day), evening);
 
     private static DateOnly Today => DateOnly.FromDateTime(Now.UtcDateTime);
 
@@ -281,6 +283,56 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Contains(deadlineOnly.Id, upcoming);  // future Deadline, no When
 
         Assert.Equal(new[] { done.Id }, (await store.GetLogbookAsync()).Select(t => t.Id));
+    }
+
+    [Fact]
+    public async Task DeadlineDueOrOverdue_SurfacesInToday_NotUpcoming()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        // Deadline-only tasks (no scheduled When) at today and in the past. Before this fix they fell
+        // through every time view — not Today (no When) and not Upcoming (deadline not in the future).
+        var dueToday = new TaskItem { Title = "오늘 마감", Deadline = OnDayZoned(Today) };
+        var overdue = new TaskItem { Title = "지난 마감", Deadline = OnDayZoned(Today.AddDays(-2)) };
+        var future = new TaskItem { Title = "다가올 마감", Deadline = OnDayZoned(Today.AddDays(4)) };
+        foreach (var t in new[] { dueToday, overdue, future })
+            await store.SaveAsync(t);
+
+        var today = (await store.GetTodayAsync()).Select(t => t.Id).ToHashSet();
+        Assert.Contains(dueToday.Id, today);   // due today ⇒ Today
+        Assert.Contains(overdue.Id, today);    // overdue ⇒ rolls forward into Today
+        Assert.DoesNotContain(future.Id, today);
+
+        var upcoming = (await store.GetUpcomingAsync()).Select(t => t.Id).ToHashSet();
+        Assert.Contains(future.Id, upcoming);          // future deadline ⇒ Upcoming
+        Assert.DoesNotContain(dueToday.Id, upcoming);  // due today is in Today, not Upcoming
+        Assert.DoesNotContain(overdue.Id, upcoming);   // overdue is in Today, not Upcoming
+    }
+
+    [Fact]
+    public async Task IndexDatabase_CanLiveOutsideTheDataRoot()
+    {
+        var dataRoot = NewRoot();
+        var indexDir = NewRoot();
+        var indexPath = Path.Combine(indexDir, "cache", "cue-index.db");
+        var clock = new MutableTimeProvider(Now);
+
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = dataRoot, IndexPath = indexPath },
+            clock, TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "분리된 색인", When = OnDay(Today) };
+        await store.SaveAsync(task);
+
+        // The index lives where we put it (a per-device location), not inside the data root — so when
+        // the data root is a cloud folder, the index is never swept into sync.
+        Assert.True(File.Exists(indexPath));
+        Assert.False(File.Exists(Path.Combine(dataRoot, "index.db")));
+
+        // And it still works: the list read is served from that out-of-root index.
+        Assert.Contains(await store.GetTodayAsync(), t => t.Id == task.Id);
     }
 
     [Fact]

@@ -31,10 +31,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     }
 
     /// <summary>
-    /// Wires a <see cref="FileTaskStore"/> over <paramref name="options"/> to a SQLite index at
-    /// <c>{root}/index.db</c>, then rebuilds the index from the files. The single entry point an app
-    /// uses at startup. <paramref name="timeProvider"/>/<paramref name="timeZone"/> define the
-    /// "today" the time-axis views compare against.
+    /// Wires a <see cref="FileTaskStore"/> over <paramref name="options"/> to a SQLite index, then
+    /// rebuilds the index from the files. The single entry point an app uses at startup. The index
+    /// lives at <see cref="FileTaskStoreOptions.IndexPath"/> when set, else co-located at
+    /// <c>{root}/index.db</c> — keep it local and off any synced data root, since it is a per-device
+    /// cache. <paramref name="timeProvider"/>/<paramref name="timeZone"/> define the "today" the
+    /// time-axis views compare against.
     /// </summary>
     public static async Task<IndexedTaskStore> OpenAsync(
         FileTaskStoreOptions options,
@@ -44,8 +46,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        var indexPath = options.IndexPath ?? Path.Combine(options.RootPath, "index.db");
         var files = new FileTaskStore(options, timeProvider);
-        var index = new SqliteTaskIndex(Path.Combine(options.RootPath, "index.db"), timeProvider, timeZone);
+        var index = new SqliteTaskIndex(indexPath, timeProvider, timeZone);
         var store = new IndexedTaskStore(files, index);
         await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
         return store;

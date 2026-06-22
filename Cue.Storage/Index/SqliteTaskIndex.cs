@@ -247,9 +247,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL " +
-            "AND when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today " +
-            "ORDER BY when_date, sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL AND ( " +
+            "(when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today) OR " +
+            "(deadline_date IS NOT NULL AND deadline_date <= $today) ) " +
+            "ORDER BY COALESCE(when_date, deadline_date), sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetThisEveningAsync(CancellationToken cancellationToken = default)

@@ -40,8 +40,9 @@ public interface ITaskIndex
     // ---- Time axis (computed against the current day) ------------------------
 
     /// <summary>
-    /// Open, dated tasks whose scheduled day is today <i>or earlier</i> — overdue items roll
-    /// forward into Today rather than being missed.
+    /// Open tasks that are actionable today: a scheduled When on today <i>or earlier</i>, or a
+    /// Deadline falling today or earlier (a deadline-only task with no When still surfaces here when
+    /// it is due or overdue). Past dates roll forward into Today rather than being missed.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default);
 
