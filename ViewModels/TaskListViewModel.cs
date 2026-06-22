@@ -294,8 +294,8 @@ public partial class TaskListViewModel : ObservableObject
     /// <summary>
     /// Applies a row's completion change to the store, then refreshes. Serialized through a gate so
     /// rapid toggles can't reorder their writes (concurrent executions are allowed so none are
-    /// dropped — they queue on the gate); on failure the row's checkbox is restored so the UI never
-    /// disagrees with what's on disk.
+    /// dropped — they queue on the gate). The row remains dimmed in place until the next list load;
+    /// on failure its checkbox is restored so the UI never disagrees with what's on disk.
     /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleCompleteAsync(TaskRowViewModel row)
@@ -310,7 +310,8 @@ public partial class TaskListViewModel : ObservableObject
                 task.CompletedAt = completed ? _clock.GetUtcNow() : null;
                 await _store.SaveAsync(task);
             }
-            await LoadAsync();
+            // Keep the row in place for this session so completion has a visible, reversible
+            // acknowledgement. Index-backed navigation/reload naturally removes it later.
         }
         catch
         {

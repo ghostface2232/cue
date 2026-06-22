@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Cue.Domain;
 using Cue.Storage.Index;
@@ -12,8 +13,8 @@ namespace Cue.ViewModels;
 /// <remarks>
 /// The toggle is wired to a callback the parent list owns, so flipping the checkbox sets/clears
 /// <see cref="TaskItem.CompletedAt"/> and refreshes the list. Because the active views exclude
-/// completed tasks, completing a row makes it drop out on the next refresh — the immediate,
-/// visible reflection of the change.
+/// completed tasks, completing a row dims it in place for acknowledgement; the next navigation or
+/// explicit refresh naturally removes it from open-task views.
 /// </remarks>
 public partial class TaskRowViewModel : ObservableObject
 {
@@ -24,8 +25,14 @@ public partial class TaskRowViewModel : ObservableObject
     public string Title { get; }
     public string Schedule { get; }
     public bool HasSchedule => Schedule.Length > 0;
+    public Priority Priority { get; }
+    public bool HasPriority => Priority != Priority.None;
+    public string PriorityCaption => HasPriority ? Priority.ToString() : string.Empty;
+    public bool HasMetadata => HasSchedule || HasPriority || HasSubtasks;
+    public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
     public ObservableCollection<TaskRowViewModel> Subtasks { get; } = new();
     public bool HasSubtasks => Subtasks.Count > 0;
+    public string SubtaskCaption => HasSubtasks ? $"하위 작업 {Subtasks.Count}" : string.Empty;
 
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
@@ -36,6 +43,7 @@ public partial class TaskRowViewModel : ObservableObject
         Id = item.Id;
         Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
         Schedule = BuildSchedule(item);
+        Priority = item.Priority;
 
         _suppressToggle = true;       // initial state from the index, not a user action
         IsCompleted = item.IsCompleted;
@@ -44,6 +52,7 @@ public partial class TaskRowViewModel : ObservableObject
 
     partial void OnIsCompletedChanged(bool value)
     {
+        OnPropertyChanged(nameof(VisualOpacity));
         if (_suppressToggle)
             return;
         // Hand off to the list, which serializes the save and reverts us if it fails.
@@ -62,6 +71,8 @@ public partial class TaskRowViewModel : ObservableObject
     {
         Subtasks.Add(subtask);
         OnPropertyChanged(nameof(HasSubtasks));
+        OnPropertyChanged(nameof(HasMetadata));
+        OnPropertyChanged(nameof(SubtaskCaption));
     }
 
     private static string BuildSchedule(TaskListItem item)
@@ -79,5 +90,6 @@ public partial class TaskRowViewModel : ObservableObject
         return string.Join("   ·   ", parts);
     }
 
-    private static string Day(DateOnly d) => $"{d.Month}월 {d.Day}일";
+    private static string Day(DateOnly d)
+        => d.ToString("M월 d일 (ddd)", CultureInfo.GetCultureInfo("ko-KR"));
 }

@@ -6,82 +6,107 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:Cue.ViewModels"
+    Background="White"
     mc:Ignorable="d">
 
     <Page.Resources>
-        <Style x:Key="TaskSurfaceButtonStyle" TargetType="Button">
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="8,7" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="6" />
+        <SolidColorBrush x:Key="TaskHoverBrush" Color="#0F000000" />
+        <SolidColorBrush x:Key="TaskPressedBrush" Color="#18000000" />
+        <SolidColorBrush x:Key="DetailCardBrush" Color="#FFFEFEFE" />
+        <SolidColorBrush x:Key="SaveActionBrush" Color="#FF168A45" />
+        <SolidColorBrush x:Key="CloseActionBrush" Color="#FFC83C3C" />
+
+        <Style x:Key="IconActionStyle" TargetType="HyperlinkButton">
+            <Setter Property="Width" Value="38" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
-        <Style x:Key="StretchListViewItemStyle" TargetType="ListViewItem">
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="0" />
+        <Style x:Key="MetadataTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="FontFamily" Value="Cascadia Mono" />
         </Style>
 
         <DataTemplate x:Key="ChildTaskRowTemplate" x:DataType="vm:TaskRowViewModel">
-            <Grid Padding="30,0,0,0" ColumnSpacing="8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Rectangle Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                <CheckBox
-                    Grid.Column="1"
-                    MinWidth="0"
-                    VerticalAlignment="Center"
-                    IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
-                <Button
-                    Grid.Column="2"
-                    Style="{StaticResource TaskSurfaceButtonStyle}"
-                    Click="TaskRow_Click"
-                    Tag="{x:Bind Id}">
-                    <StackPanel>
-                        <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="{x:Bind Schedule}"
-                            Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
-                    </StackPanel>
-                </Button>
-            </Grid>
-        </DataTemplate>
-
-        <DataTemplate x:Key="TaskRowTemplate" x:DataType="vm:TaskRowViewModel">
-            <StackPanel HorizontalAlignment="Stretch">
-                <Grid ColumnSpacing="8">
+            <Border
+                Margin="0,3,4,3"
+                Padding="10,9"
+                Background="Transparent"
+                CornerRadius="7"
+                Loaded="TaskSurface_Loaded"
+                Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
+                PointerEntered="TaskSurface_PointerEntered"
+                PointerExited="TaskSurface_PointerExited"
+                Tapped="TaskSurface_Tapped"
+                Tag="{x:Bind Id}">
+                <Grid ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <CheckBox
                         MinWidth="0"
-                        Margin="4,0,0,0"
                         VerticalAlignment="Center"
                         IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
-                    <Grid
-                        Grid.Column="1"
-                        Padding="8,7">
-                        <StackPanel>
-                            <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
-                            <TextBlock
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind Schedule}"
-                                Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
+                    <StackPanel Grid.Column="1" Spacing="3">
+                        <TextBlock FontSize="14" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="10" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
+                            <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind PriorityCaption}" Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="TaskRowTemplate" x:DataType="vm:TaskRowViewModel">
+            <StackPanel HorizontalAlignment="Stretch">
+                <Border
+                    Margin="4,2"
+                    Padding="10,10"
+                    Background="Transparent"
+                    CornerRadius="9"
+                    Loaded="TaskSurface_Loaded"
+                    Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
+                    PointerEntered="TaskSurface_PointerEntered"
+                    PointerExited="TaskSurface_PointerExited"
+                    Tapped="TaskSurface_Tapped"
+                    Tag="{x:Bind Id}">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <CheckBox
+                            MinWidth="0"
+                            VerticalAlignment="Center"
+                            IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock FontSize="15" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                            <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind PriorityCaption}" Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind SubtaskCaption}" Visibility="{x:Bind HasSubtasks, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
                         </StackPanel>
                     </Grid>
+                </Border>
+                <Grid Margin="31,0,0,7" Visibility="{x:Bind HasSubtasks, Converter={StaticResource BoolToVisibility}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Rectangle Margin="0,2,0,3" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <ItemsRepeater
+                        Grid.Column="1"
+                        ElementClearing="TaskRepeater_ElementClearing"
+                        ElementPrepared="TaskRepeater_ElementPrepared"
+                        ItemTemplate="{StaticResource ChildTaskRowTemplate}"
+                        ItemsSource="{x:Bind Subtasks}" />
                 </Grid>
-                <ItemsControl
-                    ItemTemplate="{StaticResource ChildTaskRowTemplate}"
-                    ItemsSource="{x:Bind Subtasks}"
-                    Visibility="{x:Bind HasSubtasks, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
         </DataTemplate>
     </Page.Resources>
@@ -94,7 +119,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Margin="0,0,0,4" ColumnSpacing="12">
+        <Grid Margin="4,0,4,6" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -105,27 +130,17 @@
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Style="{StaticResource CaptionTextBlockStyle}"
                     Text="{x:Bind ViewModel.TitleCaption, Mode=OneWay}"
+                    FontFamily="Cascadia Mono"
                     Visibility="{x:Bind ViewModel.HasTitleCaption, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
-            <Button
-                Grid.Column="1"
-                Click="AddSection_Click"
-                Content="섹션 추가"
-                Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+            <Button Grid.Column="1" Click="AddSection_Click" Content="섹션 추가" Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
         </Grid>
 
-        <InfoBar
-            x:Name="ErrorInfoBar"
-            Grid.Row="1"
-            Margin="0,0,0,8"
-            IsClosable="True"
-            IsOpen="False"
-            Severity="Error"
-            Title="작업을 완료하지 못했습니다" />
+        <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="작업을 완료하지 못했습니다" />
 
         <TextBox
             Grid.Row="2"
-            Margin="0,0,0,12"
+            Margin="4,0,4,12"
             IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
             KeyDown="QuickAdd_KeyDown"
             PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
@@ -138,237 +153,203 @@
             </Grid.ColumnDefinitions>
 
             <Grid>
-                <ListView
-                    HorizontalContentAlignment="Stretch"
-                    ItemContainerStyle="{StaticResource StretchListViewItemStyle}"
-                    IsItemClickEnabled="True"
-                    ItemClick="TaskList_ItemClick"
-                    Loaded="TaskList_Loaded"
-                    ItemTemplate="{StaticResource TaskRowTemplate}"
-                    ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
-                    SelectionMode="None"
-                    Visibility="{x:Bind ViewModel.IsStandardList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                    <ListView.Footer>
-                        <StackPanel Margin="0,16,0,0" Visibility="{x:Bind ViewModel.HasEveningTasks, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Margin="12,0,0,4" Style="{StaticResource SubtitleTextBlockStyle}" Text="오늘 저녁" />
-                            <ListView
-                                IsItemClickEnabled="True"
-                                ItemClick="TaskList_ItemClick"
-                                Loaded="TaskList_Loaded"
-                                ItemContainerStyle="{StaticResource StretchListViewItemStyle}"
+                <ScrollViewer Visibility="{x:Bind ViewModel.IsStandardList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <ItemsRepeater
+                            ElementClearing="TaskRepeater_ElementClearing"
+                            ElementPrepared="TaskRepeater_ElementPrepared"
+                            ItemTemplate="{StaticResource TaskRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}" />
+                        <StackPanel Margin="0,18,0,0" Visibility="{x:Bind ViewModel.HasEveningTasks, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Margin="14,0,0,7" Style="{StaticResource SubtitleTextBlockStyle}" Text="오늘 저녁" />
+                            <ItemsRepeater
+                                ElementClearing="TaskRepeater_ElementClearing"
+                                ElementPrepared="TaskRepeater_ElementPrepared"
                                 ItemTemplate="{StaticResource TaskRowTemplate}"
-                                ItemsSource="{x:Bind ViewModel.EveningTasks, Mode=OneWay}"
-                                SelectionMode="None" />
+                                ItemsSource="{x:Bind ViewModel.EveningTasks, Mode=OneWay}" />
                         </StackPanel>
-                    </ListView.Footer>
-                </ListView>
+                    </StackPanel>
+                </ScrollViewer>
 
                 <ListView
-                    HorizontalContentAlignment="Stretch"
-                    ItemContainerStyle="{StaticResource StretchListViewItemStyle}"
                     ItemsSource="{x:Bind ViewModel.ProjectGroups, Mode=OneWay}"
                     SelectionMode="None"
                     Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="vm:TaskSectionGroupViewModel">
-                            <StackPanel Margin="0,0,0,12">
-                                <Grid Margin="12,4" ColumnSpacing="8">
+                            <StackPanel Margin="0,0,0,16">
+                                <Grid Margin="14,5,8,7" ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
                                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Name}" />
-                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DeadlineCaption}" />
+                                        <TextBlock FontFamily="Cascadia Mono" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DeadlineCaption}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="{x:Bind CanEdit, Converter={StaticResource BoolToVisibility}}">
                                         <Button Click="RenameSection_Click" Content="이름 변경" Tag="{x:Bind Id}" />
                                         <Button Click="DeleteSection_Click" Content="삭제" Tag="{x:Bind Id}" />
                                     </StackPanel>
                                 </Grid>
-                                <ListView
-                                    IsItemClickEnabled="True"
-                                    ItemClick="TaskList_ItemClick"
-                                    Loaded="TaskList_Loaded"
-                                    ItemContainerStyle="{StaticResource StretchListViewItemStyle}"
-                                    ItemTemplate="{StaticResource TaskRowTemplate}"
-                                    ItemsSource="{x:Bind Tasks}"
-                                    SelectionMode="None" />
+                                <ItemsRepeater ElementClearing="TaskRepeater_ElementClearing" ElementPrepared="TaskRepeater_ElementPrepared" ItemTemplate="{StaticResource TaskRowTemplate}" ItemsSource="{x:Bind Tasks}" />
                             </StackPanel>
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
 
-                <TextBlock
-                    Margin="4,8,0,0"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="표시할 할 일이 없습니다."
-                    Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock Margin="8,10,0,0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="표시할 할 일이 없습니다." Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
             </Grid>
 
             <Border
                 x:Name="DetailPanel"
                 Grid.Column="1"
-                Width="440"
-                Padding="20,16,8,20"
-                Background="{ThemeResource LayerFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                Width="460"
+                Padding="18,16,6,20"
+                Background="White"
+                BorderBrush="#12000000"
                 BorderThickness="1,0,0,0"
+                Loaded="DetailPanel_Loaded"
                 Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                <Border.Transitions>
-                    <TransitionCollection>
-                        <EntranceThemeTransition FromHorizontalOffset="28" />
-                    </TransitionCollection>
-                </Border.Transitions>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="0,0,14,0" Spacing="12">
-                        <Grid ColumnSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="세부 정보"
-                                Visibility="{x:Bind ViewModel.Detail.HasParentTask, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                            <Button
-                                Grid.Column="1"
-                                Width="36"
-                                Height="36"
-                                Padding="0"
-                                Click="SaveDetail_Click"
-                                ToolTipService.ToolTip="저장"
-                                AutomationProperties.Name="저장">
-                                <FontIcon FontSize="16" Glyph="&#xE73E;" />
-                            </Button>
-                            <Button
-                                Grid.Column="2"
-                                Width="36"
-                                Height="36"
-                                Padding="0"
-                                Click="CloseDetail_Click"
-                                ToolTipService.ToolTip="닫기"
-                                AutomationProperties.Name="닫기">
-                                <FontIcon FontSize="14" Glyph="&#xE711;" />
-                            </Button>
-                        </Grid>
-
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="2,0,16,0" Spacing="13">
                         <Button
                             HorizontalAlignment="Left"
-                            Padding="0"
+                            Padding="2,0"
                             Background="Transparent"
                             BorderThickness="0"
                             Click="OpenParent_Click"
                             Content="← 상위 작업으로 돌아가기"
                             Visibility="{x:Bind ViewModel.Detail.HasParentTask, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
-                        <TextBox
-                            Padding="0,4"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            FontSize="28"
-                            FontWeight="SemiBold"
-                            PlaceholderText="작업 제목"
-                            Text="{x:Bind ViewModel.Detail.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            TextWrapping="Wrap" />
-
-                        <TextBlock Text="메모" />
-                        <TextBox
-                            AcceptsReturn="True"
-                            MinHeight="96"
-                            PlaceholderText="메모를 추가하세요"
-                            Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            TextWrapping="Wrap" />
-
-                        <Grid ColumnSpacing="12">
+                        <Grid ColumnSpacing="7">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="우선순위" />
-                                <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.Detail.Priorities}" SelectedItem="{x:Bind ViewModel.Detail.SelectedPriority, Mode=TwoWay}" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4">
-                                <TextBlock Text="프로젝트" />
-                                <ComboBox HorizontalAlignment="Stretch" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.Detail.Projects}" SelectedItem="{x:Bind ViewModel.Detail.SelectedProject, Mode=TwoWay}" />
-                            </StackPanel>
+                            <TextBox
+                                Padding="2,2,4,3"
+                                VerticalAlignment="Center"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                FontSize="27"
+                                FontWeight="SemiBold"
+                                PlaceholderText="작업 제목"
+                                Text="{x:Bind ViewModel.Detail.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                TextWrapping="Wrap" />
+                            <HyperlinkButton
+                                Grid.Column="1"
+                                Style="{StaticResource IconActionStyle}"
+                                Click="SaveDetail_Click"
+                                Foreground="{StaticResource SaveActionBrush}"
+                                PointerEntered="IconAction_PointerEntered"
+                                PointerExited="IconAction_PointerExited"
+                                ToolTipService.ToolTip="저장"
+                                AutomationProperties.Name="저장">
+                                <FontIcon FontSize="19" Glyph="&#xE73E;" />
+                            </HyperlinkButton>
+                            <HyperlinkButton
+                                Grid.Column="2"
+                                Style="{StaticResource IconActionStyle}"
+                                Click="CloseDetail_Click"
+                                Foreground="{StaticResource CloseActionBrush}"
+                                PointerEntered="IconAction_PointerEntered"
+                                PointerExited="IconAction_PointerExited"
+                                ToolTipService.ToolTip="닫기"
+                                AutomationProperties.Name="닫기">
+                                <FontIcon FontSize="17" Glyph="&#xE711;" />
+                            </HyperlinkButton>
                         </Grid>
 
-                        <Border Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8">
-                            <StackPanel Spacing="10">
-                                <CalendarDatePicker
-                                    HorizontalAlignment="Stretch"
-                                    Date="{x:Bind ViewModel.Detail.WhenDate, Mode=TwoWay}"
-                                    Header="예정일"
-                                    PlaceholderText="날짜 선택" />
-                                <TimePicker
-                                    HorizontalAlignment="Stretch"
-                                    Header="예정 시각"
-                                    SelectedTime="{x:Bind ViewModel.Detail.WhenTime, Mode=TwoWay}"
-                                    Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                                <StackPanel Orientation="Horizontal" Spacing="16">
+                        <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                            <StackPanel Spacing="11">
+                                <TextBlock FontWeight="SemiBold" Text="작업 정보" />
+                                <TextBox AcceptsReturn="True" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="5"><TextBlock Text="우선순위" /><ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.Detail.Priorities}" SelectedItem="{x:Bind ViewModel.Detail.SelectedPriority, Mode=TwoWay}" /></StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="5"><TextBlock Text="프로젝트" /><ComboBox HorizontalAlignment="Stretch" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.Detail.Projects}" SelectedItem="{x:Bind ViewModel.Detail.SelectedProject, Mode=TwoWay}" /></StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                            <StackPanel Spacing="11">
+                                <TextBlock FontWeight="SemiBold" Text="예정" />
+                                <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.WhenDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
+                                <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="시각" />
+                                    <Grid ColumnSpacing="7">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <ComboBox Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenHour, Mode=TwoWay}" />
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="18" Text=":" />
+                                        <ComboBox Grid.Column="2" Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Button Click="WhenMorning_Click" Content="오전 9시" /><Button Click="WhenAfternoon_Click" Content="오후 1시" /><Button Click="WhenEvening_Click" Content="오후 6시" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="18">
                                     <CheckBox Content="저녁" IsChecked="{x:Bind ViewModel.Detail.IsEvening, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                     <CheckBox Content="언젠가" IsChecked="{x:Bind ViewModel.Detail.IsSomeday, Mode=TwoWay}" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
 
-                        <Border Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8">
-                            <StackPanel Spacing="10">
-                                <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" Header="마감일" PlaceholderText="날짜 선택" />
-                                <TimePicker HorizontalAlignment="Stretch" Header="마감 시각" SelectedTime="{x:Bind ViewModel.Detail.DeadlineTime, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                            <StackPanel Spacing="11">
+                                <TextBlock FontWeight="SemiBold" Text="마감" />
+                                <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
+                                <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="시각" />
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <ComboBox Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
+                                        <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
+                                        <ComboBox Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6"><Button Click="DeadlineMorning_Click" Content="오전 9시" /><Button Click="DeadlineAfternoon_Click" Content="오후 1시" /><Button Click="DeadlineEvening_Click" Content="오후 6시" /></StackPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
-                        <Grid Margin="0,4,0,0">
-                            <TextBlock VerticalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" Text="라벨" />
-                            <Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" />
-                        </Grid>
-                        <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <ItemsWrapGrid Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:LabelEditorOption">
-                                    <CheckBox Margin="0,0,12,6" Content="{x:Bind Name}" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                            <StackPanel Spacing="10">
+                                <Grid><TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" /></Grid>
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:LabelEditorOption"><CheckBox Margin="0,0,14,7" Content="{x:Bind Name}" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" /></DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
 
-                        <Rectangle Height="1" Margin="0,4" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="서브태스크" />
-                        <Grid ColumnSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox PlaceholderText="서브태스크 제목" Text="{x:Bind ViewModel.Detail.NewSubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Grid.Column="1" Click="AddSubtask_Click" Content="추가" />
-                        </Grid>
-
-                        <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Subtasks}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:SubtaskRowViewModel">
-                                    <Grid ColumnSpacing="8" Padding="0,3">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <CheckBox VerticalAlignment="Center" IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
-                                        <Button Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OpenSubtask_Click" Content="{x:Bind Title}" Tag="{x:Bind Id}" />
-                                        <Button Grid.Column="2" Width="32" Height="32" Padding="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="서브태스크 삭제">
-                                            <FontIcon FontSize="13" Glyph="&#xE74D;" />
-                                        </Button>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                            <StackPanel Spacing="11">
+                                <TextBlock FontWeight="SemiBold" Text="서브태스크" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBox PlaceholderText="서브태스크 제목" Text="{x:Bind ViewModel.Detail.NewSubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Grid.Column="1" Click="AddSubtask_Click" Content="추가" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Subtasks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SubtaskRowViewModel">
+                                            <Grid Margin="0,3" Padding="2,5" ColumnSpacing="10" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <CheckBox VerticalAlignment="Center" IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
+                                                <Button Grid.Column="1" Padding="8,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Click="OpenSubtask_Click" Content="{x:Bind Title}" Tag="{x:Bind Id}" />
+                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="서브태스크 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

@@ -87,6 +87,58 @@ public sealed class ViewModelRegressionTests
         Assert.Equal(originalDeadline, saved.Deadline);
     }
 
+    [Fact]
+    public async Task CompletionKeepsRowVisibleAndDimmedUntilNextReload()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "stay visible" };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), clock, TimeZoneInfo.Utc);
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+
+        Assert.Same(row, Assert.Single(vm.Tasks));
+        Assert.Equal(0.48, row.VisualOpacity);
+        Assert.True((await store.GetAsync<TaskItem>(task.Id))!.IsCompleted);
+
+        await vm.LoadCommand.ExecuteAsync(null);
+        Assert.Empty(vm.Tasks);
+    }
+
+    [Fact]
+    public async Task SegmentedTimeEditorSavesExactChosenTime()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem
+        {
+            Title = "precise time",
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 9, 0, 0), "UTC")),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), clock, TimeZoneInfo.Utc);
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.SelectedWhenHour = vm.Detail.Hours[13];
+        vm.Detail.SelectedWhenMinute = vm.Detail.Minutes[5];
+        await vm.Detail.SaveCommand.ExecuteAsync(null);
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(new TimeSpan(13, 5, 0), saved!.When.Date!.Value.ToLocal().TimeOfDay);
+    }
+
     [Theory]
     [InlineData(TaskListMode.Today, WhenKind.OnDate, 0)]
     [InlineData(TaskListMode.Upcoming, WhenKind.OnDate, 1)]

@@ -18,6 +18,7 @@ public enum WhenEditorMode
 
 public sealed record WhenEditorOption(WhenEditorMode Mode, string Name);
 public sealed record ProjectEditorOption(Guid? Id, string Name);
+public sealed record TimeOption(int Value, string Label);
 
 public partial class LabelEditorOption : ObservableObject
 {
@@ -42,6 +43,7 @@ public partial class SubtaskRowViewModel : ObservableObject
 
     public Guid Id { get; }
     public string Title { get; }
+    public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
 
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
@@ -58,6 +60,7 @@ public partial class SubtaskRowViewModel : ObservableObject
 
     partial void OnIsCompletedChanged(bool value)
     {
+        OnPropertyChanged(nameof(VisualOpacity));
         if (!_suppressToggle) _onToggled(this);
     }
 
@@ -94,6 +97,8 @@ public partial class TaskDetailViewModel : ObservableObject
     private bool _isLoading;
 
     public IReadOnlyList<Priority> Priorities { get; } = Enum.GetValues<Priority>();
+    public IReadOnlyList<TimeOption> Hours { get; } = Enumerable.Range(0, 24).Select(value => new TimeOption(value, value.ToString("00"))).ToArray();
+    public IReadOnlyList<TimeOption> Minutes { get; } = Enumerable.Range(0, 60).Select(value => new TimeOption(value, value.ToString("00"))).ToArray();
     public IReadOnlyList<WhenEditorOption> WhenOptions { get; } =
     [
         new(WhenEditorMode.Unscheduled, "미지정"),
@@ -130,6 +135,12 @@ public partial class TaskDetailViewModel : ObservableObject
     public partial TimeSpan? WhenTime { get; set; }
 
     [ObservableProperty]
+    public partial TimeOption? SelectedWhenHour { get; set; }
+
+    [ObservableProperty]
+    public partial TimeOption? SelectedWhenMinute { get; set; }
+
+    [ObservableProperty]
     public partial bool IsEvening { get; set; }
 
     [ObservableProperty]
@@ -140,6 +151,12 @@ public partial class TaskDetailViewModel : ObservableObject
 
     [ObservableProperty]
     public partial TimeSpan? DeadlineTime { get; set; }
+
+    [ObservableProperty]
+    public partial TimeOption? SelectedDeadlineHour { get; set; }
+
+    [ObservableProperty]
+    public partial TimeOption? SelectedDeadlineMinute { get; set; }
 
     [ObservableProperty]
     public partial ProjectEditorOption? SelectedProject { get; set; }
@@ -192,6 +209,7 @@ public partial class TaskDetailViewModel : ObservableObject
             IsSomeday = false;
             SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
             WhenTime ??= TimeSpan.FromHours(12);
+            SetWhenTimeEditors(WhenTime);
         }
         else if (!IsSomeday)
         {
@@ -218,8 +236,15 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         if (value is not null && DeadlineTime is null)
             DeadlineTime = TimeSpan.FromHours(12);
+        if (value is not null)
+            SetDeadlineTimeEditors(DeadlineTime);
         OnPropertyChanged(nameof(HasDeadline));
     }
+
+    partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
+    partial void OnSelectedWhenMinuteChanged(TimeOption? value) => SyncWhenTimeFromParts();
+    partial void OnSelectedDeadlineHourChanged(TimeOption? value) => SyncDeadlineTimeFromParts();
+    partial void OnSelectedDeadlineMinuteChanged(TimeOption? value) => SyncDeadlineTimeFromParts();
 
     public async Task OpenAsync(Guid taskId)
     {
@@ -241,6 +266,8 @@ public partial class TaskDetailViewModel : ObservableObject
         WhenTime = task.When.Date?.ToLocal().TimeOfDay;
         DeadlineDate = task.Deadline?.ToLocal();
         DeadlineTime = task.Deadline?.ToLocal().TimeOfDay;
+        SetWhenTimeEditors(WhenTime);
+        SetDeadlineTimeEditors(DeadlineTime);
         IsEvening = task.When.IsEvening;
         IsSomeday = task.When.Kind == WhenKind.SomeDay;
         SelectedWhenOption = OptionFor(task.When);
@@ -265,6 +292,18 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         _taskId = null;
         IsOpen = false;
+    }
+
+    public void SetWhenTime(TimeSpan time)
+    {
+        WhenTime = time;
+        SetWhenTimeEditors(time);
+    }
+
+    public void SetDeadlineTime(TimeSpan time)
+    {
+        DeadlineTime = time;
+        SetDeadlineTimeEditors(time);
     }
 
     [RelayCommand]
@@ -412,6 +451,30 @@ public partial class TaskDetailViewModel : ObservableObject
     }
 
     private DateTimeOffset LocalNow() => TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone);
+
+    private void SetWhenTimeEditors(TimeSpan? time)
+    {
+        SelectedWhenHour = time is { } value ? Hours[value.Hours] : null;
+        SelectedWhenMinute = time is { } selected ? Minutes[selected.Minutes] : null;
+    }
+
+    private void SetDeadlineTimeEditors(TimeSpan? time)
+    {
+        SelectedDeadlineHour = time is { } value ? Hours[value.Hours] : null;
+        SelectedDeadlineMinute = time is { } selected ? Minutes[selected.Minutes] : null;
+    }
+
+    private void SyncWhenTimeFromParts()
+    {
+        if (_isLoading || SelectedWhenHour is null || SelectedWhenMinute is null) return;
+        WhenTime = new TimeSpan(SelectedWhenHour.Value, SelectedWhenMinute.Value, 0);
+    }
+
+    private void SyncDeadlineTimeFromParts()
+    {
+        if (_isLoading || SelectedDeadlineHour is null || SelectedDeadlineMinute is null) return;
+        DeadlineTime = new TimeSpan(SelectedDeadlineHour.Value, SelectedDeadlineMinute.Value, 0);
+    }
 
     private async Task LoadProjectsAsync(Guid? selectedId)
     {
