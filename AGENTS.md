@@ -45,7 +45,7 @@ Read flow: every query (Today, Upcoming, by project, by label, completed/incompl
  
 ## Data model (sync-ready by design)
  
-Domain types are pure C# with zero knowledge of persistence: `TaskItem`, `Project`, `Area`, `Label`. The hierarchy is Area contains Projects, Project contains TaskItems, and Label is cross-cutting.
+Domain types are pure C# with zero knowledge of persistence: `TaskItem`, `Project`, `Section`, `Label`. The hierarchy is Project contains TaskItems (optionally grouped under a Section), and Label is cross-cutting. A task's container is a single nullable `ProjectId`; null means unclassified (free). An Area level above Project is intentionally deferred for the foundation phase — it can be added later as an additive record type plus an optional `Project.AreaId`, with no rewrite.
  
 Every record carries these fields from day one:
  
@@ -59,7 +59,7 @@ Due dates store UTC plus the original timezone, and are rendered in local time o
 ## Storage layer
  
 - `ITaskStore` exposes GetAll, Get(id), Save(record), Delete(id). Every data mutation in the app goes through this single interface. This is what makes sync additive later.
-- Folder layout uses type-based subfolders: `tasks/`, `projects/`, `areas/`, `labels/`, and `meta/` for settings and schema version. Each file is named `{guid}.json`, so the filename equals the record Id and records are never renamed (which minimizes the sync conflict surface).
+- Folder layout uses type-based subfolders: `tasks/`, `projects/`, `sections/`, `labels/`, and `meta/` for settings and schema version. Each file is named `{guid}.json`, so the filename equals the record Id and records are never renamed (which minimizes the sync conflict surface).
 - The root folder path is a configuration value, never hardcoded. The v1 default is the local app data path; in a later phase it becomes a cloud-synced folder.
 - Save always updates `UpdatedAt`. Delete is a soft delete: set `DeletedAt`, then re-save the record. Never hard-delete a file.
 - Use atomic writes: write to a temp file, then swap, so a crash mid-write cannot leave a half-written file. All file IO is async.
@@ -77,7 +77,7 @@ Due dates store UTC plus the original timezone, and are rendered in local time o
 ## UI
  
 - MVVM with `CommunityToolkit.Mvvm` source generators.
-- Interface and interaction references: Things 3 and Todoist. Take the calm hierarchy, restraint, and list interactions from Things 3 (the Area to Project to Task layout, the satisfying complete interaction, generous whitespace), and the fast capture and organization patterns from Todoist (one-line quick-add, filters and saved views, priority cues). These define what the layout and interactions are.
+- Interface and interaction references: Things 3 and Todoist. Take the calm hierarchy, restraint, and list interactions from Things 3 (the Project to Section to Task layout, the satisfying complete interaction, generous whitespace), and the fast capture and organization patterns from Todoist (one-line quick-add, filters and saved views, priority cues). These define what the layout and interactions are.
 - Quality bar: the files-community Files app. The interface references above define what the layout is; the Files app defines how finished it must feel. Match its native Fluent polish and microinteraction quality. Use Mica/Acrylic materials, native composition animations, and `ItemsRepeater`-based virtualization so long lists scroll smoothly. Native virtualization is the foundation of Files-grade smoothness.
 - Light and dark come from the template defaults. Color, spacing, and motion details are intentionally not fixed yet. Leave them adjustable and do not lock them in early.
 ## Invariants (do not violate)

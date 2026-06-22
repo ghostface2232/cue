@@ -1,7 +1,7 @@
 namespace Cue.Domain;
 
 /// <summary>
-/// A cross-cutting tag. Unlike the Area → Project → Task containment hierarchy, a label can be
+/// A cross-cutting tag. Unlike the Project → Task containment hierarchy, a label can be
 /// applied to tasks anywhere via <see cref="TaskItem.LabelIds"/>.
 /// </summary>
 public sealed class Label : RecordBase

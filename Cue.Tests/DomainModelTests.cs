@@ -54,7 +54,7 @@ public class DomainModelTests
     [Fact]
     public void EveryRecordType_CarriesTheCommonAuditFields()
     {
-        RecordBase[] records = { new TaskItem(), new Project(), new Area(), new Label(), new Section() };
+        RecordBase[] records = { new TaskItem(), new Project(), new Label(), new Section() };
 
         foreach (var record in records)
         {

@@ -1,8 +1,8 @@
 namespace Cue.Domain;
 
 /// <summary>
-/// A project — groups <see cref="TaskItem"/>s and, optionally, <see cref="Section"/>s.
-/// Sits under an <see cref="Area"/> (or unclassified when <see cref="AreaId"/> is null).
+/// A project — a top-level container that groups <see cref="TaskItem"/>s and, optionally,
+/// <see cref="Section"/>s.
 /// </summary>
 public sealed class Project : RecordBase
 {
@@ -11,9 +11,6 @@ public sealed class Project : RecordBase
 
     /// <summary>Free-form notes/description, stored as Markdown. <c>null</c> when empty.</summary>
     public string? Notes { get; set; }
-
-    /// <summary>Owning area. <c>null</c> means the project is unclassified.</summary>
-    public Guid? AreaId { get; set; }
 
     /// <summary>Accent color as a hex string (e.g. "#4F8CC9"). <c>null</c> uses the default.</summary>
     public string? Color { get; set; }
