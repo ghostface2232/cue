@@ -525,6 +525,39 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Contains(await store.GetSubtasksAsync(parent.Id), item => item.Id == open.Id);
     }
 
+    [Fact]
+    public async Task DetailedTaskEdit_IsImmediatelyReflectedAcrossClassificationAndTimeViews()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+        var project = new Project { Name = "옮길 프로젝트" };
+        var label = new Label { Name = "붙일 라벨" };
+        var task = new TaskItem { Title = "편집 전" };
+        await store.SaveAsync(project);
+        await store.SaveAsync(label);
+        await store.SaveAsync(task);
+        Assert.Equal(task.Id, Assert.Single(await store.GetInboxAsync()).Id);
+
+        task.Title = "편집 후";
+        task.Priority = Priority.P1;
+        task.ProjectId = project.Id;
+        task.LabelIds.Add(label.Id);
+        task.When = OnDay(Today.AddDays(3), evening: true);
+        task.Deadline = OnDayZoned(Today.AddDays(4));
+        await store.SaveAsync(task);
+
+        Assert.Empty(await store.GetInboxAsync());
+        Assert.Equal(task.Id, Assert.Single(await store.GetByProjectAsync(project.Id)).Id);
+        Assert.Equal(task.Id, Assert.Single(await store.GetByLabelAsync(label.Id)).Id);
+        var indexed = Assert.Single(await store.GetUpcomingAsync(), item => item.Id == task.Id);
+        Assert.Equal("편집 후", indexed.Title);
+        Assert.Equal(Priority.P1, indexed.Priority);
+        Assert.Equal(Today.AddDays(3), indexed.WhenDate);
+        Assert.True(indexed.IsEvening);
+        Assert.Equal(Today.AddDays(4), indexed.DeadlineDate);
+    }
+
     private sealed class MutableTimeProvider : TimeProvider
     {
         public DateTimeOffset Now { get; set; }

@@ -63,6 +63,8 @@ public partial class TaskListViewModel : ObservableObject
 
     public ObservableCollection<TaskSectionGroupViewModel> ProjectGroups { get; } = new();
 
+    public TaskDetailViewModel Detail { get; }
+
     [ObservableProperty]
     public partial string Title { get; set; }
 
@@ -96,6 +98,7 @@ public partial class TaskListViewModel : ObservableObject
 
         Title = "Cue";
         QuickAddText = string.Empty;
+        Detail = new TaskDetailViewModel(store, index, clock, zone, LoadAsync, SelectTaskAsync);
     }
 
     /// <summary>Switches which index view this list reflects, and retitles accordingly.</summary>
@@ -255,6 +258,9 @@ public partial class TaskListViewModel : ObservableObject
 
     private TaskRowViewModel CreateRow(TaskListItem item)
         => new(item, row => ToggleCompleteCommand.Execute(row));
+
+    [RelayCommand]
+    private Task SelectTaskAsync(Guid id) => Detail.OpenAsync(id);
 
     /// <summary>
     /// Applies a row's completion change to the store, then refreshes. Serialized through a gate so

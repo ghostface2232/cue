@@ -45,6 +45,43 @@ public sealed partial class TaskListPage : Page
             ViewModel.AddCommand.Execute(null);
     }
 
+    private async void TaskRow_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: Guid id })
+            await ViewModel.SelectTaskCommand.ExecuteAsync(id);
+    }
+
+    private void CloseDetail_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        => ViewModel.Detail.Close();
+
+    private async void SaveDetail_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        => await ViewModel.Detail.SaveCommand.ExecuteAsync(null);
+
+    private async void AddSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        => await ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null);
+
+    private async void OpenSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: Guid id })
+            await ViewModel.Detail.OpenSubtaskCommand.ExecuteAsync(id);
+    }
+
+    private async void DeleteSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: Guid id }) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "서브태스크를 삭제할까요?",
+            Content = "파일은 지우지 않고 삭제 시각이 기록됩니다.",
+            PrimaryButtonText = "삭제",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            await ViewModel.Detail.DeleteSubtaskCommand.ExecuteAsync(id);
+    }
+
     private async void AddSection_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         var name = await PromptNameAsync("새 섹션", "섹션 이름");
