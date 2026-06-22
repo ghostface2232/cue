@@ -120,15 +120,19 @@ public sealed partial class TaskListPage : Page
     private void DetailPanel_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement panel) return;
-        ConfigureImplicitAnimations(panel, animateOffset: true);
+        ConfigureImplicitAnimations(panel);
+        UpdateCenterPoint(panel);
+        panel.SizeChanged += (_, _) => UpdateCenterPoint(panel);
         var visual = ElementCompositionPreview.GetElementVisual(panel);
         panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
         {
             visual.Opacity = panel.Visibility == Visibility.Visible ? 1f : 0f;
-            visual.Offset = panel.Visibility == Visibility.Visible ? Vector3.Zero : new Vector3(18f, 0f, 0f);
+            visual.Scale = panel.Visibility == Visibility.Visible
+                ? Vector3.One
+                : new Vector3(0.992f, 0.992f, 1f);
         });
         visual.Opacity = 1f;
-        visual.Offset = Vector3.Zero;
+        visual.Scale = Vector3.One;
     }
 
     private void TaskRepeater_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
@@ -136,9 +140,9 @@ public sealed partial class TaskListPage : Page
         if (!_animationsEnabled || args.Element is not UIElement element) return;
         var visual = ElementCompositionPreview.GetElementVisual(element);
         visual.StopAnimation("Opacity");
-        visual.StopAnimation("Offset");
+        visual.StopAnimation("Scale");
         visual.Opacity = 1f;
-        visual.Offset = Vector3.Zero;
+        visual.Scale = Vector3.One;
 
         var delay = TimeSpan.FromMilliseconds(Math.Min(args.Index, 7) * 26);
         var opacity = visual.Compositor.CreateScalarKeyFrameAnimation();
@@ -147,25 +151,24 @@ public sealed partial class TaskListPage : Page
         opacity.Duration = TimeSpan.FromMilliseconds(180);
         opacity.DelayTime = delay;
 
-        var offset = visual.Compositor.CreateVector3KeyFrameAnimation();
-        offset.InsertKeyFrame(0f, new Vector3(0f, 8f, 0f));
-        offset.InsertKeyFrame(1f, Vector3.Zero);
-        offset.Duration = TimeSpan.FromMilliseconds(220);
-        offset.DelayTime = delay;
+        var scale = visual.Compositor.CreateVector3KeyFrameAnimation();
+        scale.InsertKeyFrame(0f, new Vector3(0.992f, 0.978f, 1f));
+        scale.InsertKeyFrame(1f, Vector3.One);
+        scale.Duration = TimeSpan.FromMilliseconds(220);
+        scale.DelayTime = delay;
 
         visual.StartAnimation("Opacity", opacity);
-        visual.StartAnimation("Offset", offset);
+        visual.StartAnimation("Scale", scale);
     }
 
     private void TaskRepeater_ElementClearing(ItemsRepeater sender, ItemsRepeaterElementClearingEventArgs args)
     {
         var visual = ElementCompositionPreview.GetElementVisual(args.Element);
         visual.StopAnimation("Opacity");
-        visual.StopAnimation("Offset");
+        visual.StopAnimation("Scale");
         if (!_animationsEnabled)
         {
             visual.Opacity = 1f;
-            visual.Offset = Vector3.Zero;
             visual.Scale = Vector3.One;
             return;
         }
@@ -183,7 +186,7 @@ public sealed partial class TaskListPage : Page
         visual.StartAnimation("Scale", settle);
     }
 
-    private void ConfigureImplicitAnimations(FrameworkElement element, bool animateOffset = false)
+    private void ConfigureImplicitAnimations(FrameworkElement element)
     {
         if (!_animationsEnabled) return;
         var visual = ElementCompositionPreview.GetElementVisual(element);
@@ -203,15 +206,6 @@ public sealed partial class TaskListPage : Page
         scale.InsertExpressionKeyFrame(1f, "this.FinalValue", easing);
         scale.Duration = TimeSpan.FromMilliseconds(150);
         animations["Scale"] = scale;
-
-        if (animateOffset)
-        {
-            var offset = compositor.CreateVector3KeyFrameAnimation();
-            offset.Target = "Offset";
-            offset.InsertExpressionKeyFrame(1f, "this.FinalValue", easing);
-            offset.Duration = TimeSpan.FromMilliseconds(180);
-            animations["Offset"] = offset;
-        }
 
         visual.ImplicitAnimations = animations;
     }
