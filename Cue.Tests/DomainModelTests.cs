@@ -52,6 +52,21 @@ public class DomainModelTests
     }
 
     [Fact]
+    public void Section_HasProjectLevelLifecycleAndDeadlineSemantics()
+    {
+        var deadline = ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 18, 0, 0), "Asia/Seoul");
+        var section = new Section { Deadline = deadline };
+
+        Assert.False(section.IsArchived);
+        Assert.False(section.IsCompleted);
+        Assert.Equal(deadline, section.Deadline);
+
+        section.CompletedAt = new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.FromHours(9));
+        Assert.True(section.IsCompleted);
+        Assert.Equal(TimeSpan.Zero, section.CompletedAt!.Value.Offset);
+    }
+
+    [Fact]
     public void EveryRecordType_CarriesTheCommonAuditFields()
     {
         RecordBase[] records = { new TaskItem(), new Project(), new Label(), new Section() };

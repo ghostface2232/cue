@@ -18,6 +18,27 @@ public sealed class Section : RecordBase
     /// <summary>Display name (the heading text).</summary>
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Optional deadline for the section as a whole, pinned to its original time zone.</summary>
+    public ZonedDateTime? Deadline { get; set; }
+
+    /// <summary>Whether the section is archived and therefore hidden from active navigation.</summary>
+    public bool IsArchived { get; set; }
+
+    private DateTimeOffset? _completedAt;
+
+    /// <summary>
+    /// When the section was marked complete (UTC instant). <c>null</c> while active. As with tasks
+    /// and projects, completion is represented solely by this nullable timestamp.
+    /// </summary>
+    public DateTimeOffset? CompletedAt
+    {
+        get => _completedAt;
+        set => _completedAt = value?.ToUniversalTime();
+    }
+
+    /// <summary>Whether the section is complete, derived from <see cref="CompletedAt"/>.</summary>
+    public bool IsCompleted => CompletedAt is not null;
+
     /// <summary>
     /// Manual ordering rank within the project — a LexoRank-style fractional string (see
     /// <see cref="TaskItem.SortOrder"/>). Assigned by the store; the domain only holds it.
