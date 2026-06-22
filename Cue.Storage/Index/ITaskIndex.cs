@@ -50,6 +50,13 @@ public interface ITaskIndex
     /// <summary>Open tasks carrying the given label.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Full task records projected as rows whose <see cref="TaskItem.ParentTaskId"/> matches the
+    /// parent. Includes completed children so a parent detail can show and reopen them; excludes
+    /// tombstones.
+    /// </summary>
+    Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default);
+
     // ---- Time axis (computed against the current day) ------------------------
 
     /// <summary>

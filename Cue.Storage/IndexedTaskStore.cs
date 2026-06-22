@@ -188,6 +188,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
         => _index.GetByLabelAsync(labelId, cancellationToken);
 
+    public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
+        => _index.GetSubtasksAsync(parentTaskId, cancellationToken);
+
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => _index.GetTodayAsync(cancellationToken);
 

@@ -436,6 +436,12 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY t.sort_order;",
             cmd => Bind(cmd, "$label", labelId.ToString()), cancellationToken);
 
+    public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
+        => QueryAsync(
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND parent_task_id = $parent ORDER BY sort_order;",
+            cmd => Bind(cmd, "$parent", parentTaskId.ToString()), cancellationToken);
+
     // ---- Time axis (computed against the current day) ------------------------
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)

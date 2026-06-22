@@ -500,6 +500,31 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
     }
 
+    [Fact]
+    public async Task SubtaskList_ComesFromIndex_IncludesCompleted_AndExcludesTombstones()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+        var parent = new TaskItem { Title = "부모" };
+        var open = new TaskItem { Title = "열린 하위 작업", ParentTaskId = parent.Id };
+        var completed = new TaskItem { Title = "완료한 하위 작업", ParentTaskId = parent.Id, CompletedAt = Now };
+        var other = new TaskItem { Title = "다른 부모의 작업", ParentTaskId = Guid.NewGuid() };
+        await store.SaveAsync(parent);
+        await store.SaveAsync(open);
+        await store.SaveAsync(completed);
+        await store.SaveAsync(other);
+        await store.DeleteAsync<TaskItem>(other.Id);
+
+        Assert.Equal(
+            new[] { open.Id, completed.Id }.OrderBy(id => id),
+            (await store.GetSubtasksAsync(parent.Id)).Select(item => item.Id).OrderBy(id => id));
+
+        // Prove this list is read from SQLite, not by scanning task files.
+        File.Delete(Path.Combine(root, "tasks", open.Id + ".json"));
+        Assert.Contains(await store.GetSubtasksAsync(parent.Id), item => item.Id == open.Id);
+    }
+
     private sealed class MutableTimeProvider : TimeProvider
     {
         public DateTimeOffset Now { get; set; }
