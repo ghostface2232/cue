@@ -21,11 +21,19 @@ public sealed class Project : RecordBase
     /// <summary>Whether the project is archived (hidden from active lists but not deleted).</summary>
     public bool IsArchived { get; set; }
 
+    private DateTimeOffset? _completedAt;
+
     /// <summary>
     /// When the project was marked complete (UTC instant). <c>null</c> while active. Completion is
-    /// represented solely by this field, mirroring <see cref="TaskItem.CompletedAt"/>.
+    /// represented solely by this field, mirroring <see cref="TaskItem.CompletedAt"/> — including
+    /// the setter's UTC normalization, so a caller-supplied offset is flattened to a UTC instant
+    /// (invariant 7).
     /// </summary>
-    public DateTimeOffset? CompletedAt { get; set; }
+    public DateTimeOffset? CompletedAt
+    {
+        get => _completedAt;
+        set => _completedAt = value?.ToUniversalTime();
+    }
 
     /// <summary>Whether the project is complete — derived from <see cref="CompletedAt"/> being set.</summary>
     public bool IsCompleted => CompletedAt is not null;
@@ -34,7 +42,7 @@ public sealed class Project : RecordBase
     public ProjectView View { get; set; } = ProjectView.List;
 
     /// <summary>
-    /// Manual ordering rank within its area — a LexoRank-style fractional string (see
+    /// Manual ordering rank among the top-level projects — a LexoRank-style fractional string (see
     /// <see cref="TaskItem.SortOrder"/>). Assigned by the store; the domain only holds it.
     /// </summary>
     public string SortOrder { get; set; } = string.Empty;

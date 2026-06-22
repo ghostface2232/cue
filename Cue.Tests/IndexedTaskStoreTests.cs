@@ -283,6 +283,42 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Equal(new[] { done.Id }, (await store.GetLogbookAsync()).Select(t => t.Id));
     }
 
+    [Fact]
+    public async Task DanglingReferences_AreToleratedByIndexAndViews()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        // The store enforces no referential integrity, so the index and views must tolerate floating
+        // references: a project/section/label/parent that no record exists for.
+        var missingProject = Guid.NewGuid();
+        var missingSection = Guid.NewGuid();
+        var missingLabel = Guid.NewGuid();
+        var missingParent = Guid.NewGuid();
+        var orphan = new TaskItem
+        {
+            Title = "떠 있는 참조",
+            When = OnDay(Today),
+            ProjectId = missingProject,
+            SectionId = missingSection,
+            ParentTaskId = missingParent,   // a sub-task whose parent never existed
+            LabelIds = { missingLabel },
+        };
+        await store.SaveAsync(orphan);
+
+        // Time views never resolve references, so the orphan surfaces normally.
+        Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
+        // Classification queries by the dangling ids just return it — nothing joins or throws.
+        Assert.Contains(await store.GetByProjectAsync(missingProject), t => t.Id == orphan.Id);
+        Assert.Contains(await store.GetBySectionAsync(missingSection), t => t.Id == orphan.Id);
+        Assert.Contains(await store.GetByLabelAsync(missingLabel), t => t.Id == orphan.Id);
+
+        // A full rebuild from the files tolerates the same floating references.
+        await store.InitializeAsync();
+        Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
+    }
+
     private sealed class MutableTimeProvider : TimeProvider
     {
         public DateTimeOffset Now { get; set; }

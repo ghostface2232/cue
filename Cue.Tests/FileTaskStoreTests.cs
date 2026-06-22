@@ -256,6 +256,42 @@ public sealed class FileTaskStoreTests : IDisposable
         Assert.Empty(await store.GetAllAsync<TaskItem>());
     }
 
+    [Fact]
+    public async Task GetAll_SkipsUnreadableFile_AndReturnsTheRest()
+    {
+        var store = NewStore();
+        var good = new TaskItem { Title = "정상 레코드" };
+        await store.SaveAsync(good);
+
+        // Drop a corrupt file into the partition — e.g. a half-written or partially-synced file.
+        var corrupt = Path.Combine(store.RootPath, "tasks", Guid.NewGuid() + ".json");
+        await File.WriteAllTextAsync(corrupt, "{ this is not valid json");
+
+        // One bad file must not throw the whole listing out; the valid record still comes back.
+        var all = await store.GetAllAsync<TaskItem>();
+        var only = Assert.Single(all);
+        Assert.Equal(good.Id, only.Id);
+    }
+
+    [Fact]
+    public async Task CompletedAt_IsNormalizedToUtcInstant()
+    {
+        var store = NewStore();
+        // Caller supplies a non-UTC offset (+09:00). The same instant must be kept, but the offset
+        // flattened to zero so the system timestamp is a true UTC instant (invariant 7).
+        var withOffset = new DateTimeOffset(2026, 6, 20, 18, 0, 0, TimeSpan.FromHours(9));
+        var task = new TaskItem { CompletedAt = withOffset };
+
+        // Normalized on assignment, before persistence is even involved.
+        Assert.Equal(TimeSpan.Zero, task.CompletedAt!.Value.Offset);
+
+        await store.SaveAsync(task);
+        var loaded = await store.GetAsync<TaskItem>(task.Id);
+
+        Assert.Equal(TimeSpan.Zero, loaded!.CompletedAt!.Value.Offset);
+        Assert.Equal(withOffset.UtcDateTime, loaded.CompletedAt.Value.UtcDateTime); // instant preserved
+    }
+
     public void Dispose()
     {
         foreach (var root in _roots)

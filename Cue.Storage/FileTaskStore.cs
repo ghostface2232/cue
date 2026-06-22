@@ -38,13 +38,28 @@ public sealed class FileTaskStore : ITaskStore
         var results = new List<T>();
         foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
         {
-            // Guard against the legacy wildcard also matching "*.json.tmp".
+            // Guard against the wildcard also matching a stray "*.json*" temp.
             if (!file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             cancellationToken.ThrowIfCancellationRequested();
             var bytes = await File.ReadAllBytesAsync(file, cancellationToken).ConfigureAwait(false);
-            var record = JsonSerializer.Deserialize<T>(bytes, _json);
+
+            // Isolate corruption per file: one unreadable record (e.g. a half-written file left by a
+            // crash, or a partially-synced cloud file) must not take down the whole listing or the
+            // index rebuild that runs on it. Skip it and keep going. (A real log sink lands with the
+            // logging phase; for now this is the only place that swallows.)
+            T? record;
+            try
+            {
+                record = JsonSerializer.Deserialize<T>(bytes, _json);
+            }
+            catch (JsonException ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Cue] Skipping unreadable record file '{file}': {ex.Message}");
+                continue;
+            }
+
             if (record is not null)
                 results.Add(record);
         }
@@ -81,11 +96,22 @@ public sealed class FileTaskStore : ITaskStore
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, record.Id + ".json");
 
-        // Atomic write: write a temp file, then swap it into place so a crash mid-write can't
-        // leave a half-written record.
-        var temp = path + ".tmp";
-        await File.WriteAllBytesAsync(temp, bytes, cancellationToken).ConfigureAwait(false);
-        File.Move(temp, path, overwrite: true);
+        // Atomic write: write a temp file, then swap it into place so a crash mid-write can't leave a
+        // half-written record. The temp name carries a unique token rather than a fixed "{id}.tmp":
+        // two concurrent saves of the same record would otherwise fight over one temp path (sharing
+        // violation), and a fixed name strands on the next writer. We delete our own temp on failure
+        // so a thrown/cancelled write doesn't leave litter behind.
+        var temp = Path.Combine(dir, $"{record.Id}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await File.WriteAllBytesAsync(temp, bytes, cancellationToken).ConfigureAwait(false);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(temp); } catch { /* best-effort cleanup */ }
+            throw;
+        }
     }
 
     public async Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default)

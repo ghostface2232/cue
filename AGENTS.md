@@ -79,7 +79,8 @@ Domain types are pure data holders with no clock or persistence access: they nev
 - Folder layout uses type-based subfolders: `tasks/`, `projects/`, `sections/`, `labels/`, and `meta/` for settings and schema version. Each file is named `{guid}.json`, so the filename equals the record Id and records are never renamed (which minimizes the sync conflict surface).
 - The root folder path is a configuration value, never hardcoded. The v1 default is the local app data path; in a later phase it becomes a cloud-synced folder.
 - Save always updates `UpdatedAt`. Delete is a soft delete: set `DeletedAt`, then re-save the record. Never hard-delete a file.
-- Use atomic writes: write to a temp file, then swap, so a crash mid-write cannot leave a half-written file. All file IO is async.
+- Use atomic writes: write to a temp file, then swap, so a crash mid-write cannot leave a half-written file. All file IO is async. The temp name carries a unique token (not a fixed `{id}.tmp`) so concurrent saves of one record don't collide, and the writer deletes its own temp on failure.
+- Reads are corruption-isolated: `GetAll` skips a file that fails to deserialize (a half-written or partially-synced file) and returns the rest rather than throwing, so one bad file can't break a listing or the index rebuild that runs on it.
 ## Index layer
  
 - `Microsoft.Data.Sqlite`. Rebuild the index from the file folder on startup, then update it incrementally on each Save and Delete.

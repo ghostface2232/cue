@@ -21,11 +21,25 @@ public sealed class TaskItem : RecordBase
     /// <summary>Free-form notes, stored as Markdown. <c>null</c> when empty.</summary>
     public string? Notes { get; set; }
 
+    private DateTimeOffset? _completedAt;
+
     /// <summary>
     /// When the task was completed (UTC instant). <c>null</c> means it is not done. Completion is
     /// represented solely by this field; there is no separate boolean.
     /// </summary>
-    public DateTimeOffset? CompletedAt { get; set; }
+    /// <remarks>
+    /// Unlike CreatedAt/UpdatedAt (which the store stamps from a UTC clock), this is caller-set, so
+    /// the setter flattens any incoming offset to a true UTC instant — the same UTC normalization
+    /// <see cref="ZonedDateTime"/> applies to itself. This keeps invariant 7 (system timestamps are
+    /// UTC instants) true regardless of who assigns it, on save and on deserialize alike. It is a
+    /// canonicalization of the value handed in, not a clock read, so it does not break the
+    /// pure-holder rule.
+    /// </remarks>
+    public DateTimeOffset? CompletedAt
+    {
+        get => _completedAt;
+        set => _completedAt = value?.ToUniversalTime();
+    }
 
     /// <summary>Whether the task is done — derived from <see cref="CompletedAt"/> being set.</summary>
     public bool IsCompleted => CompletedAt is not null;
