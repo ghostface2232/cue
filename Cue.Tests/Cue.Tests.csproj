@@ -22,6 +22,7 @@
     <ProjectReference Include="..\Cue.Domain\Cue.Domain.csproj" />
     <ProjectReference Include="..\Cue.Storage\Cue.Storage.csproj" />
     <ProjectReference Include="..\Cue.Parsing\Cue.Parsing.csproj" />
+    <ProjectReference Include="..\ViewModels\Cue.ViewModels.csproj" />
   </ItemGroup>
 
 </Project>

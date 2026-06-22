@@ -83,6 +83,14 @@ public partial class TaskDetailViewModel : ObservableObject
     private readonly Func<Task> _refreshOwner;
     private readonly Func<Guid, Task> _openTask;
     private Guid? _taskId;
+    private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
+    private ZonedDateTime? _originalDeadline;
+    private WhenEditorMode _loadedWhenMode;
+    private DateTimeOffset? _loadedWhenDate;
+    private TimeSpan? _loadedWhenTime;
+    private bool _loadedIsEvening;
+    private DateTimeOffset? _loadedDeadlineDate;
+    private TimeSpan? _loadedDeadlineTime;
 
     public IReadOnlyList<Priority> Priorities { get; } = Enum.GetValues<Priority>();
     public IReadOnlyList<WhenEditorOption> WhenOptions { get; } =
@@ -117,10 +125,16 @@ public partial class TaskDetailViewModel : ObservableObject
     public partial DateTimeOffset? WhenDate { get; set; }
 
     [ObservableProperty]
+    public partial TimeSpan? WhenTime { get; set; }
+
+    [ObservableProperty]
     public partial bool IsEvening { get; set; }
 
     [ObservableProperty]
     public partial DateTimeOffset? DeadlineDate { get; set; }
+
+    [ObservableProperty]
+    public partial TimeSpan? DeadlineTime { get; set; }
 
     [ObservableProperty]
     public partial ProjectEditorOption? SelectedProject { get; set; }
@@ -129,6 +143,8 @@ public partial class TaskDetailViewModel : ObservableObject
     public partial string NewSubtaskTitle { get; set; } = string.Empty;
 
     public bool IsSpecificDate => SelectedWhenOption.Mode == WhenEditorMode.SpecificDate;
+    public bool HasConcreteWhen => SelectedWhenOption.Mode is WhenEditorMode.Today or WhenEditorMode.ThisEvening or WhenEditorMode.SpecificDate;
+    public bool HasDeadline => DeadlineDate is not null;
 
     public TaskDetailViewModel(
         ITaskStore store,
@@ -151,9 +167,19 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         if (value.Mode == WhenEditorMode.SpecificDate && WhenDate is null)
             WhenDate = LocalNow();
+        if (value.Mode is WhenEditorMode.Today or WhenEditorMode.ThisEvening or WhenEditorMode.SpecificDate && WhenTime is null)
+            WhenTime = TimeSpan.FromHours(12);
         if (value.Mode == WhenEditorMode.ThisEvening) IsEvening = true;
         else if (value.Mode != WhenEditorMode.SpecificDate) IsEvening = false;
         OnPropertyChanged(nameof(IsSpecificDate));
+        OnPropertyChanged(nameof(HasConcreteWhen));
+    }
+
+    partial void OnDeadlineDateChanged(DateTimeOffset? value)
+    {
+        if (value is not null && DeadlineTime is null)
+            DeadlineTime = TimeSpan.FromHours(12);
+        OnPropertyChanged(nameof(HasDeadline));
     }
 
     public async Task OpenAsync(Guid taskId)
@@ -170,9 +196,20 @@ public partial class TaskDetailViewModel : ObservableObject
         Notes = task.Notes ?? string.Empty;
         SelectedPriority = task.Priority;
         WhenDate = task.When.Date?.ToLocal();
+        WhenTime = task.When.Date?.ToLocal().TimeOfDay;
         DeadlineDate = task.Deadline?.ToLocal();
+        DeadlineTime = task.Deadline?.ToLocal().TimeOfDay;
         IsEvening = task.When.IsEvening;
         SelectedWhenOption = OptionFor(task.When);
+
+        _originalWhen = task.When;
+        _originalDeadline = task.Deadline;
+        _loadedWhenMode = SelectedWhenOption.Mode;
+        _loadedWhenDate = WhenDate;
+        _loadedWhenTime = WhenTime;
+        _loadedIsEvening = IsEvening;
+        _loadedDeadlineDate = DeadlineDate;
+        _loadedDeadlineTime = DeadlineTime;
 
         await LoadProjectsAsync(task.ProjectId);
         await LoadLabelsAsync(task.LabelIds);
@@ -197,7 +234,7 @@ public partial class TaskDetailViewModel : ObservableObject
         task.Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes;
         task.Priority = SelectedPriority;
         task.When = BuildWhen();
-        task.Deadline = DeadlineDate is { } deadline ? PinDate(deadline) : null;
+        task.Deadline = BuildDeadline();
 
         var projectId = SelectedProject?.Id;
         if (task.ProjectId != projectId) task.SectionId = null;
@@ -260,16 +297,36 @@ public partial class TaskDetailViewModel : ObservableObject
     private Task OpenSubtaskAsync(Guid id) => _openTask(id);
 
     private ScheduledWhen BuildWhen()
-        => SelectedWhenOption.Mode switch
+    {
+        if (SelectedWhenOption.Mode == _loadedWhenMode
+            && SameDay(WhenDate, _loadedWhenDate)
+            && WhenTime == _loadedWhenTime
+            && IsEvening == _loadedIsEvening)
+            return _originalWhen;
+
+        return SelectedWhenOption.Mode switch
         {
             WhenEditorMode.Unscheduled => ScheduledWhen.Unscheduled,
             WhenEditorMode.Someday => ScheduledWhen.SomeDay,
-            WhenEditorMode.Today => ScheduledWhen.On(PinDate(LocalNow())),
-            WhenEditorMode.ThisEvening => ScheduledWhen.On(PinDate(LocalNow()), evening: true),
-            WhenEditorMode.SpecificDate when WhenDate is { } date => ScheduledWhen.On(PinDate(date), IsEvening),
+            WhenEditorMode.Today => ScheduledWhen.On(PinDate(LocalNow(), WhenTime)),
+            WhenEditorMode.ThisEvening => ScheduledWhen.On(PinDate(LocalNow(), WhenTime), evening: true),
+            WhenEditorMode.SpecificDate when WhenDate is { } date => ScheduledWhen.On(PinDate(date, WhenTime), IsEvening),
             WhenEditorMode.SpecificDate => ScheduledWhen.Unscheduled,
             _ => throw new ArgumentOutOfRangeException(),
         };
+    }
+
+    private ZonedDateTime? BuildDeadline()
+    {
+        if (SameDay(DeadlineDate, _loadedDeadlineDate) && DeadlineTime == _loadedDeadlineTime)
+            return _originalDeadline;
+        return DeadlineDate is { } deadline ? PinDate(deadline, DeadlineTime) : null;
+    }
+
+    private static bool SameDay(DateTimeOffset? left, DateTimeOffset? right)
+        => left is null || right is null
+            ? left is null && right is null
+            : left.Value.Date == right.Value.Date;
 
     private WhenEditorOption OptionFor(ScheduledWhen when)
     {
@@ -285,10 +342,16 @@ public partial class TaskDetailViewModel : ObservableObject
 
     private WhenEditorOption FindOption(WhenEditorMode mode) => WhenOptions.First(option => option.Mode == mode);
 
-    private ZonedDateTime PinDate(DateTimeOffset selected)
-        => ZonedDateTime.FromLocal(
-            new DateTime(selected.Year, selected.Month, selected.Day, 12, 0, 0),
+    private ZonedDateTime PinDate(DateTimeOffset selected, TimeSpan? selectedTime)
+    {
+        var time = selectedTime ?? TimeSpan.FromHours(12);
+        if (time < TimeSpan.Zero || time >= TimeSpan.FromDays(1))
+            throw new ArgumentOutOfRangeException(nameof(selectedTime));
+
+        return ZonedDateTime.FromLocal(
+            new DateTime(selected.Year, selected.Month, selected.Day).Add(time),
             _zone.Id);
+    }
 
     private DateTimeOffset LocalNow() => TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone);
 

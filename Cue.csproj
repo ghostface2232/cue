@@ -23,7 +23,7 @@
       otherwise sweep in the sibling project folders' sources. Exclude them from every default
       item glob. Add any future sibling project here too.
     -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);Cue.Domain\**;Cue.Storage\**;Cue.Parsing\**;Cue.Tests\**;References\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Cue.Domain\**;Cue.Storage\**;Cue.Parsing\**;Cue.Tests\**;ViewModels\**;References\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -70,6 +70,7 @@
     <ProjectReference Include="Cue.Domain\Cue.Domain.csproj" />
     <ProjectReference Include="Cue.Storage\Cue.Storage.csproj" />
     <ProjectReference Include="Cue.Parsing\Cue.Parsing.csproj" />
+    <ProjectReference Include="ViewModels\Cue.ViewModels.csproj" />
   </ItemGroup>
 
   <!--

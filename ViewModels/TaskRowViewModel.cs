@@ -1,7 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Cue.Domain;
 using Cue.Storage.Index;
-using Microsoft.UI.Xaml;
 
 namespace Cue.ViewModels;
 
@@ -23,7 +22,7 @@ public partial class TaskRowViewModel : ObservableObject
     public Guid Id { get; }
     public string Title { get; }
     public string Schedule { get; }
-    public Visibility ScheduleVisibility => Schedule.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public bool HasSchedule => Schedule.Length > 0;
 
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }

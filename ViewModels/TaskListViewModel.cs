@@ -49,6 +49,7 @@ public partial class TaskListViewModel : ObservableObject
     private readonly IDateParser _parser;
     private readonly TimeProvider _clock;
     private readonly string _timeZoneId;
+    private readonly TimeZoneInfo _timeZone;
 
     // Serializes completion toggles so concurrent/rapid checks can't reorder their saves.
     private readonly SemaphoreSlim _toggleGate = new(1, 1);
@@ -87,6 +88,7 @@ public partial class TaskListViewModel : ObservableObject
     public partial string TitleCaption { get; set; } = string.Empty;
 
     public bool HasTitleCaption => TitleCaption.Length > 0;
+    public bool CanQuickAdd => _mode != TaskListMode.Logbook;
 
     public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, TimeProvider clock, TimeZoneInfo zone)
     {
@@ -95,6 +97,7 @@ public partial class TaskListViewModel : ObservableObject
         _parser = parser;
         _clock = clock;
         _timeZoneId = zone.Id;
+        _timeZone = zone;
 
         Title = "Cue";
         QuickAddText = string.Empty;
@@ -124,12 +127,14 @@ public partial class TaskListViewModel : ObservableObject
         OnPropertyChanged(nameof(HasTitleCaption));
         IsProjectMode = _mode == TaskListMode.Project;
         IsStandardList = !IsProjectMode;
+        OnPropertyChanged(nameof(CanQuickAdd));
     }
 
     /// <summary>Quick-add: parse the line, create + save a task, then refresh from the index.</summary>
     [RelayCommand]
     private async Task AddAsync()
     {
+        if (!CanQuickAdd) return;
         var text = QuickAddText?.Trim();
         if (string.IsNullOrEmpty(text))
             return;
@@ -138,7 +143,7 @@ public partial class TaskListViewModel : ObservableObject
         var task = new TaskItem
         {
             Title = parsed.Title,
-            When = parsed.When,
+            When = QuickAddContext.Apply(parsed.When, _mode, _clock.GetUtcNow(), _timeZone),
             Deadline = parsed.Deadline,
             Recurrence = parsed.Recurrence,
             ProjectId = _mode == TaskListMode.Project ? _filterId : null,

@@ -4,4 +4,5 @@
   <Project Path="Cue.Storage/Cue.Storage.csproj" />
   <Project Path="Cue.Parsing/Cue.Parsing.csproj" />
   <Project Path="Cue.Tests/Cue.Tests.csproj" />
+  <Project Path="ViewModels/Cue.ViewModels.csproj" />
 </Solution>
