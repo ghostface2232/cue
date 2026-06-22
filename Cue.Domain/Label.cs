@@ -11,4 +11,10 @@ public sealed class Label : RecordBase
 
     /// <summary>Accent color as a hex string (e.g. "#4F8CC9"). <c>null</c> uses the default.</summary>
     public string? Color { get; set; }
+
+    /// <summary>
+    /// Manual ordering rank in the label list — a LexoRank-style fractional string (see
+    /// <see cref="TaskItem.SortOrder"/>). Assigned by the store; the domain only holds it.
+    /// </summary>
+    public string SortOrder { get; set; } = string.Empty;
 }

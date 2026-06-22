@@ -10,39 +10,49 @@ public class ScheduledWhenTests
         ScheduledWhen when = default;
 
         Assert.Equal(WhenKind.Unscheduled, when.Kind);
-        Assert.False(when.IsScheduled);
+        Assert.False(when.HasDate);
         Assert.Null(when.Date);
+        Assert.False(when.IsEvening);
         Assert.Equal(ScheduledWhen.Unscheduled, when);
     }
 
-    [Theory]
-    [InlineData(WhenKind.Today)]
-    [InlineData(WhenKind.ThisEvening)]
-    [InlineData(WhenKind.SomeDay)]
-    public void RelativeBuckets_CarryNoDate(WhenKind kind)
+    [Fact]
+    public void SomeDay_IsParkedWithNoDate()
     {
-        var when = kind switch
-        {
-            WhenKind.Today => ScheduledWhen.Today,
-            WhenKind.ThisEvening => ScheduledWhen.ThisEvening,
-            WhenKind.SomeDay => ScheduledWhen.SomeDay,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-        };
+        var when = ScheduledWhen.SomeDay;
 
-        Assert.Equal(kind, when.Kind);
-        Assert.True(when.IsScheduled);
+        Assert.Equal(WhenKind.SomeDay, when.Kind);
+        Assert.False(when.HasDate);
         Assert.Null(when.Date);
     }
 
     [Fact]
-    public void OnDate_CarriesAZonedDate()
+    public void On_PinsAZonedDate()
     {
         var date = ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 9, 0, 0), "Asia/Seoul");
         var when = ScheduledWhen.On(date);
 
         Assert.Equal(WhenKind.OnDate, when.Kind);
-        Assert.True(when.IsScheduled);
-        Assert.NotNull(when.Date);
+        Assert.True(when.HasDate);
         Assert.Equal(date, when.Date!.Value);
+        Assert.False(when.IsEvening);
+    }
+
+    // "Today" and "This Evening" are both OnDate with the current day stamped by the caller;
+    // This Evening just sets the evening flag. They are not distinct stored states.
+    [Fact]
+    public void ThisEvening_IsAnOnDateWithTheEveningFlag()
+    {
+        var today = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 0, 0, 0), "Asia/Seoul");
+
+        var todayWhen = ScheduledWhen.On(today);
+        var eveningWhen = ScheduledWhen.On(today, evening: true);
+
+        Assert.Equal(WhenKind.OnDate, todayWhen.Kind);
+        Assert.False(todayWhen.IsEvening);
+
+        Assert.Equal(WhenKind.OnDate, eveningWhen.Kind);
+        Assert.True(eveningWhen.IsEvening);
+        Assert.Equal(today, eveningWhen.Date!.Value);
     }
 }

@@ -13,13 +13,17 @@ namespace Cue.Domain;
 /// makes folder-based sync safe later — a deletion is just another last-write-wins update.
 /// </para>
 /// </remarks>
-public abstract class RecordBase
+public abstract class RecordBase : IEquatable<RecordBase>
 {
     /// <summary>Schema version written by the current build. Bump when the shape changes.</summary>
     public const int CurrentSchemaVersion = 1;
 
-    /// <summary>Stable identity. The persistence layer uses this as the file name ({Id}.json).</summary>
-    public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>
+    /// Stable identity. The persistence layer uses this as the file name ({Id}.json). Init-only:
+    /// it is set once at creation (or on deserialization) and never reassigned, which keeps the
+    /// Id-based <see cref="GetHashCode"/> stable while an instance lives in a hash set.
+    /// </summary>
+    public Guid Id { get; init; } = Guid.NewGuid();
 
     /// <summary>When the record was first created (UTC).</summary>
     public DateTimeOffset CreatedAt { get; set; }
@@ -44,10 +48,17 @@ public abstract class RecordBase
     /// record type with the same <see cref="Id"/>, regardless of their other field values. This
     /// keeps de-duplication and lookups (<c>Distinct</c>, <c>HashSet</c>, <c>Contains</c>)
     /// keyed on Id rather than on whole-object value comparison.
+    /// <para>
+    /// Note: the <c>==</c> operator is left as reference equality (the C# default for classes);
+    /// use <see cref="Equals(RecordBase?)"/> / collection membership for identity comparison.
+    /// </para>
     /// </summary>
-    public override bool Equals(object? obj)
-        => obj is RecordBase other && other.GetType() == GetType() && other.Id == Id;
+    public bool Equals(RecordBase? other)
+        => other is not null && other.GetType() == GetType() && other.Id == Id;
 
-    /// <inheritdoc cref="Equals(object?)"/>
+    /// <inheritdoc cref="Equals(RecordBase?)"/>
+    public override bool Equals(object? obj) => Equals(obj as RecordBase);
+
+    /// <inheritdoc cref="Equals(RecordBase?)"/>
     public override int GetHashCode() => Id.GetHashCode();
 }

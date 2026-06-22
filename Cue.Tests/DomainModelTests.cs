@@ -16,7 +16,7 @@ public class DomainModelTests
         Assert.False(task.IsCompleted);
         Assert.Null(task.Deadline);
         Assert.Equal(WhenKind.Unscheduled, task.When.Kind);
-        Assert.False(task.When.IsScheduled);
+        Assert.False(task.When.HasDate);
         Assert.Equal(Priority.None, task.Priority);
         Assert.Null(task.ProjectId);
         Assert.Null(task.SectionId);
