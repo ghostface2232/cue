@@ -6,7 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:Cue.ViewModels"
-    Background="White"
+    Background="{ThemeResource LayerFillColorDefaultBrush}"
     mc:Ignorable="d">
 
     <Page.Resources>
@@ -27,13 +27,12 @@
         <Style x:Key="MetadataTextStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-            <Setter Property="FontFamily" Value="Cascadia Mono" />
         </Style>
 
         <DataTemplate x:Key="ChildTaskRowTemplate" x:DataType="vm:TaskRowViewModel">
             <Border
-                Margin="0,3,4,3"
-                Padding="10,9"
+                Margin="0,1,4,1"
+                Padding="10,7"
                 Background="Transparent"
                 CornerRadius="7"
                 Loaded="TaskSurface_Loaded"
@@ -102,6 +101,7 @@
                     <Rectangle Margin="0,2,0,3" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
                     <ItemsRepeater
                         Grid.Column="1"
+                        Margin="6,0,0,0"
                         ElementClearing="TaskRepeater_ElementClearing"
                         ElementPrepared="TaskRepeater_ElementPrepared"
                         ItemTemplate="{StaticResource ChildTaskRowTemplate}"
@@ -130,7 +130,6 @@
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Style="{StaticResource CaptionTextBlockStyle}"
                     Text="{x:Bind ViewModel.TitleCaption, Mode=OneWay}"
-                    FontFamily="Cascadia Mono"
                     Visibility="{x:Bind ViewModel.HasTitleCaption, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
             <Button Grid.Column="1" Click="AddSection_Click" Content="섹션 추가" Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
@@ -185,7 +184,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
                                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Name}" />
-                                        <TextBlock FontFamily="Cascadia Mono" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DeadlineCaption}" />
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DeadlineCaption}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="{x:Bind CanEdit, Converter={StaticResource BoolToVisibility}}">
                                         <Button Click="RenameSection_Click" Content="이름 변경" Tag="{x:Bind Id}" />
@@ -205,12 +204,16 @@
                 x:Name="DetailPanel"
                 Grid.Column="1"
                 Width="460"
+                Margin="0,0,4,4"
                 Padding="18,16,6,20"
-                Background="White"
-                BorderBrush="#12000000"
-                BorderThickness="1,0,0,0"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="16"
                 Loaded="DetailPanel_Loaded"
+                Translation="0,0,16"
                 Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                <Border.Shadow><ThemeShadow /></Border.Shadow>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="2,0,16,0" Spacing="13">
                         <Button
@@ -262,7 +265,7 @@
                             </HyperlinkButton>
                         </Grid>
 
-                        <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                        <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
                             <Border.Shadow><ThemeShadow /></Border.Shadow>
                             <StackPanel Spacing="11">
                                 <TextBlock FontWeight="SemiBold" Text="작업 정보" />
@@ -275,22 +278,29 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                        <Button
+                            HorizontalAlignment="Left"
+                            Margin="4,0,0,2"
+                            Click="EnableWhen_Click"
+                            Content="+ 예정 추가"
+                            Visibility="{x:Bind ViewModel.Detail.CanAddWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                             <Border.Shadow><ThemeShadow /></Border.Shadow>
                             <StackPanel Spacing="11">
-                                <TextBlock FontWeight="SemiBold" Text="예정" />
+                                <Grid>
+                                    <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="예정" />
+                                    <Button HorizontalAlignment="Right" Padding="8,3" Background="Transparent" BorderThickness="0" Click="ClearWhen_Click" Content="제거" />
+                                </Grid>
                                 <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.WhenDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
                                 <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock Text="시각" />
                                     <Grid ColumnSpacing="7">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                        <ComboBox Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenHour, Mode=TwoWay}" />
+                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenHour, Mode=TwoWay}" />
                                         <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="18" Text=":" />
-                                        <ComboBox Grid.Column="2" Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
+                                        <ComboBox Grid.Column="2" Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
                                     </Grid>
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Button Click="WhenMorning_Click" Content="오전 9시" /><Button Click="WhenAfternoon_Click" Content="오후 1시" /><Button Click="WhenEvening_Click" Content="오후 6시" />
-                                    </StackPanel>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="18">
                                     <CheckBox Content="저녁" IsChecked="{x:Bind ViewModel.Detail.IsEvening, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
@@ -299,7 +309,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
                             <Border.Shadow><ThemeShadow /></Border.Shadow>
                             <StackPanel Spacing="11">
                                 <TextBlock FontWeight="SemiBold" Text="마감" />
@@ -307,16 +317,15 @@
                                 <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock Text="시각" />
                                     <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <ComboBox Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
+                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
                                         <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
-                                        <ComboBox Width="72" FontFamily="Cascadia Mono" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
+                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="6"><Button Click="DeadlineMorning_Click" Content="오전 9시" /><Button Click="DeadlineAfternoon_Click" Content="오후 1시" /><Button Click="DeadlineEvening_Click" Content="오후 6시" /></StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
                             <Border.Shadow><ThemeShadow /></Border.Shadow>
                             <StackPanel Spacing="10">
                                 <Grid><TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" /></Grid>
@@ -327,7 +336,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,8">
+                        <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
                             <Border.Shadow><ThemeShadow /></Border.Shadow>
                             <StackPanel Spacing="11">
                                 <TextBlock FontWeight="SemiBold" Text="서브태스크" />

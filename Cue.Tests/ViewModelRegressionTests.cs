@@ -139,6 +139,38 @@ public sealed class ViewModelRegressionTests
         Assert.Equal(new TimeSpan(13, 5, 0), saved!.When.Date!.Value.ToLocal().TimeOfDay);
     }
 
+    [Fact]
+    public async Task UnscheduledTaskOffersOptionalWhenEditorAlongsideDeadline()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem
+        {
+            Title = "deadline first",
+            Deadline = ZonedDateTime.FromLocal(new DateTime(2026, 6, 25, 18, 0, 0), "UTC"),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), clock, TimeZoneInfo.Utc);
+        await vm.Detail.OpenAsync(task.Id);
+
+        Assert.True(vm.Detail.HasDeadline);
+        Assert.True(vm.Detail.CanAddWhen);
+        Assert.False(vm.Detail.IsWhenEditorVisible);
+
+        vm.Detail.EnableWhenEditor();
+        Assert.False(vm.Detail.CanAddWhen);
+        Assert.True(vm.Detail.IsWhenEditorVisible);
+
+        vm.Detail.ClearWhen();
+        Assert.True(vm.Detail.CanAddWhen);
+        Assert.False(vm.Detail.IsWhenEditorVisible);
+    }
+
     [Theory]
     [InlineData(TaskListMode.Today, WhenKind.OnDate, 0)]
     [InlineData(TaskListMode.Upcoming, WhenKind.OnDate, 1)]

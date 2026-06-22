@@ -265,12 +265,8 @@ public sealed partial class TaskListPage : Page
         return shadow;
     }
 
-    private void WhenMorning_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.SetWhenTime(TimeSpan.FromHours(9));
-    private void WhenAfternoon_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.SetWhenTime(TimeSpan.FromHours(13));
-    private void WhenEvening_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.SetWhenTime(TimeSpan.FromHours(18));
-    private void DeadlineMorning_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.SetDeadlineTime(TimeSpan.FromHours(9));
-    private void DeadlineAfternoon_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.SetDeadlineTime(TimeSpan.FromHours(13));
-    private void DeadlineEvening_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.SetDeadlineTime(TimeSpan.FromHours(18));
+    private void EnableWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.EnableWhenEditor();
+    private void ClearWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.ClearWhen();
 
     private static bool IsInteractiveElement(DependencyObject? element)
     {

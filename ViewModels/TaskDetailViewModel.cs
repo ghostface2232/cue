@@ -171,6 +171,8 @@ public partial class TaskDetailViewModel : ObservableObject
     public bool HasConcreteWhen => SelectedWhenOption.Mode is WhenEditorMode.Today or WhenEditorMode.ThisEvening or WhenEditorMode.SpecificDate;
     public bool HasDeadline => DeadlineDate is not null;
     public bool HasParentTask => ParentTaskId is not null;
+    public bool IsWhenEditorVisible => SelectedWhenOption.Mode != WhenEditorMode.Unscheduled;
+    public bool CanAddWhen => !IsWhenEditorVisible;
 
     public TaskDetailViewModel(
         ITaskStore store,
@@ -199,6 +201,8 @@ public partial class TaskDetailViewModel : ObservableObject
         else if (value.Mode != WhenEditorMode.SpecificDate) IsEvening = false;
         OnPropertyChanged(nameof(IsSpecificDate));
         OnPropertyChanged(nameof(HasConcreteWhen));
+        OnPropertyChanged(nameof(IsWhenEditorVisible));
+        OnPropertyChanged(nameof(CanAddWhen));
     }
 
     partial void OnWhenDateChanged(DateTimeOffset? value)
@@ -304,6 +308,25 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         DeadlineTime = time;
         SetDeadlineTimeEditors(time);
+    }
+
+    public void EnableWhenEditor()
+    {
+        WhenDate = LocalNow();
+        WhenTime ??= TimeSpan.FromHours(12);
+        SetWhenTimeEditors(WhenTime);
+        SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
+    }
+
+    public void ClearWhen()
+    {
+        IsSomeday = false;
+        IsEvening = false;
+        WhenDate = null;
+        WhenTime = null;
+        SelectedWhenHour = null;
+        SelectedWhenMinute = null;
+        SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
     }
 
     [RelayCommand]
