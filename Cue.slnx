@@ -1,3 +1,5 @@
 <Solution>
   <Project Path="Cue.csproj" />
+  <Project Path="Cue.Domain/Cue.Domain.csproj" />
+  <Project Path="Cue.Tests/Cue.Tests.csproj" />
 </Solution>
