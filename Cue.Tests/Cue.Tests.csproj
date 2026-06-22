@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Cue.Domain\Cue.Domain.csproj" />
+    <ProjectReference Include="..\Cue.Storage\Cue.Storage.csproj" />
   </ItemGroup>
 
 </Project>

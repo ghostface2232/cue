@@ -15,10 +15,10 @@
     <Nullable>enable</Nullable>
     <!--
       This app project lives at the repo root, so the SDK's default **/*.cs glob would
-      otherwise sweep in the sibling Cue.Domain / Cue.Tests projects' sources. Exclude their
-      folders from every default item glob. Add any future sibling project here too.
+      otherwise sweep in the sibling project folders' sources. Exclude them from every default
+      item glob. Add any future sibling project here too.
     -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);Cue.Domain\**;Cue.Tests\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Cue.Domain\**;Cue.Storage\**;Cue.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -62,6 +62,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="Cue.Domain\Cue.Domain.csproj" />
+    <ProjectReference Include="Cue.Storage\Cue.Storage.csproj" />
   </ItemGroup>
 
   <!--
