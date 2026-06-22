@@ -1,9 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Cue.Parsing;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.ViewModels;
+using Cue.Services;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -27,15 +29,19 @@ public partial class App : Application
 
     protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
-        // Open the store (and rebuild the index from the files) before composing the rest, since the
-        // store is created through an async factory and everything else depends on it.
-        var store = await IndexedTaskStore.OpenAsync(
-            FileTaskStoreOptions.CreateDefault(), TimeProvider.System, TimeZoneInfo.Local);
+        try
+        {
+            var store = await IndexedTaskStore.OpenAsync(
+                FileTaskStoreOptions.CreateDefault(), TimeProvider.System, TimeZoneInfo.Local);
 
-        Services = ConfigureServices(store);
-
-        _window = new MainWindow();
-        _window.Activate();
+            Services = ConfigureServices(store);
+            _window = new MainWindow();
+            _window.Activate();
+        }
+        catch (Exception exception)
+        {
+            ShowStartupFailure(exception);
+        }
     }
 
     /// <summary>Registers the services and view models. The store is supplied as a ready instance.</summary>
@@ -55,11 +61,37 @@ public partial class App : Application
         // and the query side (ITaskIndex).
         services.AddSingleton<ITaskStore>(store);
         services.AddSingleton<ITaskIndex>(store);
+        services.AddSingleton<DialogService>();
 
         // A fresh list view model per navigation.
         services.AddTransient<TaskListViewModel>();
         services.AddTransient<ShellViewModel>();
 
         return services.BuildServiceProvider();
+    }
+
+    private void ShowStartupFailure(Exception exception)
+    {
+        _window = new Window
+        {
+            Title = "Cue 시작 오류",
+            Content = new StackPanel
+            {
+                Padding = new Thickness(32),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = "Cue를 시작할 수 없습니다.", FontSize = 24 },
+                    new TextBlock
+                    {
+                        Text = exception.Message,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxWidth = 640,
+                    },
+                    new TextBlock { Text = "데이터 폴더 권한과 사용 가능한 디스크 공간을 확인한 뒤 다시 실행해 주세요." },
+                },
+            },
+        };
+        _window.Activate();
     }
 }

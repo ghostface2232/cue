@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Cue.Pages;
 using Cue.Storage.Index;
 using Cue.ViewModels;
+using Cue.Services;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -14,12 +15,14 @@ namespace Cue;
 public sealed partial class MainWindow : Window
 {
     private TaskListNavigation? _currentNavigation;
+    private readonly DialogService _dialogs;
 
     public ShellViewModel ViewModel { get; }
 
     public MainWindow()
     {
         ViewModel = App.Services.GetRequiredService<ShellViewModel>();
+        _dialogs = App.Services.GetRequiredService<DialogService>();
         InitializeComponent();
 
         ExtendsContentIntoTitleBar = true;
@@ -41,11 +44,19 @@ public sealed partial class MainWindow : Window
 
     private async void NavView_Loaded(object sender, RoutedEventArgs e)
     {
-        await ViewModel.LoadCommand.ExecuteAsync(null);
-        RebuildLiveNavigation();
+        await RunSafelyAsync(async () =>
+        {
+            await ViewModel.LoadCommand.ExecuteAsync(null);
+            RebuildLiveNavigation();
+        });
     }
 
     private async void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        await RunSafelyAsync(() => HandleSelectionChangedAsync(args));
+    }
+
+    private async Task HandleSelectionChangedAsync(NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is not NavigationViewItem item)
             return;
@@ -122,44 +133,56 @@ public sealed partial class MainWindow : Window
 
     private async void RenameProject_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
-        var name = await PromptNameAsync("프로젝트 이름 변경", "프로젝트 이름", project.Name);
-        if (name is null) return;
-        var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
-        await ViewModel.RenameProjectCommand.ExecuteAsync(new RenameRecordRequest(project.Id, name));
-        RebuildLiveNavigation();
-        if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Project, project.Id, name, project.DeadlineDate));
+        await RunSafelyAsync(async () =>
+        {
+            if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
+            var name = await PromptNameAsync("프로젝트 이름 변경", "프로젝트 이름", project.Name);
+            if (name is null) return;
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
+            await ViewModel.RenameProjectCommand.ExecuteAsync(new RenameRecordRequest(project.Id, name));
+            RebuildLiveNavigation();
+            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Project, project.Id, name, project.DeadlineDate));
+        });
     }
 
     private async void RenameLabel_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
-        var name = await PromptNameAsync("라벨 이름 변경", "라벨 이름", label.Name);
-        if (name is null) return;
-        var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
-        await ViewModel.RenameLabelCommand.ExecuteAsync(new RenameRecordRequest(label.Id, name));
-        RebuildLiveNavigation();
-        if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Label, label.Id, name));
+        await RunSafelyAsync(async () =>
+        {
+            if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
+            var name = await PromptNameAsync("라벨 이름 변경", "라벨 이름", label.Name);
+            if (name is null) return;
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
+            await ViewModel.RenameLabelCommand.ExecuteAsync(new RenameRecordRequest(label.Id, name));
+            RebuildLiveNavigation();
+            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Label, label.Id, name));
+        });
     }
 
     private async void DeleteProject_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
-        if (!await ConfirmDeleteAsync("프로젝트를 삭제할까요?", "프로젝트의 작업은 삭제하지 않고 Cue Inbox로 이동합니다.")) return;
-        var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
-        await ViewModel.DeleteProjectCommand.ExecuteAsync(project.Id);
-        RebuildLiveNavigation();
-        if (isCurrent) NavigateHome();
+        await RunSafelyAsync(async () =>
+        {
+            if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
+            if (!await ConfirmDeleteAsync("프로젝트를 삭제할까요?", "프로젝트의 작업은 삭제하지 않고 Cue Inbox로 이동합니다.")) return;
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
+            await ViewModel.DeleteProjectCommand.ExecuteAsync(project.Id);
+            RebuildLiveNavigation();
+            if (isCurrent) NavigateHome();
+        });
     }
 
     private async void DeleteLabel_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
-        if (!await ConfirmDeleteAsync("라벨을 삭제할까요?", "작업은 유지되고 이 라벨 참조만 제거됩니다.")) return;
-        var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
-        await ViewModel.DeleteLabelCommand.ExecuteAsync(label.Id);
-        RebuildLiveNavigation();
-        if (isCurrent) NavigateHome();
+        await RunSafelyAsync(async () =>
+        {
+            if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
+            if (!await ConfirmDeleteAsync("라벨을 삭제할까요?", "작업은 유지되고 이 라벨 참조만 제거됩니다.")) return;
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
+            await ViewModel.DeleteLabelCommand.ExecuteAsync(label.Id);
+            RebuildLiveNavigation();
+            if (isCurrent) NavigateHome();
+        });
     }
 
     private void Navigate(TaskListNavigation navigation)
@@ -193,7 +216,7 @@ public sealed partial class MainWindow : Window
             CloseButtonText = "취소",
             DefaultButton = ContentDialogButton.Primary,
         };
-        var result = await dialog.ShowAsync();
+        var result = await _dialogs.ShowAsync(dialog);
         var name = input.Text.Trim();
         return result == ContentDialogResult.Primary && name.Length > 0 ? name : null;
     }
@@ -209,6 +232,25 @@ public sealed partial class MainWindow : Window
             CloseButtonText = "취소",
             DefaultButton = ContentDialogButton.Close,
         };
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        return await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary;
+    }
+
+    private async Task RunSafelyAsync(Func<Task> operation)
+    {
+        try
+        {
+            await operation();
+        }
+        catch (Exception exception)
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = NavView.XamlRoot,
+                Title = "작업을 완료하지 못했습니다",
+                Content = exception.Message,
+                CloseButtonText = "확인",
+            };
+            await _dialogs.TryShowAsync(dialog);
+        }
     }
 }

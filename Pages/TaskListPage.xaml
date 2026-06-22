@@ -32,7 +32,7 @@
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Style="{StaticResource CaptionTextBlockStyle}"
                         Text="{x:Bind Schedule}"
-                        Visibility="{x:Bind ScheduleVisibility}" />
+                        Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </Grid>
         </DataTemplate>
@@ -40,6 +40,7 @@
 
     <Grid Padding="24,16,24,16" RowSpacing="16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -65,13 +66,22 @@
                 Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
         </Grid>
 
-        <TextBox
+        <InfoBar
+            x:Name="ErrorInfoBar"
             Grid.Row="1"
+            IsClosable="True"
+            IsOpen="False"
+            Severity="Error"
+            Title="작업을 완료하지 못했습니다" />
+
+        <TextBox
+            Grid.Row="2"
+            IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
             KeyDown="QuickAdd_KeyDown"
             PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
             Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-        <Grid Grid.Row="2" ColumnSpacing="16">
+        <Grid Grid.Row="3" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -188,6 +198,10 @@
                             Date="{x:Bind ViewModel.Detail.WhenDate, Mode=TwoWay}"
                             Header="구체 날짜"
                             Visibility="{x:Bind ViewModel.Detail.IsSpecificDate, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        <TimePicker
+                            Header="예정 시각"
+                            SelectedTime="{x:Bind ViewModel.Detail.WhenTime, Mode=TwoWay}"
+                            Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                         <CheckBox
                             Content="저녁 플래그"
                             IsChecked="{x:Bind ViewModel.Detail.IsEvening, Mode=TwoWay}"
@@ -196,6 +210,10 @@
                         <CalendarDatePicker
                             Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}"
                             Header="마감일 (Deadline)" />
+                        <TimePicker
+                            Header="마감 시각"
+                            SelectedTime="{x:Bind ViewModel.Detail.DeadlineTime, Mode=TwoWay}"
+                            Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
                         <TextBlock Text="라벨" />
                         <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
