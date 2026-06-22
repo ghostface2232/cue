@@ -54,3 +54,6 @@ _ReSharper*/
 # Generated files
 Generated\ Files/
 *_wpftmp.csproj
+
+# Local third-party clones kept for reference only (e.g. chrono-node); not part of this repo.
+References/

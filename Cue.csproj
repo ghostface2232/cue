@@ -18,7 +18,7 @@
       otherwise sweep in the sibling project folders' sources. Exclude them from every default
       item glob. Add any future sibling project here too.
     -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);Cue.Domain\**;Cue.Storage\**;Cue.Tests\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Cue.Domain\**;Cue.Storage\**;Cue.Parsing\**;Cue.Tests\**;References\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
