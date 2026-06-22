@@ -38,7 +38,25 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.TitleCaption, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.HasTitleCaption, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+            </StackPanel>
+            <Button
+                Grid.Column="1"
+                Click="AddSection_Click"
+                Content="섹션 추가"
+                Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+        </Grid>
 
         <TextBox
             Grid.Row="1"
@@ -50,7 +68,8 @@
             <ListView
                 ItemTemplate="{StaticResource TaskRowTemplate}"
                 ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
-                SelectionMode="None">
+                SelectionMode="None"
+                Visibility="{x:Bind ViewModel.IsStandardList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                 <ListView.Footer>
                     <StackPanel
                         Margin="0,16,0,0"
@@ -64,6 +83,42 @@
                             ItemsSource="{x:Bind ViewModel.EveningTasks, Mode=OneWay}" />
                     </StackPanel>
                 </ListView.Footer>
+            </ListView>
+
+            <ListView
+                ItemsSource="{x:Bind ViewModel.ProjectGroups, Mode=OneWay}"
+                SelectionMode="None"
+                Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:TaskSectionGroupViewModel">
+                        <StackPanel Margin="0,0,0,12">
+                            <Grid Margin="12,4" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Name}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind DeadlineCaption}" />
+                                </StackPanel>
+                                <StackPanel
+                                    Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="4"
+                                    Visibility="{x:Bind CanEdit, Converter={StaticResource BoolToVisibility}}">
+                                    <Button Click="RenameSection_Click" Content="이름 변경" Tag="{x:Bind Id}" />
+                                    <Button Click="DeleteSection_Click" Content="삭제" Tag="{x:Bind Id}" />
+                                </StackPanel>
+                            </Grid>
+                            <ItemsControl
+                                ItemTemplate="{StaticResource TaskRowTemplate}"
+                                ItemsSource="{x:Bind Tasks}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
             </ListView>
 
             <TextBlock

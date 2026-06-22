@@ -39,6 +39,7 @@
             SelectionChanged="NavView_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem
+                    x:Name="CueItem"
                     Content="Cue"
                     IsSelected="True"
                     Tag="inbox">
@@ -70,6 +71,25 @@
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE73E;" />
                     </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItemSeparator />
+                <NavigationViewItem
+                    x:Name="ProjectsGroup"
+                    Content="Projects"
+                    IsExpanded="True"
+                    SelectsOnInvoked="False">
+                    <NavigationViewItem.MenuItems>
+                        <NavigationViewItem Content="+ 새 프로젝트" Tag="create-project" />
+                    </NavigationViewItem.MenuItems>
+                </NavigationViewItem>
+                <NavigationViewItem
+                    x:Name="LabelsGroup"
+                    Content="Labels"
+                    IsExpanded="True"
+                    SelectsOnInvoked="False">
+                    <NavigationViewItem.MenuItems>
+                        <NavigationViewItem Content="+ 새 라벨" Tag="create-label" />
+                    </NavigationViewItem.MenuItems>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <Frame x:Name="NavFrame" />

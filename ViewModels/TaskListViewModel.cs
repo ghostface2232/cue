@@ -28,6 +28,12 @@ public enum TaskListMode
 
     /// <summary>Completed tasks.</summary>
     Logbook,
+
+    /// <summary>Open tasks belonging to one project.</summary>
+    Project,
+
+    /// <summary>Open tasks carrying one label.</summary>
+    Label,
 }
 
 /// <summary>
@@ -48,11 +54,14 @@ public partial class TaskListViewModel : ObservableObject
     private readonly SemaphoreSlim _toggleGate = new(1, 1);
 
     private TaskListMode _mode = TaskListMode.Inbox;
+    private Guid? _filterId;
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
     /// <summary>The evening-flagged subset of Today, displayed as a section on that page.</summary>
     public ObservableCollection<TaskRowViewModel> EveningTasks { get; } = new();
+
+    public ObservableCollection<TaskSectionGroupViewModel> ProjectGroups { get; } = new();
 
     [ObservableProperty]
     public partial string Title { get; set; }
@@ -65,6 +74,17 @@ public partial class TaskListViewModel : ObservableObject
 
     [ObservableProperty]
     public partial bool HasEveningTasks { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsStandardList { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsProjectMode { get; set; }
+
+    [ObservableProperty]
+    public partial string TitleCaption { get; set; } = string.Empty;
+
+    public bool HasTitleCaption => TitleCaption.Length > 0;
 
     public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, TimeProvider clock, TimeZoneInfo zone)
     {
@@ -79,10 +99,11 @@ public partial class TaskListViewModel : ObservableObject
     }
 
     /// <summary>Switches which index view this list reflects, and retitles accordingly.</summary>
-    public void SetMode(TaskListMode mode)
+    public void SetNavigation(TaskListNavigation navigation)
     {
-        _mode = mode;
-        Title = mode switch
+        _mode = navigation.Mode;
+        _filterId = navigation.FilterId;
+        Title = navigation.Title ?? navigation.Mode switch
         {
             TaskListMode.Inbox => "Cue",
             TaskListMode.Today => "Today",
@@ -90,8 +111,16 @@ public partial class TaskListViewModel : ObservableObject
             TaskListMode.Anytime => "Anytime",
             TaskListMode.Someday => "Someday",
             TaskListMode.Logbook => "Logbook",
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
+            TaskListMode.Project => "Project",
+            TaskListMode.Label => "Label",
+            _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
+        TitleCaption = navigation.DeadlineDate is { } deadline
+            ? $"마감 {deadline.Month}월 {deadline.Day}일"
+            : string.Empty;
+        OnPropertyChanged(nameof(HasTitleCaption));
+        IsProjectMode = _mode == TaskListMode.Project;
+        IsStandardList = !IsProjectMode;
     }
 
     /// <summary>Quick-add: parse the line, create + save a task, then refresh from the index.</summary>
@@ -109,8 +138,10 @@ public partial class TaskListViewModel : ObservableObject
             When = parsed.When,
             Deadline = parsed.Deadline,
             Recurrence = parsed.Recurrence,
-            // No project yet — a new task lands in the unclassified Inbox.
+            ProjectId = _mode == TaskListMode.Project ? _filterId : null,
         };
+        if (_mode == TaskListMode.Label && _filterId is { } labelId)
+            task.LabelIds.Add(labelId);
 
         await _store.SaveAsync(task);
         QuickAddText = string.Empty;
@@ -145,6 +176,12 @@ public partial class TaskListViewModel : ObservableObject
             case TaskListMode.Logbook:
                 items = await _index.GetLogbookAsync();
                 break;
+            case TaskListMode.Project:
+                items = await _index.GetByProjectAsync(RequiredFilterId());
+                break;
+            case TaskListMode.Label:
+                items = await _index.GetByLabelAsync(RequiredFilterId());
+                break;
             default:
                 throw new ArgumentOutOfRangeException();
         }
@@ -162,8 +199,59 @@ public partial class TaskListViewModel : ObservableObject
             EveningTasks.Add(CreateRow(item));
 
         HasEveningTasks = EveningTasks.Count > 0;
-        IsEmpty = Tasks.Count == 0 && !HasEveningTasks;
+
+        ProjectGroups.Clear();
+        if (_mode == TaskListMode.Project)
+        {
+            var sections = await _index.GetSectionsByProjectAsync(RequiredFilterId());
+            var groups = sections.ToDictionary(section => section.Id, section => new TaskSectionGroupViewModel(section));
+            var unsectioned = new TaskSectionGroupViewModel(null);
+            foreach (var row in Tasks)
+            {
+                var item = items.First(item => item.Id == row.Id);
+                if (item.SectionId is { } sectionId && groups.TryGetValue(sectionId, out var group))
+                    group.Tasks.Add(row);
+                else
+                    unsectioned.Tasks.Add(row);
+            }
+            Tasks.Clear();
+            foreach (var section in sections) ProjectGroups.Add(groups[section.Id]);
+            if (unsectioned.Tasks.Count > 0) ProjectGroups.Add(unsectioned);
+        }
+
+        IsEmpty = IsProjectMode
+            ? ProjectGroups.Count == 0
+            : Tasks.Count == 0 && !HasEveningTasks;
     }
+
+    [RelayCommand]
+    private async Task CreateSectionAsync(string name)
+    {
+        if (!IsProjectMode || string.IsNullOrWhiteSpace(name)) return;
+        await _store.SaveAsync(new Section { ProjectId = RequiredFilterId(), Name = name.Trim() });
+        await LoadAsync();
+    }
+
+    [RelayCommand]
+    private async Task RenameSectionAsync(RenameRecordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name)) return;
+        var section = await _store.GetAsync<Section>(request.Id);
+        if (section is null || section.IsDeleted) return;
+        section.Name = request.Name.Trim();
+        await _store.SaveAsync(section);
+        await LoadAsync();
+    }
+
+    [RelayCommand]
+    private async Task DeleteSectionAsync(Guid id)
+    {
+        await _store.DeleteAsync<Section>(id);
+        await LoadAsync();
+    }
+
+    private Guid RequiredFilterId()
+        => _filterId ?? throw new InvalidOperationException($"{_mode} navigation requires an id.");
 
     private TaskRowViewModel CreateRow(TaskListItem item)
         => new(item, row => ToggleCompleteCommand.Execute(row));

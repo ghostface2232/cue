@@ -58,6 +58,7 @@ public partial class App : Application
 
         // A fresh list view model per navigation.
         services.AddTransient<TaskListViewModel>();
+        services.AddTransient<ShellViewModel>();
 
         return services.BuildServiceProvider();
     }
