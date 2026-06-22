@@ -101,6 +101,135 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task NavigationRecords_AreIndexedFilteredAndRebuiltFromFiles()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        var activeProject = new Project { Name = "활성 프로젝트", SortOrder = "a" };
+        var archivedProject = new Project { Name = "보관 프로젝트", IsArchived = true };
+        var completedProject = new Project { Name = "완료 프로젝트", CompletedAt = Now };
+        var activeSection = new Section { ProjectId = activeProject.Id, Name = "활성 섹션" };
+        var archivedSection = new Section { ProjectId = activeProject.Id, Name = "보관 섹션", IsArchived = true };
+        var completedSection = new Section { ProjectId = activeProject.Id, Name = "완료 섹션", CompletedAt = Now };
+        var label = new Label { Name = "중요", Color = "#ff0000" };
+
+        await using (var store = await OpenAsync(root, clock))
+        {
+            foreach (var project in new[] { activeProject, archivedProject, completedProject })
+                await store.SaveAsync(project);
+            foreach (var section in new[] { activeSection, archivedSection, completedSection })
+                await store.SaveAsync(section);
+            await store.SaveAsync(label);
+
+            Assert.Equal(activeProject.Id, Assert.Single(await store.GetProjectsAsync()).Id);
+            Assert.Equal(activeSection.Id, Assert.Single(await store.GetSectionsByProjectAsync(activeProject.Id)).Id);
+            Assert.Equal(label.Id, Assert.Single(await store.GetLabelsAsync()).Id);
+
+            // An ordinary Save updates the file first and immediately reflects a rename into SQLite.
+            activeProject.Name = "이름 변경됨";
+            await store.SaveAsync(activeProject);
+            Assert.Equal("이름 변경됨", Assert.Single(await store.GetProjectsAsync()).Name);
+        }
+
+        File.Delete(Path.Combine(root, "index.db"));
+        await using var reopened = await OpenAsync(root, clock);
+        Assert.Equal("이름 변경됨", Assert.Single(await reopened.GetProjectsAsync()).Name);
+        Assert.Equal(activeSection.Id, Assert.Single(await reopened.GetSectionsByProjectAsync(activeProject.Id)).Id);
+        Assert.Equal(label.Id, Assert.Single(await reopened.GetLabelsAsync()).Id);
+    }
+
+    [Fact]
+    public async Task NavigationLists_AreServedFromIndex_NotRecordFolders()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var project = new Project { Name = "색인 프로젝트" };
+        var label = new Label { Name = "색인 라벨" };
+        await store.SaveAsync(project);
+        await store.SaveAsync(label);
+
+        File.Delete(Path.Combine(root, "projects", project.Id + ".json"));
+        File.Delete(Path.Combine(root, "labels", label.Id + ".json"));
+
+        Assert.Equal(project.Id, Assert.Single(await store.GetProjectsAsync()).Id);
+        Assert.Equal(label.Id, Assert.Single(await store.GetLabelsAsync()).Id);
+        Assert.Null(await store.GetAsync<Project>(project.Id));
+        Assert.Null(await store.GetAsync<Label>(label.Id));
+    }
+
+    [Fact]
+    public async Task DeleteProject_PreservesTasksByMovingThemToInbox_AndSoftDeletesSections()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var project = new Project { Name = "삭제할 프로젝트" };
+        var section = new Section { ProjectId = project.Id, Name = "그 안의 섹션" };
+        var open = new TaskItem { Title = "살려 둘 일", ProjectId = project.Id, SectionId = section.Id };
+        var done = new TaskItem { Title = "완료한 일", ProjectId = project.Id, SectionId = section.Id, CompletedAt = Now };
+        await store.SaveAsync(project);
+        await store.SaveAsync(section);
+        await store.SaveAsync(open);
+        await store.SaveAsync(done);
+
+        await store.DeleteAsync<Project>(project.Id);
+
+        Assert.Null((await store.GetAsync<TaskItem>(open.Id))!.ProjectId);
+        Assert.Null((await store.GetAsync<TaskItem>(open.Id))!.SectionId);
+        Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.ProjectId);
+        Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.SectionId);
+        Assert.Equal(open.Id, Assert.Single(await store.GetInboxAsync()).Id);
+        Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<Section>(section.Id))!.DeletedAt);
+        Assert.Empty(await store.GetProjectsAsync());
+        Assert.Empty(await store.GetSectionsByProjectAsync(project.Id));
+    }
+
+    [Fact]
+    public async Task DeleteSection_PreservesTasksByMovingThemToInbox()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var project = new Project { Name = "남는 프로젝트" };
+        var section = new Section { ProjectId = project.Id, Name = "삭제할 섹션" };
+        var task = new TaskItem { Title = "Inbox로 이동", ProjectId = project.Id, SectionId = section.Id };
+        await store.SaveAsync(project);
+        await store.SaveAsync(section);
+        await store.SaveAsync(task);
+
+        await store.DeleteAsync<Section>(section.Id);
+
+        var moved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Null(moved!.ProjectId);
+        Assert.Null(moved.SectionId);
+        Assert.Equal(task.Id, Assert.Single(await store.GetInboxAsync()).Id);
+        Assert.NotNull((await store.GetAsync<Section>(section.Id))!.DeletedAt);
+        Assert.Equal(project.Id, Assert.Single(await store.GetProjectsAsync()).Id);
+    }
+
+    [Fact]
+    public async Task DeleteLabel_RemovesOnlyReferences_AndNeverDeletesTasks()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var removed = new Label { Name = "지울 라벨" };
+        var kept = new Label { Name = "남길 라벨" };
+        var task = new TaskItem { Title = "그대로 남는 일", LabelIds = { removed.Id, kept.Id } };
+        await store.SaveAsync(removed);
+        await store.SaveAsync(kept);
+        await store.SaveAsync(task);
+
+        await store.DeleteAsync<Label>(removed.Id);
+
+        var preserved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(preserved);
+        Assert.Equal(new[] { kept.Id }, preserved!.LabelIds);
+        Assert.Empty(await store.GetByLabelAsync(removed.Id));
+        Assert.Equal(task.Id, Assert.Single(await store.GetByLabelAsync(kept.Id)).Id);
+        Assert.NotNull((await store.GetAsync<Label>(removed.Id))!.DeletedAt);
+        Assert.Equal(kept.Id, Assert.Single(await store.GetLabelsAsync()).Id);
+    }
+
+    [Fact]
     public async Task ListQueries_AreServedFromIndex_NotFromFiles()
     {
         var root = NewRoot();

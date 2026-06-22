@@ -55,13 +55,16 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     }
 
     /// <summary>
-    /// Rebuilds the index from the full set of task files. Run this at startup; it makes the index
+    /// Rebuilds the index from the full set of record files. Run this at startup; it makes the index
     /// match the files exactly, recovering completely even if the database was deleted or is stale.
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var tasks = await _files.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
-        await _index.RebuildAsync(tasks, cancellationToken).ConfigureAwait(false);
+        var projects = await _files.GetAllAsync<Project>(cancellationToken).ConfigureAwait(false);
+        var sections = await _files.GetAllAsync<Section>(cancellationToken).ConfigureAwait(false);
+        var labels = await _files.GetAllAsync<Label>(cancellationToken).ConfigureAwait(false);
+        await _index.RebuildAsync(tasks, projects, sections, labels, cancellationToken).ConfigureAwait(false);
     }
 
     // ---- Write path: file first, then index (always both) --------------------
@@ -69,21 +72,89 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
     {
         await _files.SaveAsync(record, cancellationToken).ConfigureAwait(false);
-        if (record is TaskItem task)
-            await _index.ReflectAsync(task, cancellationToken).ConfigureAwait(false);
+        await ReflectAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
     {
-        await _files.DeleteAsync<T>(id, cancellationToken).ConfigureAwait(false);
-        if (typeof(T) != typeof(TaskItem))
-            return;
+        if (typeof(T) == typeof(Project))
+            await DeleteProjectAsync(id, cancellationToken).ConfigureAwait(false);
+        else if (typeof(T) == typeof(Section))
+            await DeleteSectionAsync(id, cancellationToken).ConfigureAwait(false);
+        else if (typeof(T) == typeof(Label))
+            await DeleteLabelAsync(id, cancellationToken).ConfigureAwait(false);
+        else
+            await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
+    }
 
-        // Re-read the now-tombstoned file and mirror it into the index, so the row carries the same
-        // deleted_at and drops out of every default query. Same reflect path as a normal save.
-        var tombstone = await _files.GetAsync<TaskItem>(id, cancellationToken).ConfigureAwait(false);
+    private async Task ReflectAsync<T>(T record, CancellationToken cancellationToken) where T : RecordBase
+    {
+        switch (record)
+        {
+            case TaskItem task: await _index.ReflectAsync(task, cancellationToken).ConfigureAwait(false); break;
+            case Project project: await _index.ReflectAsync(project, cancellationToken).ConfigureAwait(false); break;
+            case Section section: await _index.ReflectAsync(section, cancellationToken).ConfigureAwait(false); break;
+            case Label label: await _index.ReflectAsync(label, cancellationToken).ConfigureAwait(false); break;
+            default: throw new NotSupportedException($"Index reflection is not defined for {record.GetType().Name}.");
+        }
+    }
+
+    private async Task SoftDeleteAndReflectAsync<T>(Guid id, CancellationToken cancellationToken) where T : RecordBase
+    {
+        await _files.DeleteAsync<T>(id, cancellationToken).ConfigureAwait(false);
+        var tombstone = await _files.GetAsync<T>(id, cancellationToken).ConfigureAwait(false);
         if (tombstone is not null)
-            await _index.ReflectAsync(tombstone, cancellationToken).ConfigureAwait(false);
+            await ReflectAsync(tombstone, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DeleteProjectAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        // Foundation deletion policy: preserve user work by moving every live task to Inbox rather
+        // than cascading task tombstones. Both container ids are cleared because project deletion
+        // also tombstones its child sections. This is intentionally the least destructive default.
+        foreach (var taskId in await _index.GetTaskIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
+        {
+            var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
+            if (task is null) continue;
+            task.ProjectId = null;
+            task.SectionId = null;
+            await SaveAsync(task, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var sectionId in await _index.GetSectionIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
+            await SoftDeleteAndReflectAsync<Section>(sectionId, cancellationToken).ConfigureAwait(false);
+
+        await SoftDeleteAndReflectAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DeleteSectionAsync(Guid sectionId, CancellationToken cancellationToken)
+    {
+        // Same preservation policy as project deletion: removing the grouping must never delete the
+        // work inside it. Move affected tasks to the unclassified Inbox (clear both references).
+        foreach (var taskId in await _index.GetTaskIdsBySectionAsync(sectionId, cancellationToken).ConfigureAwait(false))
+        {
+            var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
+            if (task is null) continue;
+            task.ProjectId = null;
+            task.SectionId = null;
+            await SaveAsync(task, cancellationToken).ConfigureAwait(false);
+        }
+
+        await SoftDeleteAndReflectAsync<Section>(sectionId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DeleteLabelAsync(Guid labelId, CancellationToken cancellationToken)
+    {
+        // Labels are cross-cutting metadata. Delete only the label record and remove its references;
+        // never delete or relocate a task merely because one of its labels was removed.
+        foreach (var taskId in await _index.GetTaskIdsByLabelAsync(labelId, cancellationToken).ConfigureAwait(false))
+        {
+            var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
+            if (task is null || task.LabelIds.RemoveAll(id => id == labelId) == 0) continue;
+            await SaveAsync(task, cancellationToken).ConfigureAwait(false);
+        }
+
+        await SoftDeleteAndReflectAsync<Label>(labelId, cancellationToken).ConfigureAwait(false);
     }
 
     // ---- By-id / full reads come from the files (source of truth) ------------
@@ -95,6 +166,15 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         => _files.GetAsync<T>(id, cancellationToken);
 
     // ---- List reads come from the index --------------------------------------
+
+    public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default)
+        => _index.GetProjectsAsync(cancellationToken);
+
+    public Task<IReadOnlyList<SectionListItem>> GetSectionsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+        => _index.GetSectionsByProjectAsync(projectId, cancellationToken);
+
+    public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default)
+        => _index.GetLabelsAsync(cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetInboxAsync(CancellationToken cancellationToken = default)
         => _index.GetInboxAsync(cancellationToken);

@@ -4,10 +4,10 @@ using Microsoft.Data.Sqlite;
 namespace Cue.Storage.Index;
 
 /// <summary>
-/// A SQLite-backed <see cref="ITaskIndex"/>. The database is a pure <i>cache</i> over the task
+/// A SQLite-backed <see cref="ITaskIndex"/>. The database is a pure <i>cache</i> over the record
 /// files: it holds only fields that can be recomputed from those files, so deleting it loses
 /// nothing — <see cref="RebuildAsync"/> repopulates it from the source of truth on startup, and
-/// <see cref="ReflectAsync"/> keeps a single record in sync after each store write.
+/// the <c>ReflectAsync</c> overloads keep one record in sync after each store write.
 /// </summary>
 /// <remarks>
 /// Raw SQL via Microsoft.Data.Sqlite, no EF Core — the index is a derived, throwaway layer and
@@ -86,11 +86,40 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 label_id TEXT NOT NULL,
                 PRIMARY KEY (task_id, label_id)
             );
+            CREATE TABLE IF NOT EXISTS projects (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                deadline_date TEXT NULL,
+                is_archived   INTEGER NOT NULL DEFAULT 0,
+                completed_at  TEXT NULL,
+                deleted_at    TEXT NULL,
+                sort_order    TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS sections (
+                id            TEXT PRIMARY KEY,
+                project_id    TEXT NOT NULL,
+                name          TEXT NOT NULL,
+                deadline_date TEXT NULL,
+                is_archived   INTEGER NOT NULL DEFAULT 0,
+                completed_at  TEXT NULL,
+                deleted_at    TEXT NULL,
+                sort_order    TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS labels (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                color      TEXT NULL,
+                deleted_at TEXT NULL,
+                sort_order TEXT NOT NULL DEFAULT ''
+            );
             CREATE INDEX IF NOT EXISTS ix_tasks_project ON tasks(project_id);
             CREATE INDEX IF NOT EXISTS ix_tasks_section ON tasks(section_id);
             CREATE INDEX IF NOT EXISTS ix_tasks_when    ON tasks(when_kind, when_date);
             CREATE INDEX IF NOT EXISTS ix_tasks_active  ON tasks(deleted_at, completed_at);
             CREATE INDEX IF NOT EXISTS ix_labels_label  ON task_labels(label_id);
+            CREATE INDEX IF NOT EXISTS ix_projects_active ON projects(deleted_at, is_archived, completed_at);
+            CREATE INDEX IF NOT EXISTS ix_sections_project ON sections(project_id, deleted_at, is_archived, completed_at);
+            CREATE INDEX IF NOT EXISTS ix_navigation_labels_active ON labels(deleted_at);
             """;
         cmd.ExecuteNonQuery();
     }
@@ -100,9 +129,17 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     /// the existing rows first, so a stale or deleted database ends up identical to a freshly built
     /// one. Tombstones are indexed too (with their <c>deleted_at</c>), so queries can exclude them.
     /// </summary>
-    public async Task RebuildAsync(IEnumerable<TaskItem> tasks, CancellationToken cancellationToken = default)
+    public async Task RebuildAsync(
+        IEnumerable<TaskItem> tasks,
+        IEnumerable<Project> projects,
+        IEnumerable<Section> sections,
+        IEnumerable<Label> labels,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(tasks);
+        ArgumentNullException.ThrowIfNull(projects);
+        ArgumentNullException.ThrowIfNull(sections);
+        ArgumentNullException.ThrowIfNull(labels);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -112,7 +149,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             await using (var clear = _connection.CreateCommand())
             {
                 clear.Transaction = tx;
-                clear.CommandText = "DELETE FROM task_labels; DELETE FROM tasks;";
+                clear.CommandText =
+                    "DELETE FROM task_labels; DELETE FROM tasks; DELETE FROM projects; " +
+                    "DELETE FROM sections; DELETE FROM labels;";
                 await clear.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -121,6 +160,13 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 await UpsertCoreAsync(task, tx, cancellationToken).ConfigureAwait(false);
             }
+
+            foreach (var project in projects)
+                await UpsertProjectCoreAsync(project, tx, cancellationToken).ConfigureAwait(false);
+            foreach (var section in sections)
+                await UpsertSectionCoreAsync(section, tx, cancellationToken).ConfigureAwait(false);
+            foreach (var label in labels)
+                await UpsertLabelCoreAsync(label, tx, cancellationToken).ConfigureAwait(false);
 
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -144,6 +190,34 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         {
             await using var tx = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             await UpsertCoreAsync(task, tx, cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public Task ReflectAsync(Project project, CancellationToken cancellationToken = default)
+        => ReflectRecordAsync(project, UpsertProjectCoreAsync, cancellationToken);
+
+    public Task ReflectAsync(Section section, CancellationToken cancellationToken = default)
+        => ReflectRecordAsync(section, UpsertSectionCoreAsync, cancellationToken);
+
+    public Task ReflectAsync(Label label, CancellationToken cancellationToken = default)
+        => ReflectRecordAsync(label, UpsertLabelCoreAsync, cancellationToken);
+
+    private async Task ReflectRecordAsync<T>(
+        T record,
+        Func<T, SqliteTransaction, CancellationToken, Task> upsert,
+        CancellationToken cancellationToken) where T : RecordBase
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var tx = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await upsert(record, tx, cancellationToken).ConfigureAwait(false);
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -214,6 +288,125 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             await ins.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
+
+    private async Task UpsertProjectCoreAsync(Project project, SqliteTransaction tx, CancellationToken cancellationToken)
+    {
+        await using var cmd = _connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText =
+            """
+            INSERT INTO projects (id, name, deadline_date, is_archived, completed_at, deleted_at, sort_order)
+            VALUES ($id, $name, $deadline, $archived, $completed, $deleted, $sort)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name, deadline_date = excluded.deadline_date,
+                is_archived = excluded.is_archived, completed_at = excluded.completed_at,
+                deleted_at = excluded.deleted_at, sort_order = excluded.sort_order;
+            """;
+        Bind(cmd, "$id", project.Id.ToString());
+        Bind(cmd, "$name", project.Name);
+        Bind(cmd, "$deadline", LocalDate(project.Deadline));
+        Bind(cmd, "$archived", project.IsArchived ? 1 : 0);
+        Bind(cmd, "$completed", Instant(project.CompletedAt));
+        Bind(cmd, "$deleted", Instant(project.DeletedAt));
+        Bind(cmd, "$sort", project.SortOrder);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UpsertSectionCoreAsync(Section section, SqliteTransaction tx, CancellationToken cancellationToken)
+    {
+        await using var cmd = _connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText =
+            """
+            INSERT INTO sections
+                (id, project_id, name, deadline_date, is_archived, completed_at, deleted_at, sort_order)
+            VALUES ($id, $project, $name, $deadline, $archived, $completed, $deleted, $sort)
+            ON CONFLICT(id) DO UPDATE SET
+                project_id = excluded.project_id, name = excluded.name,
+                deadline_date = excluded.deadline_date, is_archived = excluded.is_archived,
+                completed_at = excluded.completed_at, deleted_at = excluded.deleted_at,
+                sort_order = excluded.sort_order;
+            """;
+        Bind(cmd, "$id", section.Id.ToString());
+        Bind(cmd, "$project", section.ProjectId.ToString());
+        Bind(cmd, "$name", section.Name);
+        Bind(cmd, "$deadline", LocalDate(section.Deadline));
+        Bind(cmd, "$archived", section.IsArchived ? 1 : 0);
+        Bind(cmd, "$completed", Instant(section.CompletedAt));
+        Bind(cmd, "$deleted", Instant(section.DeletedAt));
+        Bind(cmd, "$sort", section.SortOrder);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UpsertLabelCoreAsync(Label label, SqliteTransaction tx, CancellationToken cancellationToken)
+    {
+        await using var cmd = _connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText =
+            """
+            INSERT INTO labels (id, name, color, deleted_at, sort_order)
+            VALUES ($id, $name, $color, $deleted, $sort)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name, color = excluded.color,
+                deleted_at = excluded.deleted_at, sort_order = excluded.sort_order;
+            """;
+        Bind(cmd, "$id", label.Id.ToString());
+        Bind(cmd, "$name", label.Name);
+        Bind(cmd, "$color", label.Color);
+        Bind(cmd, "$deleted", Instant(label.DeletedAt));
+        Bind(cmd, "$sort", label.SortOrder);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // ---- Live navigation records --------------------------------------------
+
+    public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default)
+        => QueryRecordsAsync(
+            "SELECT id, name, deadline_date, sort_order FROM projects " +
+            "WHERE deleted_at IS NULL AND is_archived = 0 AND completed_at IS NULL " +
+            "ORDER BY sort_order, name;",
+            _ => { },
+            r => new ProjectListItem(Guid.Parse(r.GetString(0)), r.GetString(1), DateOrNull(r, 2), r.GetString(3)),
+            cancellationToken);
+
+    public Task<IReadOnlyList<SectionListItem>> GetSectionsByProjectAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+        => QueryRecordsAsync(
+            "SELECT id, project_id, name, deadline_date, sort_order FROM sections " +
+            "WHERE project_id = $project AND deleted_at IS NULL AND is_archived = 0 " +
+            "AND completed_at IS NULL ORDER BY sort_order, name;",
+            cmd => Bind(cmd, "$project", projectId.ToString()),
+            r => new SectionListItem(Guid.Parse(r.GetString(0)), Guid.Parse(r.GetString(1)), r.GetString(2), DateOrNull(r, 3), r.GetString(4)),
+            cancellationToken);
+
+    public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default)
+        => QueryRecordsAsync(
+            "SELECT id, name, color, sort_order FROM labels WHERE deleted_at IS NULL ORDER BY sort_order, name;",
+            _ => { },
+            r => new LabelListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3)),
+            cancellationToken);
+
+    internal Task<IReadOnlyList<Guid>> GetTaskIdsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+        => QueryIdsAsync(
+            "SELECT id FROM tasks WHERE project_id = $id AND deleted_at IS NULL;",
+            cmd => Bind(cmd, "$id", projectId.ToString()), cancellationToken);
+
+    internal Task<IReadOnlyList<Guid>> GetTaskIdsBySectionAsync(Guid sectionId, CancellationToken cancellationToken = default)
+        => QueryIdsAsync(
+            "SELECT id FROM tasks WHERE section_id = $id AND deleted_at IS NULL;",
+            cmd => Bind(cmd, "$id", sectionId.ToString()), cancellationToken);
+
+    internal Task<IReadOnlyList<Guid>> GetTaskIdsByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
+        => QueryIdsAsync(
+            "SELECT t.id FROM tasks t INNER JOIN task_labels tl ON tl.task_id = t.id " +
+            "WHERE tl.label_id = $id AND t.deleted_at IS NULL;",
+            cmd => Bind(cmd, "$id", labelId.ToString()), cancellationToken);
+
+    internal Task<IReadOnlyList<Guid>> GetSectionIdsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+        => QueryIdsAsync(
+            "SELECT id FROM sections WHERE project_id = $id AND deleted_at IS NULL;",
+            cmd => Bind(cmd, "$id", projectId.ToString()), cancellationToken);
 
     // ---- Classification axis -------------------------------------------------
 
@@ -309,6 +502,34 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             _gate.Release();
         }
     }
+
+    private async Task<IReadOnlyList<T>> QueryRecordsAsync<T>(
+        string sql,
+        Action<SqliteCommand> bind,
+        Func<SqliteDataReader, T> map,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var cmd = _connection.CreateCommand();
+            cmd.CommandText = sql;
+            bind(cmd);
+            var results = new List<T>();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                results.Add(map(reader));
+            return results;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private Task<IReadOnlyList<Guid>> QueryIdsAsync(
+        string sql, Action<SqliteCommand> bind, CancellationToken cancellationToken)
+        => QueryRecordsAsync(sql, bind, r => Guid.Parse(r.GetString(0)), cancellationToken);
 
     private static TaskListItem Map(SqliteDataReader r) => new(
         Id: Guid.Parse(r.GetString(0)),

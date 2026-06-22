@@ -23,6 +23,19 @@ namespace Cue.Storage.Index;
 /// </remarks>
 public interface ITaskIndex
 {
+    // ---- Live navigation records --------------------------------------------
+
+    /// <summary>Active projects, excluding tombstones, archived, and completed records.</summary>
+    Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Active sections in a project, excluding tombstones, archived, and completed records.</summary>
+    Task<IReadOnlyList<SectionListItem>> GetSectionsByProjectAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Active labels, excluding tombstones.</summary>
+    Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default);
+
     // ---- Classification axis -------------------------------------------------
 
     /// <summary>Open tasks with no owning project — the unclassified Inbox / Home list.</summary>
