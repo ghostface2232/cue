@@ -1,0 +1,32 @@
+# Normalize line endings: store text as LF in the repo, check out per-platform.
+* text=auto eol=lf
+
+# Explicit text types (kept LF to silence the CRLF conversion warnings on Windows).
+*.cs        text eol=lf
+*.csproj    text eol=lf
+*.slnx      text eol=lf
+*.xaml      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.manifest  text eol=lf
+*.appxmanifest text eol=lf
+*.pubxml    text eol=lf
+*.editorconfig text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+
+# Windows-only scripts must keep CRLF.
+*.ps1       text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Binary assets — never touch.
+*.png       binary
+*.ico       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.pfx       binary
+*.snk       binary
+*.msix      binary
+*.appx      binary
