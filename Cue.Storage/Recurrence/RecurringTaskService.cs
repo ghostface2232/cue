@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Cue.Domain;
 
 namespace Cue.Storage.Recurrence;
@@ -19,6 +21,17 @@ namespace Cue.Storage.Recurrence;
 /// rule's grid (e.g. every Monday stays a Monday), even when the task is completed late. If it lands
 /// in the past it simply surfaces in Today (overdue rolls forward) until completed again.
 /// </para>
+/// <para>
+/// <b>Crash safety: the two saves are made idempotent, not transactional.</b> Completion writes two
+/// separate records — the Logbook copy, then the advanced original — and the store has no cross-file
+/// transaction, so a crash <i>between</i> the writes leaves the copy on disk while the original is
+/// still due (un-advanced). To keep that path from minting a duplicate copy on the retried
+/// completion, the copy's id is <i>derived</i> from the original's id plus the completed instance's
+/// occurrence date (see <see cref="LogbookCopyId"/>) rather than random. Re-completing the same
+/// still-un-advanced instance therefore reproduces the same id and overwrites the orphaned copy in
+/// place; the advance then runs. Once the original has advanced, the next cycle's occurrence yields a
+/// different id, so each cycle still leaves its own distinct history entry.
+/// </para>
 /// </remarks>
 public sealed class RecurringTaskService : IRecurringTaskService
 {
@@ -34,8 +47,10 @@ public sealed class RecurringTaskService : IRecurringTaskService
             return;
 
         // Base the advance on the instance being completed: its When if it has one, else the anchor.
+        // This same occurrence instant also keys the Logbook copy's deterministic id below.
+        var occurrenceUtc = task.When.Date?.Utc ?? task.Recurrence?.Anchor.Utc;
         var next = task.Recurrence is { } recurrence
-            ? RecurrenceCalculator.Next(recurrence, task.When.Date?.Utc ?? recurrence.Anchor.Utc)
+            ? RecurrenceCalculator.Next(recurrence, occurrenceUtc!.Value)
             : null;
 
         if (next is null)
@@ -47,8 +62,10 @@ public sealed class RecurringTaskService : IRecurringTaskService
             return;
         }
 
-        // Method B, step 1: leave a completed one-off copy of this instance in the Logbook.
-        var logbookCopy = CreateLogbookCopy(task, completedAt);
+        // Method B, step 1: leave a completed one-off copy of this instance in the Logbook. The copy's
+        // id is derived from (original id, this occurrence) so a retry after a crash between this save
+        // and the advance overwrites the orphaned copy instead of duplicating it (see class remarks).
+        var logbookCopy = CreateLogbookCopy(task, completedAt, LogbookCopyId(task.Id, occurrenceUtc!.Value));
         await _store.SaveAsync(logbookCopy, cancellationToken).ConfigureAwait(false);
 
         // Method B, step 2: advance the original to the next cycle and keep it open (alive as the
@@ -63,9 +80,11 @@ public sealed class RecurringTaskService : IRecurringTaskService
     /// A standalone, completed snapshot of the instance being finished. It is a distinct
     /// <see cref="TaskItem"/> record (its own id/file) and never recurs — a copy does not advance.
     /// </summary>
-    private static TaskItem CreateLogbookCopy(TaskItem original, DateTimeOffset completedAt) => new()
+    private static TaskItem CreateLogbookCopy(TaskItem original, DateTimeOffset completedAt, Guid id) => new()
     {
-        // New identity: this is a separate record, not the original.
+        // Separate record from the original, but a deterministic identity (not Guid.NewGuid) so a
+        // crash-retried completion of the same instance overwrites this copy rather than duplicating it.
+        Id = id,
         Title = original.Title,
         Notes = original.Notes,
         CompletedAt = completedAt,
@@ -83,4 +102,18 @@ public sealed class RecurringTaskService : IRecurringTaskService
         // (an empty rank reads as "unranked"), but nothing sorts on it here.
         SortOrder = original.SortOrder,
     };
+
+    /// <summary>
+    /// A stable, name-based id for the Logbook copy of one completed occurrence, derived from the
+    /// original task id and that occurrence's UTC instant. Two completions of the <i>same</i>
+    /// un-advanced instance map to the same id (so a crash-retry overwrites rather than duplicates),
+    /// while each advanced cycle has a distinct occurrence and so a distinct copy. Deterministic and
+    /// process-independent: a SHA-256 digest of the two values folded into a GUID.
+    /// </summary>
+    private static Guid LogbookCopyId(Guid originalId, DateTimeOffset occurrenceUtc)
+    {
+        var name = $"cue/logbook-copy/{originalId:N}/{occurrenceUtc.UtcDateTime.Ticks}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(name));
+        return new Guid(hash.AsSpan(0, 16));
+    }
 }
