@@ -21,12 +21,23 @@ namespace Cue.Pages;
 /// </summary>
 public sealed partial class TaskListPage : Page
 {
+    private const double DetailDefaultWidth = 460;
+    private const double DetailMinWidth = 320;
+    private const double DetailAbsoluteMinWidth = 260;
+    private const double DetailMaxWidth = 680;
+    private const double DetailPrimaryMinWidth = 340;
+    private const double DetailCompactBreakpoint = 390;
+
     public TaskListViewModel ViewModel { get; }
     private readonly DialogService _dialogs;
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private readonly ConditionalWeakTable<FrameworkElement, DropShadow> _iconGlows = new();
     private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
     private Visual? _detailPanelVisual;
+    private bool _isResizingDetail;
+    private double _detailPreferredWidth = DetailDefaultWidth;
+    private double _resizeStartX;
+    private double _resizeStartWidth;
 
     // Set while a drag-reorder commits, so the row that moves in the bound collection does not also
     // play the list's entrance animation on top of the drop settle.
@@ -130,6 +141,7 @@ public sealed partial class TaskListPage : Page
         var visual = ElementCompositionPreview.GetElementVisual(panel);
         _detailPanelVisual = visual;
         visual.Opacity = panel.Visibility == Visibility.Visible ? 1f : 0f;
+        ApplyDetailPanelWidth();
 
         panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
         {
@@ -144,6 +156,89 @@ public sealed partial class TaskListPage : Page
             else if (visual.Opacity > 0.05f)
                 AnimateDetailPanelOut(visual);
         });
+    }
+
+    private void ContentSplitGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+        => ApplyDetailPanelWidth();
+
+    private void DetailPanel_SizeChanged(object sender, SizeChangedEventArgs e)
+        => UpdateDetailResponsiveLayout();
+
+    private void DetailResizeHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not UIElement handle) return;
+        var point = e.GetCurrentPoint(ContentSplitGrid);
+        if (!point.Properties.IsLeftButtonPressed)
+            return;
+
+        _isResizingDetail = true;
+        _resizeStartX = point.Position.X;
+        _resizeStartWidth = DetailPanel.ActualWidth > 0 ? DetailPanel.ActualWidth : DetailPanel.Width;
+        handle.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void DetailResizeHandle_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isResizingDetail)
+            return;
+
+        var point = e.GetCurrentPoint(ContentSplitGrid);
+        _detailPreferredWidth = _resizeStartWidth - (point.Position.X - _resizeStartX);
+        ApplyDetailPanelWidth();
+        e.Handled = true;
+    }
+
+    private void DetailResizeHandle_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isResizingDetail)
+            return;
+
+        _isResizingDetail = false;
+        if (sender is UIElement handle)
+            handle.ReleasePointerCapture(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void ApplyDetailPanelWidth()
+    {
+        if (ContentSplitGrid.ActualWidth <= 0)
+            return;
+
+        var width = ClampDetailWidth(_detailPreferredWidth);
+        if (Math.Abs(DetailPanel.Width - width) > 0.5)
+            DetailPanel.Width = width;
+        UpdateDetailResponsiveLayout();
+    }
+
+    private double ClampDetailWidth(double desired)
+    {
+        var maxByWindow = ContentSplitGrid.ActualWidth - DetailPrimaryMinWidth - ContentSplitGrid.ColumnSpacing - 8;
+        var max = Math.Min(DetailMaxWidth, Math.Max(DetailAbsoluteMinWidth, maxByWindow));
+        var min = Math.Min(DetailMinWidth, max);
+        return Math.Clamp(desired, min, max);
+    }
+
+    private void UpdateDetailResponsiveLayout()
+    {
+        var width = DetailPanel.ActualWidth > 0 ? DetailPanel.ActualWidth : DetailPanel.Width;
+        var compact = width < DetailCompactBreakpoint;
+        SetResponsivePair(DetailMetaGrid, DetailProjectField, compact, new GridLength(1, GridUnitType.Star));
+        SetResponsivePair(WhenDateTimeGrid, WhenTimePanel, compact, GridLength.Auto);
+        SetResponsivePair(DeadlineDateTimeGrid, DeadlineTimePanel, compact, GridLength.Auto);
+    }
+
+    private static void SetResponsivePair(Grid grid, FrameworkElement second, bool compact, GridLength normalSecondWidth)
+    {
+        while (grid.RowDefinitions.Count < 2)
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        if (grid.ColumnDefinitions.Count > 1)
+            grid.ColumnDefinitions[1].Width = compact ? new GridLength(0) : normalSecondWidth;
+        grid.RowDefinitions[1].Height = compact ? GridLength.Auto : new GridLength(0);
+
+        Grid.SetColumn(second, compact ? 0 : 1);
+        Grid.SetRow(second, compact ? 1 : 0);
     }
 
     /// <summary>
