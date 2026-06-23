@@ -139,14 +139,14 @@ public sealed partial class MainWindow : Window
         };
         if (ViewModel.ProjectTaskCounts.TryGetValue(project.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };
-        item.ContextFlyout = CreateRecordMenu(project, isProject: true);
+        item.ContextFlyout = CreateRecordMenu(project, isProject: true, item);
         return item;
     }
 
     private NavigationViewItem CreateLabelItem(LabelListItem label)
     {
         var icon = new FontIcon { Glyph = "\uE8EC" };
-        if (new HexToBrushConverter().Convert(label.Color, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!) is Microsoft.UI.Xaml.Media.Brush brush)
+        if (new HexToBrushConverter().Convert(label.Color ?? string.Empty, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!) is Microsoft.UI.Xaml.Media.Brush brush)
             icon.Foreground = brush;
         var item = new NavigationViewItem
         {
@@ -156,11 +156,11 @@ public sealed partial class MainWindow : Window
         };
         if (ViewModel.LabelTaskCounts.TryGetValue(label.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };
-        item.ContextFlyout = CreateRecordMenu(label, isProject: false);
+        item.ContextFlyout = CreateRecordMenu(label, isProject: false, item);
         return item;
     }
 
-    private MenuFlyout CreateRecordMenu(object record, bool isProject)
+    private MenuFlyout CreateRecordMenu(object record, bool isProject, NavigationViewItem owner)
     {
         var rename = new MenuFlyoutItem { Text = "이름 변경", Tag = record };
         var delete = new MenuFlyoutItem { Text = "삭제", Tag = record };
@@ -169,85 +169,103 @@ public sealed partial class MainWindow : Window
         var menu = new MenuFlyout();
         menu.Items.Add(rename);
         if (isProject && record is ProjectListItem project)
-            menu.Items.Add(CreateProjectIconSubMenu(project.Id));
+        {
+            var pick = new MenuFlyoutItem { Text = "아이콘 변경" };
+            pick.Click += (_, _) => ShowProjectIconPicker(owner, project.Id);
+            menu.Items.Add(pick);
+        }
         if (!isProject && record is LabelListItem label)
-            menu.Items.Add(CreateLabelColorSubMenu(label.Id));
+        {
+            var pick = new MenuFlyoutItem { Text = "색 변경" };
+            pick.Click += (_, _) => ShowLabelColorPicker(owner, label.Id);
+            menu.Items.Add(pick);
+        }
         menu.Items.Add(delete);
         return menu;
     }
+
+    /// <summary>A compact 4-column swatch grid in a flyout — icon/color only, no labels.</summary>
+    private static Flyout BuildSwatchGridFlyout(int count, int columns, Func<int, FrameworkElement> makeCell)
+    {
+        var grid = new Grid { RowSpacing = 6, ColumnSpacing = 6, Padding = new Thickness(4) };
+        for (var c = 0; c < columns; c++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        for (var i = 0; i < count; i++)
+        {
+            var row = i / columns;
+            while (grid.RowDefinitions.Count <= row)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var cell = makeCell(i);
+            Grid.SetColumn(cell, i % columns);
+            Grid.SetRow(cell, row);
+            grid.Children.Add(cell);
+        }
+        return new Flyout { Content = grid };
+    }
+
+    private void ShowProjectIconPicker(FrameworkElement anchor, Guid projectId)
+    {
+        Flyout? flyout = null;
+        flyout = BuildSwatchGridFlyout(ProjectIcons.Length, 4, i =>
+        {
+            var glyph = ProjectIcons[i].Glyph;
+            var button = new Button
+            {
+                Width = 40,
+                Height = 36,
+                Padding = new Thickness(0),
+                Content = new FontIcon { Glyph = glyph, FontSize = 16 },
+            };
+            button.Click += (_, _) => { flyout!.Hide(); PickProjectIcon(projectId, glyph); };
+            return button;
+        });
+        flyout.ShowAt(anchor);
+    }
+
+    private void ShowLabelColorPicker(FrameworkElement anchor, Guid labelId)
+    {
+        Flyout? flyout = null;
+        flyout = BuildSwatchGridFlyout(LabelColors.Palette.Count, 4, i =>
+        {
+            var hex = LabelColors.Palette[i];
+            var button = new Button
+            {
+                Width = 32,
+                Height = 32,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(16),
+                Background = (Microsoft.UI.Xaml.Media.Brush)new HexToBrushConverter()
+                    .Convert(hex, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!),
+            };
+            button.Click += (_, _) => { flyout!.Hide(); PickLabelColor(labelId, hex); };
+            return button;
+        });
+        flyout.ShowAt(anchor);
+    }
+
+    private async void PickProjectIcon(Guid projectId, string glyph)
+        => await RunSafelyAsync(async () =>
+        {
+            await ViewModel.SetProjectIconAsync(projectId, glyph);
+            RebuildLiveNavigation();
+        });
+
+    private async void PickLabelColor(Guid labelId, string hex)
+        => await RunSafelyAsync(async () =>
+        {
+            await ViewModel.SetLabelColorAsync(labelId, hex);
+            RebuildLiveNavigation();
+        });
 
     // Common to-do project glyphs (Segoe Fluent). Deliberately avoids the fixed sidebar glyphs
     // (E80F/E8BF/E823/E8FD/E8F1/E73E/E8B7/E8EC) so projects stay visually distinct from them.
     private static readonly (string Glyph, string Name)[] ProjectIcons =
     {
         ("", "장보기"), ("", "업무"), ("", "독서"), ("", "수리"),
-        ("", "별"), ("", "가족"), ("", "사람"), ("", "건강"),
+        ("", "별"), ("", "가족"), ("", "사람"), ("", "건강"),
         ("", "여행"), ("", "장소"), ("", "설정"), ("", "메일"),
         ("", "고정"), ("", "미디어"), ("", "웹"), ("", "잠금"),
     };
-
-    private MenuFlyoutSubItem CreateProjectIconSubMenu(Guid projectId)
-    {
-        var submenu = new MenuFlyoutSubItem { Text = "아이콘 변경" };
-        foreach (var (glyph, name) in ProjectIcons)
-        {
-            var item = new MenuFlyoutItem
-            {
-                Text = name,
-                Tag = new ProjectIconChoice(projectId, glyph),
-                Icon = new FontIcon { Glyph = glyph },
-            };
-            item.Click += ProjectIcon_Click;
-            submenu.Items.Add(item);
-        }
-        return submenu;
-    }
-
-    private async void ProjectIcon_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuFlyoutItem { Tag: ProjectIconChoice choice }) return;
-        await RunSafelyAsync(async () =>
-        {
-            await ViewModel.SetProjectIconAsync(choice.ProjectId, choice.Glyph);
-            RebuildLiveNavigation();
-        });
-    }
-
-    private readonly record struct ProjectIconChoice(Guid ProjectId, string Glyph);
-
-    private MenuFlyoutSubItem CreateLabelColorSubMenu(Guid labelId)
-    {
-        var submenu = new MenuFlyoutSubItem { Text = "색 변경" };
-        foreach (var (hex, name) in LabelColors.Swatches)
-        {
-            var item = new MenuFlyoutItem
-            {
-                Text = name,
-                Tag = new LabelColorChoice(labelId, hex),
-                Icon = new FontIcon
-                {
-                    Glyph = "",
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)new HexToBrushConverter()
-                        .Convert(hex, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!),
-                },
-            };
-            item.Click += LabelColor_Click;
-            submenu.Items.Add(item);
-        }
-        return submenu;
-    }
-
-    private async void LabelColor_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuFlyoutItem { Tag: LabelColorChoice choice }) return;
-        await RunSafelyAsync(async () =>
-        {
-            await ViewModel.SetLabelColorAsync(choice.LabelId, choice.Hex);
-            RebuildLiveNavigation();
-        });
-    }
-
-    private readonly record struct LabelColorChoice(Guid LabelId, string Hex);
 
     private async void RenameProject_Click(object sender, RoutedEventArgs e)
     {
