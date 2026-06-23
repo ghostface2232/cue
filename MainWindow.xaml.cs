@@ -145,11 +145,14 @@ public sealed partial class MainWindow : Window
 
     private NavigationViewItem CreateLabelItem(LabelListItem label)
     {
+        var icon = new FontIcon { Glyph = "\uE8EC" };
+        if (new HexToBrushConverter().Convert(label.Color, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!) is Microsoft.UI.Xaml.Media.Brush brush)
+            icon.Foreground = brush;
         var item = new NavigationViewItem
         {
             Content = label.Name,
             Tag = new TaskListNavigation(TaskListMode.Label, label.Id, label.Name),
-            Icon = new FontIcon { Glyph = "\uE8EC" },
+            Icon = icon,
         };
         if (ViewModel.LabelTaskCounts.TryGetValue(label.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };

@@ -333,6 +333,23 @@ public sealed partial class TaskListPage : Page
     private async void AddSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null));
 
+    private Guid _labelColorTarget;
+    private Microsoft.UI.Xaml.Controls.Primitives.FlyoutBase? _labelColorFlyout;
+
+    private void LabelColorButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is not Button button) return;
+        if (button.Tag is Guid id) _labelColorTarget = id;
+        _labelColorFlyout = button.Flyout;
+    }
+
+    private async void LabelSwatch_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        _labelColorFlyout?.Hide();
+        if (sender is FrameworkElement { Tag: string color } && _labelColorTarget != Guid.Empty)
+            await RunSafelyAsync(() => ViewModel.Detail.SetLabelColorAsync(_labelColorTarget, color));
+    }
+
     private async void AddLabel_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         await RunSafelyAsync(async () =>

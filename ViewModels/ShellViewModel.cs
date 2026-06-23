@@ -106,6 +106,7 @@ public partial class ShellViewModel : ObservableObject
         await _store.SaveAsync(new Label
         {
             Name = name.Trim(),
+            Color = LabelColors.ForNewLabel(Labels.Count),
             SortOrder = _reorder.AppendRank(Labels.Select(label => label.SortOrder)),
         });
         await LoadAsync();

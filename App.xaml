@@ -12,6 +12,7 @@
             </ResourceDictionary.MergedDictionaries>
             <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
             <local:PriorityToBrushConverter x:Key="PriorityToBrush" />
+            <local:HexToBrushConverter x:Key="HexToBrush" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

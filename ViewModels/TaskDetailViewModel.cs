@@ -27,14 +27,18 @@ public partial class LabelEditorOption : ObservableObject
     public Guid Id { get; }
     public string Name { get; }
 
+    /// <summary>The label's hex color (e.g. "#3498DB"), or <c>null</c> for the default.</summary>
+    public string? Color { get; }
+
     [ObservableProperty]
     public partial bool IsSelected { get; set; }
 
-    public LabelEditorOption(Guid id, string name, bool isSelected)
+    public LabelEditorOption(Guid id, string name, bool isSelected, string? color = null)
     {
         Id = id;
         Name = name;
         IsSelected = isSelected;
+        Color = color;
     }
 }
 
@@ -382,6 +386,9 @@ public partial class TaskDetailViewModel : ObservableObject
         await LoadSubtasksAsync(parentId);
     }
 
+    /// <summary>The label color palette offered in the per-label color picker.</summary>
+    public IReadOnlyList<string> LabelColorPalette { get; } = LabelColors.Palette;
+
     [RelayCommand]
     private async Task AddLabelAsync(string name)
     {
@@ -390,10 +397,22 @@ public partial class TaskDetailViewModel : ObservableObject
         var label = new Label
         {
             Name = name.Trim(),
+            Color = LabelColors.ForNewLabel(existing.Count),
             SortOrder = _reorder.AppendRank(existing.Select(item => item.SortOrder)),
         };
         await _store.SaveAsync(label);
         var selected = Labels.Where(item => item.IsSelected).Select(item => item.Id).Append(label.Id);
+        await LoadLabelsAsync(selected);
+    }
+
+    /// <summary>Recolors a label and refreshes the chips. The selection set is preserved.</summary>
+    public async Task SetLabelColorAsync(Guid labelId, string color)
+    {
+        var label = await _store.GetAsync<Label>(labelId);
+        if (label is null || label.IsDeleted) return;
+        label.Color = color;
+        await _store.SaveAsync(label);
+        var selected = Labels.Where(item => item.IsSelected).Select(item => item.Id).ToList();
         await LoadLabelsAsync(selected);
     }
 
@@ -543,7 +562,7 @@ public partial class TaskDetailViewModel : ObservableObject
         var selected = selectedIds.ToHashSet();
         Labels.Clear();
         foreach (var label in await _index.GetLabelsAsync())
-            Labels.Add(new LabelEditorOption(label.Id, label.Name, selected.Contains(label.Id)));
+            Labels.Add(new LabelEditorOption(label.Id, label.Name, selected.Contains(label.Id), label.Color));
     }
 
     private async Task LoadSubtasksAsync(Guid parentId)
