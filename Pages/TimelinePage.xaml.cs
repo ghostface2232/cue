@@ -499,23 +499,6 @@ public sealed partial class TimelinePage : Page
         visual.StartAnimation("Opacity", fade);
     }
 
-    private void IconAction_PointerEntered(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement element) return;
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        visual.CenterPoint = new Vector3((float)element.ActualWidth / 2f, (float)element.ActualHeight / 2f, 0f);
-        visual.Scale = new Vector3(1.1f, 1.1f, 1f);
-        visual.Opacity = 0.82f;
-    }
-
-    private void IconAction_PointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement element) return;
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        visual.Scale = Vector3.One;
-        visual.Opacity = 1f;
-    }
-
     private void EnableWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.EnableWhenEditor();
     private void ClearWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.ClearWhen();
     private async void CloseDetail_Click(object sender, RoutedEventArgs e)

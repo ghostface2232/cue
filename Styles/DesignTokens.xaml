@@ -102,6 +102,14 @@
     <SolidColorBrush x:Key="CuePressedFillBrush" Color="{ThemeResource SubtleFillColorTertiary}" />
     <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
     <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+    <!-- HyperlinkButton shares the exact same hover/press language as Button, so icon buttons
+         (e.g. the detail panel close button) read identically to every other button: a quiet
+         background fill, no accent-colored or specially-animated hover. Foreground deepens to
+         primary on hover instead of the stock accent tint. -->
+    <StaticResource x:Key="HyperlinkButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+    <StaticResource x:Key="HyperlinkButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+    <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
+    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{ThemeResource TextFillColorSecondary}" />
 
     <!-- DetailCardBrush is kept page-local in TaskListPage so the page code-behind can resolve it
          via this.Resources. -->

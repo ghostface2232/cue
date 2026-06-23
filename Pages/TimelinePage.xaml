@@ -310,16 +310,8 @@
                                 Style="{StaticResource CueIconButtonStyle}"
                                 Click="CloseDetail_Click"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                PointerEntered="IconAction_PointerEntered"
-                                PointerExited="IconAction_PointerExited"
                                 ToolTipService.ToolTip="닫기"
                                 AutomationProperties.Name="닫기">
-                                <HyperlinkButton.Resources>
-                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
-                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{ThemeResource TextFillColorSecondary}" />
-                                    <StaticResource x:Key="HyperlinkButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
-                                    <StaticResource x:Key="HyperlinkButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
-                                </HyperlinkButton.Resources>
                                 <FontIcon FontSize="17" Glyph="&#xE711;" />
                             </HyperlinkButton>
                         </Grid>
