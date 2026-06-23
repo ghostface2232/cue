@@ -542,7 +542,7 @@ public sealed partial class TimelinePage : Page
     private async void DetailText_LostFocus(object sender, RoutedEventArgs e)
         => await ViewModel.Detail.FlushAsync();
 
-    private async void AddSubtask_Click(object sender, RoutedEventArgs e)
+    private async void AddChecklistItem_Click(object sender, RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddChecklistItemCommand.ExecuteAsync(null));
 
     private void TagRow_Click(object sender, RoutedEventArgs e)
@@ -595,7 +595,7 @@ public sealed partial class TimelinePage : Page
         finally { _committingTag = false; }
     }
 
-    private async void DeleteSubtask_Click(object sender, RoutedEventArgs e)
+    private async void DeleteChecklistItem_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: Guid id }) return;
         var dialog = new ContentDialog

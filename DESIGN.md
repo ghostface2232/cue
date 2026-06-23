@@ -92,7 +92,7 @@ typography:
     fontWeight: 400
 
 rounded:
-  sm: 4px   # buttons, checks, child rows, small surfaces
+  sm: 4px   # buttons, checks, checklist rows, small surfaces
   md: 8px   # task rows, detail inner cards, timeline bars
   lg: 12px  # detail panel, timeline canvas
   pill: 9999px
@@ -247,7 +247,7 @@ Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-bas
 - **Tertiary** (`{colors.text-tertiary}` → `TextFillColorTertiary`): the quietest labels (group/tag headers, unchecked check outline).
 
 ### Interaction
-- Transparent at rest → hover `{colors.hover-fill}` (`SubtleFillColorSecondary`) → press `{colors.pressed-fill}` (`SubtleFillColorTertiary`). This **one shared recipe** is used by main list rows, child rows, timeline bars, subtle buttons, and detail-panel controls alike, so Light mode never drifts between surfaces.
+- Transparent at rest → hover `{colors.hover-fill}` (`SubtleFillColorSecondary`) → press `{colors.pressed-fill}` (`SubtleFillColorTertiary`). This **one shared recipe** is used by main list rows, checklist rows, timeline bars, subtle buttons, and detail-panel controls alike, so Light mode never drifts between surfaces.
 
   > Implementation note: hover/press is unified through `CueHoverFillBrush` / `CuePressedFillBrush`. The detail panel previously used a one-step-stronger custom overlay; it now aliases the same shared brushes for both themes.
 
@@ -344,7 +344,7 @@ Use only `{rounded.sm}` (4) / `{rounded.md}` (8) / `{rounded.lg}` (12) plus pill
 
 | Token | Value | Use |
 |---|---|---|
-| `{rounded.sm}` | 4px | Buttons, checks, child rows, small surfaces |
+| `{rounded.sm}` | 4px | Buttons, checks, checklist rows, small surfaces |
 | `{rounded.md}` | 8px | Task rows, detail inner cards, timeline bars |
 | `{rounded.lg}` | 12px | Detail panel, timeline canvas |
 | `{rounded.pill}` | height/2 | Pills |

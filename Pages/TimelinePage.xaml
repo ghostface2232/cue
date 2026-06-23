@@ -447,7 +447,7 @@
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewChecklistItemTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <Button Grid.Column="1" Click="AddSubtask_Click" Content="추가" />
+                                    <Button Grid.Column="1" Click="AddChecklistItem_Click" Content="추가" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Checklist}">
                                     <ItemsControl.ItemTemplate>
@@ -459,7 +459,7 @@
                                                     <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
                                                     <TextBox PlaceholderText="메모" Text="{x:Bind Note, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
                                                 </StackPanel>
-                                                <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
+                                                <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteChecklistItem_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

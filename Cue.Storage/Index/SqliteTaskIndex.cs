@@ -24,6 +24,11 @@ namespace Cue.Storage.Index;
 /// </remarks>
 public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 {
+    // The contract for the derived `checklist` JSON column. Shared by the serialize (UpsertCore) and
+    // deserialize (ChecklistFrom) sides so the index's PascalCase shape stays in lockstep — changing one
+    // side without the other (e.g. switching to camelCase) would silently break the round-trip.
+    private static readonly JsonSerializerOptions ChecklistJson = new();
+
     // Base task columns, aliased to the tasks table (t) so list queries can left-join the group and
     // correlate the tag set without column ambiguity.
     private const string TaskColumns =
@@ -269,7 +274,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             Bind(cmd, "$group", task.TaskGroupId?.ToString());
             // The embedded checklist is mirrored as a JSON blob so the list can render its nested
             // rows without a per-row follow-up read; it stays fully rebuildable from the file.
-            Bind(cmd, "$checklist", JsonSerializer.Serialize(task.Checklist));
+            Bind(cmd, "$checklist", JsonSerializer.Serialize(task.Checklist, ChecklistJson));
             Bind(cmd, "$whenKind", task.When.Kind.ToString());
             Bind(cmd, "$whenDate", task.When.Kind == WhenKind.OnDate ? LocalDate(task.When.Date) : null);
             Bind(cmd, "$whenTime", task.When.Kind == WhenKind.OnDate ? LocalTime(task.When.Date) : null);
@@ -617,7 +622,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         var json = r.GetString(i);
         if (json.Length == 0)
             return Array.Empty<TaskListChecklistItem>();
-        return JsonSerializer.Deserialize<List<TaskListChecklistItem>>(json)
+        return JsonSerializer.Deserialize<List<TaskListChecklistItem>>(json, ChecklistJson)
             ?? (IReadOnlyList<TaskListChecklistItem>)Array.Empty<TaskListChecklistItem>();
     }
 
