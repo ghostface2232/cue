@@ -1,0 +1,175 @@
+using System.Collections.ObjectModel;
+using System.Globalization;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Cue.Domain;
+using Cue.Storage.Index;
+
+namespace Cue.ViewModels;
+
+/// <summary>View model for the horizontal month timeline.</summary>
+public partial class TimelineViewModel : ObservableObject
+{
+    private const double DayWidthValue = 88;
+    private readonly ITaskIndex _index;
+    private readonly TimeProvider _clock;
+    private readonly TimeZoneInfo _zone;
+
+    private DateOnly _visibleMonth;
+    private DateOnly _rangeStart;
+    private DateOnly _rangeEnd;
+
+    public ObservableCollection<TimelineDayViewModel> Days { get; } = new();
+    public ObservableCollection<TimelineTaskRowViewModel> Rows { get; } = new();
+
+    public double DayWidth => DayWidthValue;
+    public double TrackWidth => Days.Count * DayWidthValue;
+    public double TodayLineOffset { get; private set; }
+    public bool HasTodayInRange { get; private set; }
+
+    [ObservableProperty]
+    public partial string Title { get; set; } = "타임라인";
+
+    [ObservableProperty]
+    public partial string RangeCaption { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial bool IsEmpty { get; set; }
+
+    public TimelineViewModel(ITaskIndex index, TimeProvider clock, TimeZoneInfo zone)
+    {
+        _index = index;
+        _clock = clock;
+        _zone = zone;
+
+        var today = Today();
+        _visibleMonth = new DateOnly(today.Year, today.Month, 1);
+        RebuildDays();
+    }
+
+    [RelayCommand]
+    public Task LoadAsync()
+    {
+        RebuildDays();
+        return ReloadRowsAsync();
+    }
+
+    [RelayCommand]
+    private async Task PreviousMonthAsync()
+    {
+        _visibleMonth = _visibleMonth.AddMonths(-1);
+        await LoadAsync();
+    }
+
+    [RelayCommand]
+    private async Task NextMonthAsync()
+    {
+        _visibleMonth = _visibleMonth.AddMonths(1);
+        await LoadAsync();
+    }
+
+    [RelayCommand]
+    private async Task GoTodayAsync()
+    {
+        var today = Today();
+        _visibleMonth = new DateOnly(today.Year, today.Month, 1);
+        await LoadAsync();
+    }
+
+    private async Task ReloadRowsAsync()
+    {
+        var items = await _index.GetTimelineAsync(_rangeStart, _rangeEnd);
+
+        Rows.Clear();
+        foreach (var item in items)
+            Rows.Add(new TimelineTaskRowViewModel(item, _rangeStart, _rangeEnd, DayWidthValue));
+
+        IsEmpty = Rows.Count == 0;
+    }
+
+    private void RebuildDays()
+    {
+        _rangeStart = _visibleMonth;
+        _rangeEnd = _visibleMonth.AddMonths(1).AddDays(-1);
+        var today = Today();
+
+        Days.Clear();
+        for (var day = _rangeStart; day <= _rangeEnd; day = day.AddDays(1))
+            Days.Add(new TimelineDayViewModel(day, today, DayWidthValue));
+
+        RangeCaption = _visibleMonth.ToString("yyyy년 M월", CultureInfo.GetCultureInfo("ko-KR"));
+        HasTodayInRange = today >= _rangeStart && today <= _rangeEnd;
+        TodayLineOffset = HasTodayInRange
+            ? (today.DayNumber - _rangeStart.DayNumber) * DayWidthValue + (DayWidthValue / 2)
+            : 0;
+        OnPropertyChanged(nameof(TrackWidth));
+        OnPropertyChanged(nameof(TodayLineOffset));
+        OnPropertyChanged(nameof(HasTodayInRange));
+    }
+
+    private DateOnly Today()
+        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime);
+}
+
+public sealed class TimelineDayViewModel
+{
+    private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
+
+    public DateOnly Date { get; }
+    public string DayLabel { get; }
+    public string WeekdayLabel { get; }
+    public bool IsToday { get; }
+    public bool IsNotToday => !IsToday;
+    public bool IsWeekend { get; }
+    public double Width { get; }
+
+    public TimelineDayViewModel(DateOnly date, DateOnly today, double width)
+    {
+        Date = date;
+        DayLabel = date.Day.ToString(Korean);
+        WeekdayLabel = date.ToString("ddd", Korean);
+        IsToday = date == today;
+        IsWeekend = date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+        Width = width;
+    }
+}
+
+public sealed class TimelineTaskRowViewModel
+{
+    private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
+
+    public Guid Id { get; }
+    public string Title { get; }
+    public DateOnly StartDate { get; }
+    public DateOnly EndDate { get; }
+    public string DateCaption { get; }
+    public bool IsCompleted { get; }
+    public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
+    public Priority Priority { get; }
+    public bool HasPriority => Priority != Priority.None;
+    public double StartOffset { get; }
+    public double BarWidth { get; }
+    public double TrackWidth { get; }
+
+    public TimelineTaskRowViewModel(TimelineTaskItem item, DateOnly rangeStart, DateOnly rangeEnd, double dayWidth)
+    {
+        Id = item.Id;
+        Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
+        StartDate = item.StartDate;
+        EndDate = item.EndDate;
+        IsCompleted = item.IsCompleted;
+        Priority = item.Priority;
+
+        var clampedStart = item.StartDate < rangeStart ? rangeStart : item.StartDate;
+        var clampedEnd = item.EndDate > rangeEnd ? rangeEnd : item.EndDate;
+        if (clampedEnd < clampedStart)
+            clampedEnd = clampedStart;
+
+        StartOffset = (clampedStart.DayNumber - rangeStart.DayNumber) * dayWidth + 8;
+        BarWidth = Math.Max(dayWidth - 16, (clampedEnd.DayNumber - clampedStart.DayNumber + 1) * dayWidth - 16);
+        TrackWidth = (rangeEnd.DayNumber - rangeStart.DayNumber + 1) * dayWidth;
+        DateCaption = item.StartDate == item.EndDate
+            ? item.StartDate.ToString("M월 d일 (ddd)", Korean)
+            : $"{item.StartDate.ToString("M월 d일", Korean)} - {item.EndDate.ToString("M월 d일", Korean)}";
+    }
+}

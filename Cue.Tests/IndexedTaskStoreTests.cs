@@ -435,6 +435,50 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TimelineQuery_ReturnsDatedTasksThatOverlapTheVisibleRange()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var rangeStart = new DateOnly(2026, 6, 1);
+        var rangeEnd = new DateOnly(2026, 6, 30);
+
+        var startsBeforeEndsInside = new TaskItem
+        {
+            Title = "걸친 일정",
+            When = OnDay(new DateOnly(2026, 5, 29)),
+            Deadline = OnDayZoned(new DateOnly(2026, 6, 3)),
+        };
+        var deadlineOnly = new TaskItem
+        {
+            Title = "마감만 있는 일",
+            Deadline = OnDayZoned(new DateOnly(2026, 6, 12)),
+            Priority = Priority.P2,
+        };
+        var outside = new TaskItem
+        {
+            Title = "범위 밖",
+            When = OnDay(new DateOnly(2026, 7, 2)),
+        };
+        var dateless = new TaskItem { Title = "날짜 없음" };
+
+        foreach (var task in new[] { startsBeforeEndsInside, deadlineOnly, outside, dateless })
+            await store.SaveAsync(task);
+
+        var timeline = await store.GetTimelineAsync(rangeStart, rangeEnd);
+        var ids = timeline.Select(item => item.Id).ToHashSet();
+
+        Assert.Contains(startsBeforeEndsInside.Id, ids);
+        Assert.Contains(deadlineOnly.Id, ids);
+        Assert.DoesNotContain(outside.Id, ids);
+        Assert.DoesNotContain(dateless.Id, ids);
+
+        var deadlineRow = Assert.Single(timeline, item => item.Id == deadlineOnly.Id);
+        Assert.Equal(new DateOnly(2026, 6, 12), deadlineRow.StartDate);
+        Assert.Equal(deadlineRow.StartDate, deadlineRow.EndDate);
+        Assert.Equal(Priority.P2, deadlineRow.Priority);
+    }
+
+    [Fact]
     public async Task DeadlineDueOrOverdue_SurfacesInToday_NotUpcoming()
     {
         var root = NewRoot();

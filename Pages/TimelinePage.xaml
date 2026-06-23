@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="Cue.Pages.TimelinePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:Cue.ViewModels"
+    Background="{ThemeResource LayerFillColorDefaultBrush}"
+    FontFamily="{StaticResource CueFontFamily}"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <SolidColorBrush x:Key="TimelineRowHoverBrush" Color="{ThemeResource SubtleFillColorSecondary}" />
+        <SolidColorBrush x:Key="TimelineBarBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+
+        <Style x:Key="TimelineMetadataTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource CueFontSecondary}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <DataTemplate x:Key="TimelineDayTemplate" x:DataType="vm:TimelineDayViewModel">
+            <Grid Width="{x:Bind Width}" Height="58">
+                <Border BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,1,1" />
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <Border
+                        MinWidth="28"
+                        Height="28"
+                        HorizontalAlignment="Center"
+                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                        CornerRadius="14"
+                        Visibility="{x:Bind IsToday, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontFamily="{StaticResource CueFontFamilySemiBold}"
+                            FontSize="13"
+                            Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                            Text="{x:Bind DayLabel}" />
+                    </Border>
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontFamily="{StaticResource CueFontFamilySemiBold}"
+                        FontSize="13"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind DayLabel}"
+                        Visibility="{x:Bind IsNotToday, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Style="{StaticResource TimelineMetadataTextStyle}"
+                        Text="{x:Bind WeekdayLabel}" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="TimelineRowTemplate" x:DataType="vm:TimelineTaskRowViewModel">
+            <Grid Width="{x:Bind TrackWidth}" Height="50" Opacity="{x:Bind VisualOpacity}">
+                <Rectangle
+                    Height="1"
+                    VerticalAlignment="Bottom"
+                    Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                <Canvas Width="{x:Bind TrackWidth}" Height="50">
+                    <Border
+                        Canvas.Left="{x:Bind StartOffset}"
+                        Canvas.Top="7"
+                        Width="{x:Bind BarWidth}"
+                        Height="36"
+                        Padding="10,0"
+                        Background="{StaticResource TimelineBarBrush}"
+                        BackgroundSizing="InnerBorderEdge"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource CueRadiusRow}"
+                        PointerEntered="TimelineBar_PointerEntered"
+                        PointerExited="TimelineBar_PointerExited"
+                        Tag="{x:Bind Id}">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Rectangle
+                                Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                RadiusX="1.5"
+                                RadiusY="1.5"
+                                Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                <TextBlock
+                                    FontSize="{StaticResource CueFontRow}"
+                                    Text="{x:Bind Title}"
+                                    TextTrimming="CharacterEllipsis" />
+                                <TextBlock
+                                    Style="{StaticResource TimelineMetadataTextStyle}"
+                                    Text="{x:Bind DateCaption}"
+                                    TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <Border
+                                Grid.Column="2"
+                                Padding="7,1"
+                                VerticalAlignment="Center"
+                                Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}}"
+                                CornerRadius="9"
+                                Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}"
+                                    Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}}" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Canvas>
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Padding="28,20,28,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="4,0,4,10" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource CuePageTitleTextStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.RangeCaption, Mode=OneWay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="4">
+                <Button
+                    Width="34"
+                    Height="34"
+                    Padding="0"
+                    Click="PreviousMonth_Click"
+                    Style="{StaticResource CueSubtleTextButtonStyle}"
+                    ToolTipService.ToolTip="이전 달"
+                    AutomationProperties.Name="이전 달">
+                    <FontIcon FontSize="14" Glyph="&#xE76B;" />
+                </Button>
+                <Button Click="Today_Click" Content="오늘" Style="{StaticResource CueSubtleTextButtonStyle}" />
+                <Button
+                    Width="34"
+                    Height="34"
+                    Padding="0"
+                    Click="NextMonth_Click"
+                    Style="{StaticResource CueSubtleTextButtonStyle}"
+                    ToolTipService.ToolTip="다음 달"
+                    AutomationProperties.Name="다음 달">
+                    <FontIcon FontSize="14" Glyph="&#xE76C;" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="타임라인을 표시하지 못했습니다" />
+
+        <Grid Grid.Row="2">
+            <Border
+                Margin="4,0,4,4"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BackgroundSizing="InnerBorderEdge"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource CueRadiusPanel}">
+                <ScrollViewer
+                    HorizontalScrollBarVisibility="Auto"
+                    HorizontalScrollMode="Enabled"
+                    VerticalScrollBarVisibility="Auto"
+                    VerticalScrollMode="Enabled"
+                    ZoomMode="Disabled">
+                    <Grid Width="{x:Bind ViewModel.TrackWidth, Mode=OneWay}" MinHeight="420">
+                        <StackPanel>
+                            <ItemsRepeater ItemTemplate="{StaticResource TimelineDayTemplate}" ItemsSource="{x:Bind ViewModel.Days, Mode=OneWay}">
+                                <ItemsRepeater.Layout>
+                                    <StackLayout Orientation="Horizontal" />
+                                </ItemsRepeater.Layout>
+                            </ItemsRepeater>
+                            <ItemsRepeater
+                                ItemTemplate="{StaticResource TimelineRowTemplate}"
+                                ItemsSource="{x:Bind ViewModel.Rows, Mode=OneWay}"
+                                ElementPrepared="TimelineRows_ElementPrepared"
+                                ElementClearing="TimelineRows_ElementClearing" />
+                        </StackPanel>
+                        <Rectangle
+                            Width="1"
+                            HorizontalAlignment="Left"
+                            Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                            IsHitTestVisible="False"
+                            Opacity="0.8"
+                            Visibility="{x:Bind ViewModel.HasTodayInRange, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                            <Rectangle.RenderTransform>
+                                <TranslateTransform X="{x:Bind ViewModel.TodayLineOffset, Mode=OneWay}" />
+                            </Rectangle.RenderTransform>
+                        </Rectangle>
+                    </Grid>
+                </ScrollViewer>
+            </Border>
+
+            <TextBlock
+                Margin="0,112,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                FontSize="14"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="이 달에 표시할 날짜가 있는 할 일이 없습니다."
+                Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+        </Grid>
+    </Grid>
+</Page>

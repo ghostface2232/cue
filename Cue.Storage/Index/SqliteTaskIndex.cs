@@ -530,6 +530,52 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY priority, completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
+    public Task<IReadOnlyList<TimelineTaskItem>> GetTimelineAsync(
+        DateOnly start,
+        DateOnly end,
+        CancellationToken cancellationToken = default)
+    {
+        if (end < start)
+            throw new ArgumentException("Timeline end date must be on or after the start date.", nameof(end));
+
+        const string effectiveStart =
+            "CASE WHEN when_kind = 'OnDate' AND when_date IS NOT NULL THEN when_date ELSE deadline_date END";
+        const string effectiveEnd =
+            "CASE WHEN deadline_date IS NOT NULL THEN deadline_date ELSE when_date END";
+
+        return QueryRecordsAsync(
+            $"""
+            SELECT id, title, {effectiveStart}, {effectiveEnd}, completed_at, priority, when_kind
+            FROM tasks
+            WHERE deleted_at IS NULL
+              AND ((when_kind = 'OnDate' AND when_date IS NOT NULL) OR deadline_date IS NOT NULL)
+              AND {effectiveStart} <= $end
+              AND {effectiveEnd} >= $start
+            ORDER BY {effectiveStart}, completed_at IS NOT NULL, sort_order;
+            """,
+            cmd =>
+            {
+                Bind(cmd, "$start", start.ToString("yyyy-MM-dd"));
+                Bind(cmd, "$end", end.ToString("yyyy-MM-dd"));
+            },
+            r =>
+            {
+                var itemStart = DateOnly.ParseExact(r.GetString(2), "yyyy-MM-dd");
+                var itemEnd = DateOnly.ParseExact(r.GetString(3), "yyyy-MM-dd");
+                if (itemEnd < itemStart)
+                    (itemStart, itemEnd) = (itemEnd, itemStart);
+                return new TimelineTaskItem(
+                    Guid.Parse(r.GetString(0)),
+                    r.GetString(1),
+                    itemStart,
+                    itemEnd,
+                    !r.IsDBNull(4),
+                    (Priority)r.GetInt64(5),
+                    Enum.Parse<WhenKind>(r.GetString(6)));
+            },
+            cancellationToken);
+    }
+
     // ---- Plumbing ------------------------------------------------------------
 
     private async Task<IReadOnlyList<TaskListItem>> QueryAsync(

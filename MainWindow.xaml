@@ -59,6 +59,11 @@
                         <FontIcon Glyph="&#xE823;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem x:Name="TimelineItem" Content="타임라인" Tag="timeline">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE9D2;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="AnytimeItem" Content="언제든 할 일" Tag="anytime">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8FD;" />

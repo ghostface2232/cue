@@ -111,6 +111,14 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (item.Tag is string fixedView && fixedView == "timeline")
+        {
+            _currentNavigation = null;
+            NavFrame.Navigate(typeof(TimelinePage));
+            NavFrame.BackStack.Clear();
+            return;
+        }
+
         if (item.Tag is not (string or TaskListNavigation)) return;
         _currentNavigation = item.Tag as TaskListNavigation;
         NavFrame.Navigate(typeof(TaskListPage), item.Tag);
@@ -136,6 +144,7 @@ public sealed partial class MainWindow : Window
     {
         ("today", "", "오늘 할 일"),
         ("upcoming", "", "앞으로 할 일"),
+        ("timeline", "", "타임라인"),
         ("anytime", "", "언제든 할 일"),
         ("someday", "", "나중에 할 일"),
         ("logbook", "", "완료한 일"),
@@ -146,6 +155,7 @@ public sealed partial class MainWindow : Window
     {
         "today" => TodayItem,
         "upcoming" => UpcomingItem,
+        "timeline" => TimelineItem,
         "anytime" => AnytimeItem,
         "someday" => SomedayItem,
         "logbook" => LogbookItem,

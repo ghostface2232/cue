@@ -99,4 +99,13 @@ public interface ITaskIndex
     /// Includes completed tasks (shown dimmed) so finished work stays visible until navigation.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tasks with a scheduled When date or Deadline overlapping the inclusive date range. This is
+    /// the read model for the timeline view; it remains fully rebuildable from the per-record files.
+    /// </summary>
+    Task<IReadOnlyList<TimelineTaskItem>> GetTimelineAsync(
+        DateOnly start,
+        DateOnly end,
+        CancellationToken cancellationToken = default);
 }
