@@ -25,9 +25,9 @@ public sealed class FileTaskStoreTests : IDisposable
         CompletedAt = new DateTimeOffset(2026, 6, 20, 1, 2, 3, TimeSpan.Zero),
         When = ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)),
         Priority = Priority.P1,
-        ProjectId = Guid.NewGuid(),
+        TaskGroupId = Guid.NewGuid(),
         ParentTaskId = Guid.NewGuid(),
-        LabelIds = { Guid.NewGuid(), Guid.NewGuid() },
+        TagIds = { Guid.NewGuid(), Guid.NewGuid() },
         Recurrence = new RecurrenceRule("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO", Zoned(2026, 6, 22, 9, 0)),
         SortOrder = "0|hzzzzz:",
     };
@@ -49,9 +49,9 @@ public sealed class FileTaskStoreTests : IDisposable
         Assert.True(loaded.IsCompleted);
         Assert.Equal(task.When, loaded.When);
         Assert.Equal(task.Priority, loaded.Priority);
-        Assert.Equal(task.ProjectId, loaded.ProjectId);
+        Assert.Equal(task.TaskGroupId, loaded.TaskGroupId);
         Assert.Equal(task.ParentTaskId, loaded.ParentTaskId);
-        Assert.Equal(task.LabelIds, loaded.LabelIds);
+        Assert.Equal(task.TagIds, loaded.TagIds);
         Assert.NotNull(loaded.Recurrence);
         Assert.Equal(task.Recurrence!.Rule, loaded.Recurrence!.Rule);
         Assert.Equal(task.Recurrence.Anchor, loaded.Recurrence.Anchor);
@@ -99,42 +99,42 @@ public sealed class FileTaskStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Project_RoundTrips_AllFields()
+    public async Task TaskGroup_RoundTrips_AllFields()
     {
         var store = NewStore();
-        var project = new Project
+        var taskGroup = new TaskGroup
         {
             Name = "런치 준비",
             Notes = "보드 뷰로 본다",
             Color = "#4F8CC9",
-            View = ProjectView.Board,
+            View = TaskGroupView.Board,
             SortOrder = "0|i00000:",
         };
 
-        await store.SaveAsync(project);
-        var loaded = await store.GetAsync<Project>(project.Id);
+        await store.SaveAsync(taskGroup);
+        var loaded = await store.GetAsync<TaskGroup>(taskGroup.Id);
 
         Assert.NotNull(loaded);
-        Assert.Equal(project.Name, loaded!.Name);
-        Assert.Equal(project.Notes, loaded.Notes);
-        Assert.Equal(project.Color, loaded.Color);
-        Assert.Equal(ProjectView.Board, loaded.View);
-        Assert.Equal(project.SortOrder, loaded.SortOrder);
+        Assert.Equal(taskGroup.Name, loaded!.Name);
+        Assert.Equal(taskGroup.Notes, loaded.Notes);
+        Assert.Equal(taskGroup.Color, loaded.Color);
+        Assert.Equal(TaskGroupView.Board, loaded.View);
+        Assert.Equal(taskGroup.SortOrder, loaded.SortOrder);
     }
 
     [Fact]
-    public async Task Label_RoundTrips()
+    public async Task Tag_RoundTrips()
     {
         var store = NewStore();
-        var label = new Label { Name = "긴급", Color = "#D33", SortOrder = "0|b:" };
+        var tag = new Tag { Name = "긴급", Color = "#D33", SortOrder = "0|b:" };
 
-        await store.SaveAsync(label);
+        await store.SaveAsync(tag);
 
-        var loadedLabel = await store.GetAsync<Label>(label.Id);
+        var loadedTag = await store.GetAsync<Tag>(tag.Id);
 
-        Assert.Equal(label.Name, loadedLabel!.Name);
-        Assert.Equal(label.Color, loadedLabel.Color);
-        Assert.Equal(label.SortOrder, loadedLabel.SortOrder);
+        Assert.Equal(tag.Name, loadedTag!.Name);
+        Assert.Equal(tag.Color, loadedTag.Color);
+        Assert.Equal(tag.SortOrder, loadedTag.SortOrder);
     }
 
     [Fact]
@@ -155,20 +155,20 @@ public sealed class FileTaskStoreTests : IDisposable
     {
         var store = NewStore();
         var task = new TaskItem { CompletedAt = DateTimeOffset.UtcNow, When = ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)) };
-        var project = new Project { Color = "#4F8CC9" };
+        var taskGroup = new TaskGroup { Color = "#4F8CC9" };
 
         await store.SaveAsync(task);
-        await store.SaveAsync(project);
+        await store.SaveAsync(taskGroup);
 
         var taskJson = await File.ReadAllTextAsync(Path.Combine(store.RootPath, "tasks", task.Id + ".json"));
-        var projectJson = await File.ReadAllTextAsync(Path.Combine(store.RootPath, "projects", project.Id + ".json"));
+        var taskGroupJson = await File.ReadAllTextAsync(Path.Combine(store.RootPath, "groups", taskGroup.Id + ".json"));
 
         // Derived get-only properties must not leak into the file.
         Assert.DoesNotContain("isCompleted", taskJson);
         Assert.DoesNotContain("isDeleted", taskJson);
         Assert.DoesNotContain("hasDate", taskJson);
         // Real fields with setters stay.
-        Assert.Contains("color", projectJson);
+        Assert.Contains("color", taskGroupJson);
     }
 
     [Fact]

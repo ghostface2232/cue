@@ -17,7 +17,7 @@ public enum WhenEditorMode
 }
 
 public sealed record WhenEditorOption(WhenEditorMode Mode, string Name);
-public sealed record ProjectEditorOption(Guid? Id, string Name);
+public sealed record TaskGroupEditorOption(Guid? Id, string Name);
 public sealed record TimeOption(int Value, string Label);
 
 /// <summary>
@@ -32,21 +32,21 @@ public sealed record TaskEditSnapshot(
     string? Notes,
     Priority Priority,
     ScheduledWhen When,
-    Guid? ProjectId,
-    IReadOnlyList<Guid> LabelIds);
+    Guid? TaskGroupId,
+    IReadOnlyList<Guid> TagIds);
 
-public partial class LabelEditorOption : ObservableObject
+public partial class TagEditorOption : ObservableObject
 {
     public Guid Id { get; }
     public string Name { get; }
 
-    /// <summary>The label's hex color (e.g. "#3498DB"), or <c>null</c> for the default.</summary>
+    /// <summary>The tag's hex color (e.g. "#3498DB"), or <c>null</c> for the default.</summary>
     public string? Color { get; }
 
     [ObservableProperty]
     public partial bool IsSelected { get; set; }
 
-    public LabelEditorOption(Guid id, string name, bool isSelected, string? color = null)
+    public TagEditorOption(Guid id, string name, bool isSelected, string? color = null)
     {
         Id = id;
         Name = name;
@@ -139,8 +139,8 @@ public partial class TaskDetailViewModel : ObservableObject
         new(WhenEditorMode.SpecificDate, "날짜 지정"),
     ];
 
-    public ObservableCollection<ProjectEditorOption> Projects { get; } = new();
-    public ObservableCollection<LabelEditorOption> Labels { get; } = new();
+    public ObservableCollection<TaskGroupEditorOption> TaskGroups { get; } = new();
+    public ObservableCollection<TagEditorOption> Tags { get; } = new();
     public ObservableCollection<SubtaskRowViewModel> Subtasks { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
@@ -176,7 +176,7 @@ public partial class TaskDetailViewModel : ObservableObject
     public partial bool IsWhenAllDay { get; set; }
 
     [ObservableProperty]
-    public partial ProjectEditorOption? SelectedProject { get; set; }
+    public partial TaskGroupEditorOption? SelectedTaskGroup { get; set; }
 
     [ObservableProperty]
     public partial string NewSubtaskTitle { get; set; } = string.Empty;
@@ -265,7 +265,7 @@ public partial class TaskDetailViewModel : ObservableObject
 
     partial void OnWhenTimeChanged(TimeSpan? value) => RequestAutoSave();
     partial void OnSelectedPriorityChanged(Priority value) => RequestAutoSave();
-    partial void OnSelectedProjectChanged(ProjectEditorOption? value) => RequestAutoSave();
+    partial void OnSelectedTaskGroupChanged(TaskGroupEditorOption? value) => RequestAutoSave();
 
     partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
     partial void OnSelectedWhenMinuteChanged(TimeOption? value) => SyncWhenTimeFromParts();
@@ -299,10 +299,10 @@ public partial class TaskDetailViewModel : ObservableObject
         _loadedWhenTime = WhenTime;
         _loadedIsWhenAllDay = IsWhenAllDay;
 
-        // Stay in the loading guard until the panel is fully populated — setting SelectedProject and the
-        // label rows below must not trip autosave (no save should fire just from opening a task).
-        await LoadProjectsAsync(task.ProjectId);
-        await LoadLabelsAsync(task.LabelIds);
+        // Stay in the loading guard until the panel is fully populated — setting SelectedTaskGroup and the
+        // tag rows below must not trip autosave (no save should fire just from opening a task).
+        await LoadTaskGroupsAsync(task.TaskGroupId);
+        await LoadTagsAsync(task.TagIds);
         await LoadSubtasksAsync(task.Id);
         IsOpen = true;
         _isLoading = false;
@@ -389,8 +389,8 @@ public partial class TaskDetailViewModel : ObservableObject
             string.IsNullOrWhiteSpace(Notes) ? null : Notes,
             SelectedPriority,
             BuildWhen(),
-            SelectedProject?.Id,
-            Labels.Where(label => label.IsSelected && label.Id != Guid.Empty).Select(label => label.Id).ToList());
+            SelectedTaskGroup?.Id,
+            Tags.Where(tag => tag.IsSelected && tag.Id != Guid.Empty).Select(tag => tag.Id).ToList());
     }
 
     /// <summary>Appends a save to the serial chain. Called on the UI thread, so the continuation captures
@@ -444,8 +444,8 @@ public partial class TaskDetailViewModel : ObservableObject
             task.Notes = snapshot.Notes;
             task.Priority = snapshot.Priority;
             task.When = snapshot.When;
-            task.ProjectId = snapshot.ProjectId;
-            task.LabelIds = snapshot.LabelIds.ToList();
+            task.TaskGroupId = snapshot.TaskGroupId;
+            task.TagIds = snapshot.TagIds.ToList();
 
             await _store.SaveAsync(task);
             await _refreshOwner();
@@ -468,7 +468,7 @@ public partial class TaskDetailViewModel : ObservableObject
         {
             Title = NewSubtaskTitle.Trim(),
             ParentTaskId = parent.Id,
-            ProjectId = parent.ProjectId,
+            TaskGroupId = parent.TaskGroupId,
             SortOrder = _reorder.AppendRank(siblings.Select(item => item.SortOrder)),
         };
         await _store.SaveAsync(child);
@@ -478,19 +478,19 @@ public partial class TaskDetailViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task AddLabelAsync(string name)
+    private async Task AddTagAsync(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
-        var existing = await _index.GetLabelsAsync();
-        var label = new Label
+        var existing = await _index.GetTagsAsync();
+        var tag = new Tag
         {
             Name = name.Trim(),
-            Color = LabelColors.ForNewLabel(existing.Count),
+            Color = TagColors.ForNewTag(existing.Count),
             SortOrder = _reorder.AppendRank(existing.Select(item => item.SortOrder)),
         };
-        await _store.SaveAsync(label);
-        var selected = Labels.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).Append(label.Id);
-        await LoadLabelsAsync(selected);
+        await _store.SaveAsync(tag);
+        var selected = Tags.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).Append(tag.Id);
+        await LoadTagsAsync(selected);
         // A newly created tag is selected on the spot — persist the task's tag assignment too.
         await FlushAsync();
     }
@@ -609,58 +609,58 @@ public partial class TaskDetailViewModel : ObservableObject
         WhenTime = new TimeSpan(SelectedWhenHour.Value, SelectedWhenMinute.Value, 0);
     }
 
-    private async Task LoadProjectsAsync(Guid? selectedId)
+    private async Task LoadTaskGroupsAsync(Guid? selectedId)
     {
-        Projects.Clear();
-        Projects.Add(new ProjectEditorOption(null, "그룹 없음"));
-        foreach (var project in await _index.GetProjectsAsync())
-            Projects.Add(new ProjectEditorOption(project.Id, project.Name));
+        TaskGroups.Clear();
+        TaskGroups.Add(new TaskGroupEditorOption(null, "그룹 없음"));
+        foreach (var taskGroup in await _index.GetTaskGroupsAsync())
+            TaskGroups.Add(new TaskGroupEditorOption(taskGroup.Id, taskGroup.Name));
 
-        if (selectedId is { } id && Projects.All(option => option.Id != id))
+        if (selectedId is { } id && TaskGroups.All(option => option.Id != id))
         {
-            var inactive = await _store.GetAsync<Project>(id);
+            var inactive = await _store.GetAsync<TaskGroup>(id);
             if (inactive is not null && !inactive.IsDeleted)
-                Projects.Add(new ProjectEditorOption(inactive.Id, inactive.Name));
+                TaskGroups.Add(new TaskGroupEditorOption(inactive.Id, inactive.Name));
         }
-        SelectedProject = Projects.FirstOrDefault(option => option.Id == selectedId) ?? Projects[0];
+        SelectedTaskGroup = TaskGroups.FirstOrDefault(option => option.Id == selectedId) ?? TaskGroups[0];
     }
 
-    private async Task LoadLabelsAsync(IEnumerable<Guid> selectedIds)
+    private async Task LoadTagsAsync(IEnumerable<Guid> selectedIds)
     {
         var selected = selectedIds.Where(id => id != Guid.Empty).ToHashSet();
-        Labels.Clear();
+        Tags.Clear();
         // A synthetic "태그 없음" row (Guid.Empty) makes the no-tag state explicit and is checked by
-        // default; it stays mutually exclusive with the real tags via ToggleLabel/SyncNoLabelOption.
-        Labels.Add(new LabelEditorOption(Guid.Empty, "태그 없음", selected.Count == 0));
-        foreach (var label in await _index.GetLabelsAsync())
-            Labels.Add(new LabelEditorOption(label.Id, label.Name, selected.Contains(label.Id), label.Color));
+        // default; it stays mutually exclusive with the real tags via ToggleTag/SyncNoTagOption.
+        Tags.Add(new TagEditorOption(Guid.Empty, "태그 없음", selected.Count == 0));
+        foreach (var tag in await _index.GetTagsAsync())
+            Tags.Add(new TagEditorOption(tag.Id, tag.Name, selected.Contains(tag.Id), tag.Color));
     }
 
-    /// <summary>Toggles a label row. The "라벨 없음" entry (Guid.Empty) behaves like a reset: choosing it
-    /// clears every real label; choosing a real label clears it; and it re-checks on its own once no
-    /// real label remains selected.</summary>
-    public void ToggleLabel(Guid id)
+    /// <summary>Toggles a tag row. The "태그 없음" entry (Guid.Empty) behaves like a reset: choosing it
+    /// clears every real tag; choosing a real tag clears it; and it re-checks on its own once no
+    /// real tag remains selected.</summary>
+    public void ToggleTag(Guid id)
     {
-        var target = Labels.FirstOrDefault(label => label.Id == id);
+        var target = Tags.FirstOrDefault(tag => tag.Id == id);
         if (target is null) return;
 
         if (id == Guid.Empty)
         {
-            foreach (var label in Labels) label.IsSelected = label.Id == Guid.Empty;
+            foreach (var tag in Tags) tag.IsSelected = tag.Id == Guid.Empty;
         }
         else
         {
             target.IsSelected = !target.IsSelected;
-            SyncNoLabelOption();
+            SyncNoTagOption();
         }
         RequestAutoSave();
     }
 
-    private void SyncNoLabelOption()
+    private void SyncNoTagOption()
     {
-        var none = Labels.FirstOrDefault(label => label.Id == Guid.Empty);
+        var none = Tags.FirstOrDefault(tag => tag.Id == Guid.Empty);
         if (none is not null)
-            none.IsSelected = Labels.All(label => label.Id == Guid.Empty || !label.IsSelected);
+            none.IsSelected = Tags.All(tag => tag.Id == Guid.Empty || !tag.IsSelected);
     }
 
     private async Task LoadSubtasksAsync(Guid parentId)

@@ -10,7 +10,7 @@ namespace Cue.Storage.Index;
 /// <remarks>
 /// Queries fall on two axes:
 /// <list type="bullet">
-/// <item><b>Classification</b> — by container: a project, a label, or the home "모든 할 일" (All)
+/// <item><b>Classification</b> — by container: a task group, a tag, or the home "모든 할 일" (AllTasks)
 /// list which spans every group. These return non-deleted task rows; completed rows are kept visible
 /// and dimmed in active lists, while badge counts below stay open-only.</item>
 /// <item><b>Time</b> — Today / Upcoming / Anytime / Logbook, all computed from the single When date.
@@ -25,46 +25,46 @@ public interface ITaskIndex
 {
     // ---- Live navigation records --------------------------------------------
 
-    /// <summary>Active projects (pure groups), excluding tombstones.</summary>
-    Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default);
+    /// <summary>Active task groups (pure groups), excluding tombstones.</summary>
+    Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Active labels, excluding tombstones.</summary>
-    Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default);
+    /// <summary>Active tags, excluding tombstones.</summary>
+    Task<IReadOnlyList<TagListItem>> GetTagsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Open (non-deleted, non-completed) task count per project, keyed by project id. Projects with
+    /// Open (non-deleted, non-completed) task count per group, keyed by group id. Groups with
     /// no open tasks are simply absent from the map. Drives the navigation count badges.
     /// </summary>
-    Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByProjectAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTaskGroupAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Open (non-deleted, non-completed) task count per label, keyed by label id.</summary>
-    Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default);
+    /// <summary>Open (non-deleted, non-completed) task count per tag, keyed by tag id.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTagAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Open (non-deleted, non-completed) task count carrying no group — the 그룹 없음 badge.</summary>
-    Task<int> GetOpenTaskCountWithoutProjectAsync(CancellationToken cancellationToken = default);
+    Task<int> GetOpenTaskCountWithoutTaskGroupAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Open (non-deleted, non-completed) task count carrying no label — the 태그 없음 badge.</summary>
-    Task<int> GetOpenTaskCountWithoutLabelAsync(CancellationToken cancellationToken = default);
+    /// <summary>Open (non-deleted, non-completed) task count carrying no tag — the 태그 없음 badge.</summary>
+    Task<int> GetOpenTaskCountWithoutTagAsync(CancellationToken cancellationToken = default);
 
     // ---- Classification axis -------------------------------------------------
 
-    /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (All) list.
+    /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (AllTasks) list.
     /// Subtasks are returned too; the view nests them under their parents.</summary>
     Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks belonging to the given project.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
+    /// <summary>Non-deleted tasks belonging to the given task group.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks carrying the given label.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default);
+    /// <summary>Non-deleted tasks carrying the given tag.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default);
 
     /// <summary>Non-deleted tasks in no group at all — the 그룹 없음 list that re-gathers unfiled captures.
     /// Subtasks are returned too; the view nests them under their parents.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetWithoutProjectAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks carrying no label at all — the 태그 없음 list that re-gathers unfiled
+    /// <summary>Non-deleted tasks carrying no tag at all — the 태그 없음 list that re-gathers unfiled
     /// captures. Subtasks are returned too; the view nests them under their parents.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetWithoutLabelAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Full task records projected as rows whose <see cref="TaskItem.ParentTaskId"/> matches the

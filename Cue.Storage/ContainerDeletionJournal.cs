@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Cue.Storage;
 
-internal enum ContainerDeletionKind { Project, Label }
+internal enum ContainerDeletionKind { TaskGroup, Tag }
 
 internal sealed class ContainerDeletionOperation
 {
@@ -14,9 +14,9 @@ internal sealed class ContainerDeletionOperation
     public required ContainerDeletionKind Kind { get; init; }
     public required Guid TargetId { get; init; }
 
-    /// <summary>For a project deletion: when true, its tasks are soft-deleted along with it; when
+    /// <summary>For a task group deletion: when true, its tasks are soft-deleted along with it; when
     /// false (the default, and the value an older journal entry deserializes to), they are reparented
-    /// to the Cue home. Ignored for label deletions.</summary>
+    /// to the Cue home. Ignored for tag deletions.</summary>
     public bool CascadeTasks { get; init; }
 
     public bool IsCompleted { get; set; }

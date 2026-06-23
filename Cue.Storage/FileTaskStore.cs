@@ -135,8 +135,8 @@ public sealed class FileTaskStore : ITaskStore
     private static string FolderName(Type recordType) => recordType switch
     {
         _ when recordType == typeof(TaskItem) => "tasks",
-        _ when recordType == typeof(Project) => "projects",
-        _ when recordType == typeof(Label) => "labels",
+        _ when recordType == typeof(TaskGroup) => "groups",
+        _ when recordType == typeof(Tag) => "tags",
         _ => throw new NotSupportedException($"No storage partition is defined for '{recordType.Name}'."),
     };
 }

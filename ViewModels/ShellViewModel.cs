@@ -8,7 +8,7 @@ using Cue.Storage.Ranking;
 
 namespace Cue.ViewModels;
 
-/// <summary>Drives the live project and label lists in the left navigation pane.</summary>
+/// <summary>Drives the live task-group and tag lists in the left navigation pane.</summary>
 public partial class ShellViewModel : ObservableObject
 {
     private readonly ITaskStore _store;
@@ -16,18 +16,18 @@ public partial class ShellViewModel : ObservableObject
     private readonly IReorderService _reorder;
     private readonly IContainerDeletionStore _containers;
 
-    public ObservableCollection<ProjectListItem> Projects { get; } = new();
-    public ObservableCollection<LabelListItem> Labels { get; } = new();
+    public ObservableCollection<TaskGroupListItem> TaskGroups { get; } = new();
+    public ObservableCollection<TagListItem> Tags { get; } = new();
 
-    /// <summary>Open-task counts per project / label, refreshed on each <see cref="LoadAsync"/>.
+    /// <summary>Open-task counts per group / tag, refreshed on each <see cref="LoadAsync"/>.
     /// Read by the shell after a load to stamp navigation count badges.</summary>
-    public IReadOnlyDictionary<Guid, int> ProjectTaskCounts { get; private set; } = new Dictionary<Guid, int>();
-    public IReadOnlyDictionary<Guid, int> LabelTaskCounts { get; private set; } = new Dictionary<Guid, int>();
+    public IReadOnlyDictionary<Guid, int> TaskGroupTaskCounts { get; private set; } = new Dictionary<Guid, int>();
+    public IReadOnlyDictionary<Guid, int> TagTaskCounts { get; private set; } = new Dictionary<Guid, int>();
 
     /// <summary>Open-task counts for the 그룹 없음 / 태그 없음 collection points, refreshed on each
     /// <see cref="LoadAsync"/>. Read by the shell to stamp their navigation badges.</summary>
-    public int NoProjectTaskCount { get; private set; }
-    public int NoLabelTaskCount { get; private set; }
+    public int NoTaskGroupTaskCount { get; private set; }
+    public int NoTagTaskCount { get; private set; }
 
     public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder, IContainerDeletionStore containers)
     {
@@ -40,123 +40,123 @@ public partial class ShellViewModel : ObservableObject
     [RelayCommand]
     public async Task LoadAsync()
     {
-        var projects = await _index.GetProjectsAsync();
-        var labels = await _index.GetLabelsAsync();
-        ProjectTaskCounts = await _index.GetOpenTaskCountsByProjectAsync();
-        LabelTaskCounts = await _index.GetOpenTaskCountsByLabelAsync();
-        NoProjectTaskCount = await _index.GetOpenTaskCountWithoutProjectAsync();
-        NoLabelTaskCount = await _index.GetOpenTaskCountWithoutLabelAsync();
-        Replace(Projects, projects);
-        Replace(Labels, labels);
+        var taskGroups = await _index.GetTaskGroupsAsync();
+        var tags = await _index.GetTagsAsync();
+        TaskGroupTaskCounts = await _index.GetOpenTaskCountsByTaskGroupAsync();
+        TagTaskCounts = await _index.GetOpenTaskCountsByTagAsync();
+        NoTaskGroupTaskCount = await _index.GetOpenTaskCountWithoutTaskGroupAsync();
+        NoTagTaskCount = await _index.GetOpenTaskCountWithoutTagAsync();
+        Replace(TaskGroups, taskGroups);
+        Replace(Tags, tags);
     }
 
     [RelayCommand]
-    private async Task CreateProjectAsync(string name)
+    private async Task CreateTaskGroupAsync(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
-        await _store.SaveAsync(new Project
+        await _store.SaveAsync(new TaskGroup
         {
             Name = name.Trim(),
-            SortOrder = _reorder.AppendRank(Projects.Select(project => project.SortOrder)),
+            SortOrder = _reorder.AppendRank(TaskGroups.Select(group => group.SortOrder)),
         });
         await LoadAsync();
     }
 
     /// <summary>
-    /// Reorders a project in the pane: moves it optimistically, persists the moved record's new rank
+    /// Reorders a group in the pane: moves it optimistically, persists the moved record's new rank
     /// through the rank service (only that record save for a rare rebalance), then reloads from the
     /// index so the persisted order — the source of truth — drives the pane.
     /// </summary>
     [RelayCommand]
-    public async Task ReorderProjectAsync(ReorderRequest request)
+    public async Task ReorderTaskGroupAsync(ReorderRequest request)
     {
-        if (request.OldIndex == request.NewIndex || (uint)request.NewIndex >= Projects.Count) return;
-        Projects.Move(request.OldIndex, request.NewIndex);
-        var moved = Projects[request.NewIndex];
-        var ordered = Projects.Select(project => new RankedItem(project.Id, project.SortOrder)).ToList();
-        try { await _reorder.MoveAsync<Project>(moved.Id, ordered); }
+        if (request.OldIndex == request.NewIndex || (uint)request.NewIndex >= TaskGroups.Count) return;
+        TaskGroups.Move(request.OldIndex, request.NewIndex);
+        var moved = TaskGroups[request.NewIndex];
+        var ordered = TaskGroups.Select(group => new RankedItem(group.Id, group.SortOrder)).ToList();
+        try { await _reorder.MoveAsync<TaskGroup>(moved.Id, ordered); }
         finally { await LoadAsync(); }
     }
 
-    /// <summary>Reorders a label in the pane. Mirrors <see cref="ReorderProjectAsync"/>.</summary>
+    /// <summary>Reorders a tag in the pane. Mirrors <see cref="ReorderTaskGroupAsync"/>.</summary>
     [RelayCommand]
-    public async Task ReorderLabelAsync(ReorderRequest request)
+    public async Task ReorderTagAsync(ReorderRequest request)
     {
-        if (request.OldIndex == request.NewIndex || (uint)request.NewIndex >= Labels.Count) return;
-        Labels.Move(request.OldIndex, request.NewIndex);
-        var moved = Labels[request.NewIndex];
-        var ordered = Labels.Select(label => new RankedItem(label.Id, label.SortOrder)).ToList();
-        try { await _reorder.MoveAsync<Label>(moved.Id, ordered); }
+        if (request.OldIndex == request.NewIndex || (uint)request.NewIndex >= Tags.Count) return;
+        Tags.Move(request.OldIndex, request.NewIndex);
+        var moved = Tags[request.NewIndex];
+        var ordered = Tags.Select(tag => new RankedItem(tag.Id, tag.SortOrder)).ToList();
+        try { await _reorder.MoveAsync<Tag>(moved.Id, ordered); }
         finally { await LoadAsync(); }
     }
 
     [RelayCommand]
-    private async Task RenameProjectAsync(RenameRecordRequest request)
+    private async Task RenameTaskGroupAsync(RenameRecordRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) return;
-        var project = await _store.GetAsync<Project>(request.Id);
-        if (project is null || project.IsDeleted) return;
-        project.Name = request.Name.Trim();
-        await _store.SaveAsync(project);
+        var taskGroup = await _store.GetAsync<TaskGroup>(request.Id);
+        if (taskGroup is null || taskGroup.IsDeleted) return;
+        taskGroup.Name = request.Name.Trim();
+        await _store.SaveAsync(taskGroup);
         await LoadAsync();
     }
 
     /// <summary>Deletes a group, disposing of its tasks per <paramref name="mode"/> (reparent to the
     /// Cue home, or soft-delete alongside the group), then reloads the navigation.</summary>
-    public async Task DeleteProjectAsync(Guid id, ProjectDeletionMode mode)
+    public async Task DeleteTaskGroupAsync(Guid id, TaskGroupDeletionMode mode)
     {
-        await _containers.DeleteProjectAsync(id, mode);
+        await _containers.DeleteTaskGroupAsync(id, mode);
         await LoadAsync();
     }
 
-    /// <summary>Sets a project's sidebar icon (a Fluent glyph) and reloads so it shows at once.</summary>
-    public async Task SetProjectIconAsync(Guid id, string glyph)
+    /// <summary>Sets a group's sidebar icon (a Fluent glyph) and reloads so it shows at once.</summary>
+    public async Task SetTaskGroupIconAsync(Guid id, string glyph)
     {
-        var project = await _store.GetAsync<Project>(id);
-        if (project is null || project.IsDeleted) return;
-        project.Icon = glyph;
-        await _store.SaveAsync(project);
+        var taskGroup = await _store.GetAsync<TaskGroup>(id);
+        if (taskGroup is null || taskGroup.IsDeleted) return;
+        taskGroup.Icon = glyph;
+        await _store.SaveAsync(taskGroup);
         await LoadAsync();
     }
 
     [RelayCommand]
-    private async Task CreateLabelAsync(string name)
+    private async Task CreateTagAsync(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
-        await _store.SaveAsync(new Label
+        await _store.SaveAsync(new Tag
         {
             Name = name.Trim(),
-            Color = LabelColors.ForNewLabel(Labels.Count),
-            SortOrder = _reorder.AppendRank(Labels.Select(label => label.SortOrder)),
+            Color = TagColors.ForNewTag(Tags.Count),
+            SortOrder = _reorder.AppendRank(Tags.Select(tag => tag.SortOrder)),
         });
         await LoadAsync();
     }
 
     [RelayCommand]
-    private async Task RenameLabelAsync(RenameRecordRequest request)
+    private async Task RenameTagAsync(RenameRecordRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) return;
-        var label = await _store.GetAsync<Label>(request.Id);
-        if (label is null || label.IsDeleted) return;
-        label.Name = request.Name.Trim();
-        await _store.SaveAsync(label);
+        var tag = await _store.GetAsync<Tag>(request.Id);
+        if (tag is null || tag.IsDeleted) return;
+        tag.Name = request.Name.Trim();
+        await _store.SaveAsync(tag);
         await LoadAsync();
     }
 
     [RelayCommand]
-    private async Task DeleteLabelAsync(Guid id)
+    private async Task DeleteTagAsync(Guid id)
     {
-        await _store.DeleteAsync<Label>(id);
+        await _store.DeleteAsync<Tag>(id);
         await LoadAsync();
     }
 
-    /// <summary>Recolors a label from the navigation pane and reloads so the change shows at once.</summary>
-    public async Task SetLabelColorAsync(Guid id, string color)
+    /// <summary>Recolors a tag from the navigation pane and reloads so the change shows at once.</summary>
+    public async Task SetTagColorAsync(Guid id, string color)
     {
-        var label = await _store.GetAsync<Label>(id);
-        if (label is null || label.IsDeleted) return;
-        label.Color = color;
-        await _store.SaveAsync(label);
+        var tag = await _store.GetAsync<Tag>(id);
+        if (tag is null || tag.IsDeleted) return;
+        tag.Color = color;
+        await _store.SaveAsync(tag);
         await LoadAsync();
     }
 

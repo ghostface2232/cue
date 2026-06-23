@@ -4,12 +4,12 @@ namespace Cue.Domain;
 /// A single to-do — the core record of the app.
 /// </summary>
 /// <remarks>
-/// A task's container is a single optional <see cref="ProjectId"/>: it either belongs to one
-/// project or, when null, has no group. Either way it appears in the home 모든 할 일 (All) view.
+/// A task's container is a single optional <see cref="TaskGroupId"/>: it either belongs to one
+/// group or, when null, has no group. Either way it appears in the home 모든 할 일 (AllTasks) view.
 /// <para>
 /// Sub-tasks are <i>not</i> a lightweight checklist: each is its own <see cref="TaskItem"/>
 /// record (own file) pointing at its parent via <see cref="ParentTaskId"/>, so a sub-task can
-/// carry its own dates, labels, priority, and recurrence.
+/// carry its own dates, tags, priority, and recurrence.
 /// </para>
 /// </remarks>
 public sealed class TaskItem : RecordBase, ISortable
@@ -54,13 +54,13 @@ public sealed class TaskItem : RecordBase, ISortable
     public Priority Priority { get; set; } = Priority.None;
 
     /// <summary>Owning group, if any. <c>null</c> means the task has no group (still shown in 모든 할 일).</summary>
-    public Guid? ProjectId { get; set; }
+    public Guid? TaskGroupId { get; set; }
 
     /// <summary>Parent task when this is a sub-task; <c>null</c> for a top-level task.</summary>
     public Guid? ParentTaskId { get; set; }
 
-    /// <summary>Cross-cutting labels applied to this task.</summary>
-    public List<Guid> LabelIds { get; set; } = new();
+    /// <summary>Cross-cutting tags applied to this task.</summary>
+    public List<Guid> TagIds { get; set; } = new();
 
     /// <summary>Recurrence rule, if the task repeats. <c>null</c> for a one-off task.</summary>
     public RecurrenceRule? Recurrence { get; set; }

@@ -1,11 +1,11 @@
 namespace Cue.Domain;
 
 /// <summary>
-/// A project — a pure top-level container that groups <see cref="TaskItem"/>s. It carries no date
+/// A task group — a pure top-level container that groups <see cref="TaskItem"/>s. It carries no date
 /// and no completion state of its own; an unused group is simply soft-deleted (tombstoned via
 /// <see cref="RecordBase.DeletedAt"/>).
 /// </summary>
-public sealed class Project : RecordBase, ISortable
+public sealed class TaskGroup : RecordBase, ISortable
 {
     /// <summary>Display name.</summary>
     public string Name { get; set; } = string.Empty;
@@ -19,11 +19,11 @@ public sealed class Project : RecordBase, ISortable
     /// <summary>Sidebar icon as a Segoe Fluent glyph string (e.g. ""). <c>null</c> uses the default.</summary>
     public string? Icon { get; set; }
 
-    /// <summary>How the project is displayed (list vs. board).</summary>
-    public ProjectView View { get; set; } = ProjectView.List;
+    /// <summary>How the group is displayed (list vs. board).</summary>
+    public TaskGroupView View { get; set; } = TaskGroupView.List;
 
     /// <summary>
-    /// Manual ordering rank among the top-level projects — a LexoRank-style fractional string (see
+    /// Manual ordering rank among the top-level groups — a LexoRank-style fractional string (see
     /// <see cref="TaskItem.SortOrder"/>). Assigned by the store; the domain only holds it.
     /// </summary>
     public string SortOrder { get; set; } = string.Empty;

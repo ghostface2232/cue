@@ -44,7 +44,7 @@
                     x:Name="CueItem"
                     Content="모든 할 일"
                     IsSelected="True"
-                    Tag="all">
+                    Tag="alltasks">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
@@ -81,7 +81,7 @@
                 </NavigationViewItem>
                 <NavigationViewItemSeparator />
                 <NavigationViewItem
-                    x:Name="ProjectsGroup"
+                    x:Name="GroupsSection"
                     Content="그룹"
                     FontFamily="{StaticResource CueFontFamilySemiBold}"
                     FontSize="12"
@@ -92,11 +92,11 @@
                         <FontIcon Glyph="&#xE8B7;" />
                     </NavigationViewItem.Icon>
                     <NavigationViewItem.MenuItems>
-                        <NavigationViewItem Content="+ 새 그룹" Tag="create-project" />
+                        <NavigationViewItem Content="+ 새 그룹" Tag="create-group" />
                     </NavigationViewItem.MenuItems>
                 </NavigationViewItem>
                 <NavigationViewItem
-                    x:Name="LabelsGroup"
+                    x:Name="TagsSection"
                     Content="태그"
                     FontFamily="{StaticResource CueFontFamilySemiBold}"
                     FontSize="12"
@@ -107,7 +107,7 @@
                         <FontIcon Glyph="&#xE8EC;" />
                     </NavigationViewItem.Icon>
                     <NavigationViewItem.MenuItems>
-                        <NavigationViewItem Content="+ 새 태그" Tag="create-label" />
+                        <NavigationViewItem Content="+ 새 태그" Tag="create-tag" />
                     </NavigationViewItem.MenuItems>
                 </NavigationViewItem>
             </NavigationView.MenuItems>

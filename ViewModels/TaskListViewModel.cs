@@ -14,7 +14,7 @@ namespace Cue.ViewModels;
 public enum TaskListMode
 {
     /// <summary>Home / 모든 할 일 — every active task regardless of group, with completed rows dimmed.</summary>
-    All,
+    AllTasks,
 
     /// <summary>Today — active tasks with a When date today or earlier, with completed rows dimmed.</summary>
     Today,
@@ -31,17 +31,17 @@ public enum TaskListMode
     /// <summary>Prioritized tasks (P1–P4), grouped by priority.</summary>
     Priority,
 
-    /// <summary>Active tasks belonging to one project, with completed rows dimmed.</summary>
-    Project,
+    /// <summary>Active tasks belonging to one task group, with completed rows dimmed.</summary>
+    TaskGroup,
 
-    /// <summary>Active tasks carrying one label, with completed rows dimmed.</summary>
-    Label,
+    /// <summary>Active tasks carrying one tag, with completed rows dimmed.</summary>
+    Tag,
 
     /// <summary>Active tasks in no group at all — the 그룹 없음 collection point for unfiled captures.</summary>
-    NoProject,
+    NoTaskGroup,
 
-    /// <summary>Active tasks carrying no label — the 태그 없음 collection point for unfiled captures.</summary>
-    NoLabel,
+    /// <summary>Active tasks carrying no tag — the 태그 없음 collection point for unfiled captures.</summary>
+    NoTag,
 }
 
 /// <summary>
@@ -67,7 +67,7 @@ public partial class TaskListViewModel : ObservableObject
     // Serializes completion toggles so concurrent/rapid checks can't reorder their saves.
     private readonly SemaphoreSlim _toggleGate = new(1, 1);
 
-    private TaskListMode _mode = TaskListMode.All;
+    private TaskListMode _mode = TaskListMode.AllTasks;
     private Guid? _filterId;
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
@@ -90,7 +90,7 @@ public partial class TaskListViewModel : ObservableObject
     public partial bool IsStandardList { get; set; } = true;
 
     [ObservableProperty]
-    public partial bool IsProjectMode { get; set; }
+    public partial bool IsTaskGroupMode { get; set; }
 
     /// <summary>True when the list is rendered as grouped buckets (the 중요도 view's P1–P4 buckets)
     /// rather than one flat list.</summary>
@@ -147,21 +147,21 @@ public partial class TaskListViewModel : ObservableObject
         _filterId = navigation.FilterId;
         Title = navigation.Title ?? navigation.Mode switch
         {
-            TaskListMode.All => "모든 할 일",
+            TaskListMode.AllTasks => "모든 할 일",
             TaskListMode.Today => "오늘 할 일",
             TaskListMode.Upcoming => "앞으로 할 일",
             TaskListMode.Anytime => "언젠가 할 일",
             TaskListMode.Logbook => "완료한 일",
             TaskListMode.Priority => "중요도",
-            TaskListMode.Project => "그룹",
-            TaskListMode.Label => "태그",
-            TaskListMode.NoProject => "그룹 없음",
-            TaskListMode.NoLabel => "태그 없음",
+            TaskListMode.TaskGroup => "그룹",
+            TaskListMode.Tag => "태그",
+            TaskListMode.NoTaskGroup => "그룹 없음",
+            TaskListMode.NoTag => "태그 없음",
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
         TitleCaption = string.Empty;
         OnPropertyChanged(nameof(HasTitleCaption));
-        IsProjectMode = _mode == TaskListMode.Project;
+        IsTaskGroupMode = _mode == TaskListMode.TaskGroup;
         IsGroupedList = _mode is TaskListMode.Priority;
         IsStandardList = !IsGroupedList;
         OnPropertyChanged(nameof(CanQuickAdd));
@@ -188,12 +188,12 @@ public partial class TaskListViewModel : ObservableObject
             Title = parsed.Title,
             When = when,
             Recurrence = parsed.Recurrence,
-            ProjectId = _mode == TaskListMode.Project ? _filterId : null,
+            TaskGroupId = _mode == TaskListMode.TaskGroup ? _filterId : null,
             // New tasks append to the end of the list the user is currently looking at.
             SortOrder = _reorder.AppendRank(VisibleRowRanks()),
         };
-        if (_mode == TaskListMode.Label && _filterId is { } labelId)
-            task.LabelIds.Add(labelId);
+        if (_mode == TaskListMode.Tag && _filterId is { } tagId)
+            task.TagIds.Add(tagId);
 
         await _store.SaveAsync(task);
         QuickAddText = string.Empty;
@@ -208,7 +208,7 @@ public partial class TaskListViewModel : ObservableObject
 
         switch (_mode)
         {
-            case TaskListMode.All:
+            case TaskListMode.AllTasks:
                 items = await _index.GetAllActiveAsync();
                 break;
             case TaskListMode.Today:
@@ -226,17 +226,17 @@ public partial class TaskListViewModel : ObservableObject
             case TaskListMode.Priority:
                 items = await _index.GetByPriorityAsync();
                 break;
-            case TaskListMode.Project:
-                items = await _index.GetByProjectAsync(RequiredFilterId());
+            case TaskListMode.TaskGroup:
+                items = await _index.GetByTaskGroupAsync(RequiredFilterId());
                 break;
-            case TaskListMode.Label:
-                items = await _index.GetByLabelAsync(RequiredFilterId());
+            case TaskListMode.Tag:
+                items = await _index.GetByTagAsync(RequiredFilterId());
                 break;
-            case TaskListMode.NoProject:
-                items = await _index.GetWithoutProjectAsync();
+            case TaskListMode.NoTaskGroup:
+                items = await _index.GetWithoutTaskGroupAsync();
                 break;
-            case TaskListMode.NoLabel:
-                items = await _index.GetWithoutLabelAsync();
+            case TaskListMode.NoTag:
+                items = await _index.GetWithoutTagAsync();
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
@@ -460,28 +460,28 @@ public partial class TaskListViewModel : ObservableObject
     public Task<TaskItem?> GetTaskAsync(Guid id) => _store.GetAsync<TaskItem>(id);
 
     /// <summary>Active groups, for the row context menu's "move to group" submenu.</summary>
-    public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync() => _index.GetProjectsAsync();
+    public Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync() => _index.GetTaskGroupsAsync();
 
     /// <summary>Active tags, for the row context menu's tag submenu.</summary>
-    public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync() => _index.GetLabelsAsync();
+    public Task<IReadOnlyList<TagListItem>> GetTagsAsync() => _index.GetTagsAsync();
 
-    /// <summary>Moves a task into a group, or to the Cue home when <paramref name="projectId"/> is
+    /// <summary>Moves a task into a group, or to the Cue home when <paramref name="taskGroupId"/> is
     /// null, then refreshes. A no-op if the task is gone or already there.</summary>
-    public async Task MoveTaskToProjectAsync(Guid taskId, Guid? projectId)
+    public async Task MoveTaskToTaskGroupAsync(Guid taskId, Guid? taskGroupId)
     {
         var task = await _store.GetAsync<TaskItem>(taskId);
-        if (task is null || task.IsDeleted || task.ProjectId == projectId) return;
-        task.ProjectId = projectId;
+        if (task is null || task.IsDeleted || task.TaskGroupId == taskGroupId) return;
+        task.TaskGroupId = taskGroupId;
         await _store.SaveAsync(task);
         await LoadAsync();
     }
 
     /// <summary>Adds the tag if absent, removes it if present, then refreshes.</summary>
-    public async Task ToggleTaskLabelAsync(Guid taskId, Guid labelId)
+    public async Task ToggleTaskTagAsync(Guid taskId, Guid tagId)
     {
         var task = await _store.GetAsync<TaskItem>(taskId);
         if (task is null || task.IsDeleted) return;
-        if (!task.LabelIds.Remove(labelId)) task.LabelIds.Add(labelId);
+        if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
         await _store.SaveAsync(task);
         await LoadAsync();
     }

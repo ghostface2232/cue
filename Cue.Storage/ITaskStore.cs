@@ -7,8 +7,8 @@ namespace Cue.Storage;
 /// interface, which is what makes a later sync layer additive.
 /// </summary>
 /// <remarks>
-/// Methods are generic over the concrete record type (<see cref="TaskItem"/>, <see cref="Project"/>,
-/// <see cref="Label"/>): the type selects the storage partition. The foundation-phase implementation
+/// Methods are generic over the concrete record type (<see cref="TaskItem"/>, <see cref="TaskGroup"/>,
+/// <see cref="Tag"/>): the type selects the storage partition. The foundation-phase implementation
 /// is file-based (<see cref="FileTaskStore"/>).
 /// </remarks>
 public interface ITaskStore

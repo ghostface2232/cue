@@ -71,9 +71,9 @@ public sealed class RecurringTaskService : IRecurringTaskService
         CompletedAt = completedAt,
         When = original.When, // the instance's own date, frozen as the historical record
         Priority = original.Priority,
-        ProjectId = original.ProjectId,
+        TaskGroupId = original.TaskGroupId,
         ParentTaskId = original.ParentTaskId,
-        LabelIds = new List<Guid>(original.LabelIds),
+        TagIds = new List<Guid>(original.TagIds),
 
         // No recurrence on the copy: it is a frozen completion record, it does not advance.
         Recurrence = null,

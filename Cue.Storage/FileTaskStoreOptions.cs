@@ -7,8 +7,8 @@ namespace Cue.Storage;
 public sealed class FileTaskStoreOptions
 {
     /// <summary>
-    /// The root folder under which the per-type subfolders (<c>tasks/</c>, <c>projects/</c>,
-    /// <c>labels/</c>, <c>meta/</c>) live.
+    /// The root folder under which the per-type subfolders (<c>tasks/</c>, <c>groups/</c>,
+    /// <c>tags/</c>, <c>meta/</c>) live.
     /// </summary>
     public required string RootPath { get; init; }
 

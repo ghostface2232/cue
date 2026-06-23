@@ -70,7 +70,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         var clock = new MutableTimeProvider(Now);
 
         var project = Guid.NewGuid();
-        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), ProjectId = project };
+        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), TaskGroupId = project };
         var doneTask = new TaskItem { Title = "끝낸 일", CompletedAt = Now.AddDays(-1) };
 
         await using (var store = await OpenAsync(root, clock))
@@ -92,8 +92,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
             var today = await reopened.GetTodayAsync();
             Assert.Equal(todayTask.Id, Assert.Single(today).Id);
 
-            var inProject = await reopened.GetByProjectAsync(project);
-            Assert.Equal(todayTask.Id, Assert.Single(inProject).Id);
+            var inGroup = await reopened.GetByTaskGroupAsync(project);
+            Assert.Equal(todayTask.Id, Assert.Single(inGroup).Id);
 
             var logbook = await reopened.GetLogbookAsync();
             Assert.Equal(doneTask.Id, Assert.Single(logbook).Id);
@@ -105,31 +105,31 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     {
         var root = NewRoot();
         var clock = new MutableTimeProvider(Now);
-        var activeProject = new Project { Name = "활성 프로젝트", SortOrder = "a" };
-        var deletedProject = new Project { Name = "삭제된 프로젝트" };
-        var label = new Label { Name = "중요", Color = "#ff0000" };
+        var activeGroup = new TaskGroup { Name = "활성 프로젝트", SortOrder = "a" };
+        var deletedGroup = new TaskGroup { Name = "삭제된 프로젝트" };
+        var label = new Tag { Name = "중요", Color = "#ff0000" };
 
         await using (var store = await OpenAsync(root, clock))
         {
-            await store.SaveAsync(activeProject);
-            await store.SaveAsync(deletedProject);
+            await store.SaveAsync(activeGroup);
+            await store.SaveAsync(deletedGroup);
             await store.SaveAsync(label);
-            await store.DeleteAsync<Project>(deletedProject.Id);
+            await store.DeleteAsync<TaskGroup>(deletedGroup.Id);
 
             // Active (non-tombstoned) projects only; a pure group has no archived/completed state.
-            Assert.Equal(activeProject.Id, Assert.Single(await store.GetProjectsAsync()).Id);
-            Assert.Equal(label.Id, Assert.Single(await store.GetLabelsAsync()).Id);
+            Assert.Equal(activeGroup.Id, Assert.Single(await store.GetTaskGroupsAsync()).Id);
+            Assert.Equal(label.Id, Assert.Single(await store.GetTagsAsync()).Id);
 
             // An ordinary Save updates the file first and immediately reflects a rename into SQLite.
-            activeProject.Name = "이름 변경됨";
-            await store.SaveAsync(activeProject);
-            Assert.Equal("이름 변경됨", Assert.Single(await store.GetProjectsAsync()).Name);
+            activeGroup.Name = "이름 변경됨";
+            await store.SaveAsync(activeGroup);
+            Assert.Equal("이름 변경됨", Assert.Single(await store.GetTaskGroupsAsync()).Name);
         }
 
         File.Delete(Path.Combine(root, "index.db"));
         await using var reopened = await OpenAsync(root, clock);
-        Assert.Equal("이름 변경됨", Assert.Single(await reopened.GetProjectsAsync()).Name);
-        Assert.Equal(label.Id, Assert.Single(await reopened.GetLabelsAsync()).Id);
+        Assert.Equal("이름 변경됨", Assert.Single(await reopened.GetTaskGroupsAsync()).Name);
+        Assert.Equal(label.Id, Assert.Single(await reopened.GetTagsAsync()).Id);
     }
 
     [Fact]
@@ -137,27 +137,27 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var project = new Project { Name = "색인 프로젝트" };
-        var label = new Label { Name = "색인 라벨" };
+        var project = new TaskGroup { Name = "색인 프로젝트" };
+        var label = new Tag { Name = "색인 라벨" };
         await store.SaveAsync(project);
         await store.SaveAsync(label);
 
-        File.Delete(Path.Combine(root, "projects", project.Id + ".json"));
-        File.Delete(Path.Combine(root, "labels", label.Id + ".json"));
+        File.Delete(Path.Combine(root, "groups", project.Id + ".json"));
+        File.Delete(Path.Combine(root, "tags", label.Id + ".json"));
 
-        Assert.Equal(project.Id, Assert.Single(await store.GetProjectsAsync()).Id);
-        Assert.Equal(label.Id, Assert.Single(await store.GetLabelsAsync()).Id);
-        Assert.Null(await store.GetAsync<Project>(project.Id));
-        Assert.Null(await store.GetAsync<Label>(label.Id));
+        Assert.Equal(project.Id, Assert.Single(await store.GetTaskGroupsAsync()).Id);
+        Assert.Equal(label.Id, Assert.Single(await store.GetTagsAsync()).Id);
+        Assert.Null(await store.GetAsync<TaskGroup>(project.Id));
+        Assert.Null(await store.GetAsync<Tag>(label.Id));
     }
 
     [Fact]
-    public async Task UnfiledLists_GatherTasksWithNoGroupOrNoLabel()
+    public async Task UnfiledLists_GatherTasksWithNoGroupOrNoTag()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var project = new Project { Name = "그룹" };
-        var label = new Label { Name = "태그" };
+        var project = new TaskGroup { Name = "그룹" };
+        var label = new Tag { Name = "태그" };
         await store.SaveAsync(project);
         await store.SaveAsync(label);
 
@@ -165,8 +165,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         // Explicit sort orders keep the list order deterministic; the completed task sorts last despite
         // its early rank, proving the completed-last ordering.
         var unfiled = new TaskItem { Title = "미분류", SortOrder = "b" };
-        var grouped = new TaskItem { Title = "그룹에 든 일", ProjectId = project.Id, SortOrder = "c" };
-        var tagged = new TaskItem { Title = "태그 붙은 일", LabelIds = { label.Id }, SortOrder = "d" };
+        var grouped = new TaskItem { Title = "그룹에 든 일", TaskGroupId = project.Id, SortOrder = "c" };
+        var tagged = new TaskItem { Title = "태그 붙은 일", TagIds = { label.Id }, SortOrder = "d" };
         var doneUnfiled = new TaskItem { Title = "끝낸 미분류", CompletedAt = Now, SortOrder = "a" };
         await store.SaveAsync(unfiled);
         await store.SaveAsync(grouped);
@@ -176,58 +176,58 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         // 그룹 없음: every task with no group (tagged-but-ungrouped included), completed kept but dimmed below.
         Assert.Equal(
             new[] { unfiled.Id, tagged.Id, doneUnfiled.Id },
-            (await store.GetWithoutProjectAsync()).Select(t => t.Id));
+            (await store.GetWithoutTaskGroupAsync()).Select(t => t.Id));
         // 태그 없음: every task carrying no label (grouped-but-untagged included).
         Assert.Equal(
             new[] { unfiled.Id, grouped.Id, doneUnfiled.Id },
-            (await store.GetWithoutLabelAsync()).Select(t => t.Id));
+            (await store.GetWithoutTagAsync()).Select(t => t.Id));
 
         // Badge counts are open-only — the completed unfiled task drops out of both.
-        Assert.Equal(2, await store.GetOpenTaskCountWithoutProjectAsync());
-        Assert.Equal(2, await store.GetOpenTaskCountWithoutLabelAsync());
+        Assert.Equal(2, await store.GetOpenTaskCountWithoutTaskGroupAsync());
+        Assert.Equal(2, await store.GetOpenTaskCountWithoutTagAsync());
 
         // Filing the task away (give it a group and a tag) removes it from both unfiled lists.
-        unfiled.ProjectId = project.Id;
-        unfiled.LabelIds.Add(label.Id);
+        unfiled.TaskGroupId = project.Id;
+        unfiled.TagIds.Add(label.Id);
         await store.SaveAsync(unfiled);
-        Assert.DoesNotContain(await store.GetWithoutProjectAsync(), t => t.Id == unfiled.Id);
-        Assert.DoesNotContain(await store.GetWithoutLabelAsync(), t => t.Id == unfiled.Id);
-        Assert.Equal(1, await store.GetOpenTaskCountWithoutProjectAsync());
-        Assert.Equal(1, await store.GetOpenTaskCountWithoutLabelAsync());
+        Assert.DoesNotContain(await store.GetWithoutTaskGroupAsync(), t => t.Id == unfiled.Id);
+        Assert.DoesNotContain(await store.GetWithoutTagAsync(), t => t.Id == unfiled.Id);
+        Assert.Equal(1, await store.GetOpenTaskCountWithoutTaskGroupAsync());
+        Assert.Equal(1, await store.GetOpenTaskCountWithoutTagAsync());
     }
 
     [Fact]
-    public async Task DeleteProject_PreservesTasksByMovingThemToInbox()
+    public async Task DeleteTaskGroup_PreservesTasksByMovingThemToInbox()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var project = new Project { Name = "삭제할 프로젝트" };
-        var open = new TaskItem { Title = "살려 둘 일", ProjectId = project.Id };
-        var done = new TaskItem { Title = "완료한 일", ProjectId = project.Id, CompletedAt = Now };
+        var project = new TaskGroup { Name = "삭제할 프로젝트" };
+        var open = new TaskItem { Title = "살려 둘 일", TaskGroupId = project.Id };
+        var done = new TaskItem { Title = "완료한 일", TaskGroupId = project.Id, CompletedAt = Now };
         await store.SaveAsync(project);
         await store.SaveAsync(open);
         await store.SaveAsync(done);
 
-        await store.DeleteAsync<Project>(project.Id);
+        await store.DeleteAsync<TaskGroup>(project.Id);
 
-        // Deleting a group never deletes its work; the tasks are ungrouped (ProjectId cleared).
-        Assert.Null((await store.GetAsync<TaskItem>(open.Id))!.ProjectId);
-        Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.ProjectId);
+        // Deleting a group never deletes its work; the tasks are ungrouped (TaskGroupId cleared).
+        Assert.Null((await store.GetAsync<TaskItem>(open.Id))!.TaskGroupId);
+        Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.TaskGroupId);
         // Both stay in the home "모든 할 일" view; the completed one sinks (dimmed) below the open one.
         Assert.Equal(new[] { open.Id, done.Id }, (await store.GetAllActiveAsync()).Select(t => t.Id));
-        Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
-        Assert.Empty(await store.GetProjectsAsync());
+        Assert.NotNull((await store.GetAsync<TaskGroup>(project.Id))!.DeletedAt);
+        Assert.Empty(await store.GetTaskGroupsAsync());
     }
 
     [Fact]
-    public async Task DeleteProject_DeleteTasksMode_SoftDeletesEveryContainedTask()
+    public async Task DeleteTaskGroup_DeleteTasksMode_SoftDeletesEveryContainedTask()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var project = new Project { Name = "통째로 삭제할 프로젝트" };
-        var open = new TaskItem { Title = "열린 일", ProjectId = project.Id };
-        var done = new TaskItem { Title = "완료한 일", ProjectId = project.Id, CompletedAt = Now };
-        var subtask = new TaskItem { Title = "하위 작업", ParentTaskId = open.Id, ProjectId = project.Id };
+        var project = new TaskGroup { Name = "통째로 삭제할 프로젝트" };
+        var open = new TaskItem { Title = "열린 일", TaskGroupId = project.Id };
+        var done = new TaskItem { Title = "완료한 일", TaskGroupId = project.Id, CompletedAt = Now };
+        var subtask = new TaskItem { Title = "하위 작업", ParentTaskId = open.Id, TaskGroupId = project.Id };
         var other = new TaskItem { Title = "다른 곳의 일" };
         await store.SaveAsync(project);
         await store.SaveAsync(open);
@@ -236,35 +236,35 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         await store.SaveAsync(other);
 
         // Opt-in destructive deletion: the group and all its tasks (open, completed, subtasks) are tombstoned.
-        await store.DeleteProjectAsync(project.Id, ProjectDeletionMode.DeleteTasks);
+        await store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks);
 
         Assert.NotNull((await store.GetAsync<TaskItem>(open.Id))!.DeletedAt);
         Assert.NotNull((await store.GetAsync<TaskItem>(done.Id))!.DeletedAt);
         Assert.NotNull((await store.GetAsync<TaskItem>(subtask.Id))!.DeletedAt);
-        Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
-        Assert.Empty(await store.GetByProjectAsync(project.Id));
+        Assert.NotNull((await store.GetAsync<TaskGroup>(project.Id))!.DeletedAt);
+        Assert.Empty(await store.GetByTaskGroupAsync(project.Id));
         // A task that was never in the group is untouched and stays in the home "모든 할 일" view.
         Assert.Null((await store.GetAsync<TaskItem>(other.Id))!.DeletedAt);
         Assert.Equal(other.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
     }
 
     [Fact]
-    public async Task DeleteProject_ReparentMode_MovesTasksToInbox()
+    public async Task DeleteTaskGroup_ReparentMode_MovesTasksToInbox()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var project = new Project { Name = "유지할 프로젝트" };
-        var task = new TaskItem { Title = "살려 둘 일", ProjectId = project.Id };
+        var project = new TaskGroup { Name = "유지할 프로젝트" };
+        var task = new TaskItem { Title = "살려 둘 일", TaskGroupId = project.Id };
         await store.SaveAsync(project);
         await store.SaveAsync(task);
 
-        // Reparent mode matches the generic DeleteAsync<Project> default: tasks survive, group goes.
-        await store.DeleteProjectAsync(project.Id, ProjectDeletionMode.Reparent);
+        // Reparent mode matches the generic DeleteAsync<TaskGroup> default: tasks survive, group goes.
+        await store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.Reparent);
 
-        Assert.Null((await store.GetAsync<TaskItem>(task.Id))!.ProjectId);
+        Assert.Null((await store.GetAsync<TaskItem>(task.Id))!.TaskGroupId);
         Assert.Null((await store.GetAsync<TaskItem>(task.Id))!.DeletedAt);
         Assert.Equal(task.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
-        Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<TaskGroup>(project.Id))!.DeletedAt);
     }
 
     [Fact]
@@ -291,26 +291,26 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeleteLabel_RemovesOnlyReferences_AndNeverDeletesTasks()
+    public async Task DeleteTag_RemovesOnlyReferences_AndNeverDeletesTasks()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var removed = new Label { Name = "지울 라벨" };
-        var kept = new Label { Name = "남길 라벨" };
-        var task = new TaskItem { Title = "그대로 남는 일", LabelIds = { removed.Id, kept.Id } };
+        var removed = new Tag { Name = "지울 라벨" };
+        var kept = new Tag { Name = "남길 라벨" };
+        var task = new TaskItem { Title = "그대로 남는 일", TagIds = { removed.Id, kept.Id } };
         await store.SaveAsync(removed);
         await store.SaveAsync(kept);
         await store.SaveAsync(task);
 
-        await store.DeleteAsync<Label>(removed.Id);
+        await store.DeleteAsync<Tag>(removed.Id);
 
         var preserved = await store.GetAsync<TaskItem>(task.Id);
         Assert.NotNull(preserved);
-        Assert.Equal(new[] { kept.Id }, preserved!.LabelIds);
-        Assert.Empty(await store.GetByLabelAsync(removed.Id));
-        Assert.Equal(task.Id, Assert.Single(await store.GetByLabelAsync(kept.Id)).Id);
-        Assert.NotNull((await store.GetAsync<Label>(removed.Id))!.DeletedAt);
-        Assert.Equal(kept.Id, Assert.Single(await store.GetLabelsAsync()).Id);
+        Assert.Equal(new[] { kept.Id }, preserved!.TagIds);
+        Assert.Empty(await store.GetByTagAsync(removed.Id));
+        Assert.Equal(task.Id, Assert.Single(await store.GetByTagAsync(kept.Id)).Id);
+        Assert.NotNull((await store.GetAsync<Tag>(removed.Id))!.DeletedAt);
+        Assert.Equal(kept.Id, Assert.Single(await store.GetTagsAsync()).Id);
     }
 
     [Fact]
@@ -370,22 +370,22 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         {
             Title = "삭제 대상",
             When = OnDay(Today),
-            ProjectId = project,
-            LabelIds = { label },
+            TaskGroupId = project,
+            TagIds = { label },
         };
         await store.SaveAsync(task);
 
         // Present everywhere it should be before deletion.
         Assert.Contains(await store.GetTodayAsync(), t => t.Id == task.Id);
-        Assert.Contains(await store.GetByProjectAsync(project), t => t.Id == task.Id);
-        Assert.Contains(await store.GetByLabelAsync(label), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(project), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTagAsync(label), t => t.Id == task.Id);
 
         await store.DeleteAsync<TaskItem>(task.Id);
 
         // Gone from every active view (tombstones are excluded by default).
         Assert.DoesNotContain(await store.GetTodayAsync(), t => t.Id == task.Id);
-        Assert.DoesNotContain(await store.GetByProjectAsync(project), t => t.Id == task.Id);
-        Assert.DoesNotContain(await store.GetByLabelAsync(label), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTaskGroupAsync(project), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTagAsync(label), t => t.Id == task.Id);
         Assert.Empty(await store.GetLogbookAsync()); // a tombstone is not "completed"
 
         // But the file remains as a tombstone — soft delete, not removal.
@@ -404,23 +404,23 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
-        var task = new TaskItem { Title = "이동하는 일", When = OnDay(Today), ProjectId = first };
+        var task = new TaskItem { Title = "이동하는 일", When = OnDay(Today), TaskGroupId = first };
 
         // Save writes both: the file exists and the index query returns it.
         await store.SaveAsync(task);
         Assert.True(File.Exists(Path.Combine(root, "tasks", task.Id + ".json")));
-        Assert.Contains(await store.GetByProjectAsync(first), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(first), t => t.Id == task.Id);
 
         // Re-saving an edit reflects into the index immediately — no stale row, no rebuild needed.
-        task.ProjectId = second;
+        task.TaskGroupId = second;
         await store.SaveAsync(task);
-        Assert.DoesNotContain(await store.GetByProjectAsync(first), t => t.Id == task.Id);
-        Assert.Contains(await store.GetByProjectAsync(second), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTaskGroupAsync(first), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(second), t => t.Id == task.Id);
 
         // Delete updates both: file becomes a tombstone, index drops it from active views.
         await store.DeleteAsync<TaskItem>(task.Id);
         Assert.True(File.Exists(Path.Combine(root, "tasks", task.Id + ".json")));
-        Assert.DoesNotContain(await store.GetByProjectAsync(second), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTaskGroupAsync(second), t => t.Id == task.Id);
     }
 
     [Fact]
@@ -460,10 +460,10 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         // (Inbox = project-less) and the time axis stay cleanly separable in the assertions below.
         var filed = Guid.NewGuid();
         var inbox = new TaskItem { Title = "미분류", When = ScheduledWhen.Unscheduled };                            // Inbox + Anytime
-        var anytimeFiled = new TaskItem { Title = "언젠가", When = ScheduledWhen.Unscheduled, ProjectId = filed };  // Anytime (filed)
-        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), ProjectId = filed };              // Today
-        var future = new TaskItem { Title = "다가오는 일", When = OnDay(Today.AddDays(2)), ProjectId = filed };      // Upcoming
-        var done = new TaskItem { Title = "완료", When = OnDay(Today), CompletedAt = Now, ProjectId = filed };      // Logbook only
+        var anytimeFiled = new TaskItem { Title = "언젠가", When = ScheduledWhen.Unscheduled, TaskGroupId = filed };  // Anytime (filed)
+        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), TaskGroupId = filed };              // Today
+        var future = new TaskItem { Title = "다가오는 일", When = OnDay(Today.AddDays(2)), TaskGroupId = filed };      // Upcoming
+        var done = new TaskItem { Title = "완료", When = OnDay(Today), CompletedAt = Now, TaskGroupId = filed };      // Logbook only
 
         foreach (var t in new[] { inbox, anytimeFiled, todayTask, future, done })
             await store.SaveAsync(t);
@@ -578,24 +578,24 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         // The store enforces no referential integrity, so the index and views must tolerate floating
         // references: a project/label/parent that no record exists for.
-        var missingProject = Guid.NewGuid();
-        var missingLabel = Guid.NewGuid();
+        var missingGroup = Guid.NewGuid();
+        var missingTag = Guid.NewGuid();
         var missingParent = Guid.NewGuid();
         var orphan = new TaskItem
         {
             Title = "떠 있는 참조",
             When = OnDay(Today),
-            ProjectId = missingProject,
+            TaskGroupId = missingGroup,
             ParentTaskId = missingParent,   // a sub-task whose parent never existed
-            LabelIds = { missingLabel },
+            TagIds = { missingTag },
         };
         await store.SaveAsync(orphan);
 
         // Time views never resolve references, so the orphan surfaces normally.
         Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
         // Classification queries by the dangling ids just return it — nothing joins or throws.
-        Assert.Contains(await store.GetByProjectAsync(missingProject), t => t.Id == orphan.Id);
-        Assert.Contains(await store.GetByLabelAsync(missingLabel), t => t.Id == orphan.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(missingGroup), t => t.Id == orphan.Id);
+        Assert.Contains(await store.GetByTagAsync(missingTag), t => t.Id == orphan.Id);
 
         // A full rebuild from the files tolerates the same floating references.
         await store.InitializeAsync();
@@ -633,8 +633,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         var root = NewRoot();
         var clock = new MutableTimeProvider(Now);
         await using var store = await OpenAsync(root, clock);
-        var project = new Project { Name = "옮길 프로젝트" };
-        var label = new Label { Name = "붙일 라벨" };
+        var project = new TaskGroup { Name = "옮길 프로젝트" };
+        var label = new Tag { Name = "붙일 라벨" };
         var task = new TaskItem { Title = "편집 전" };
         await store.SaveAsync(project);
         await store.SaveAsync(label);
@@ -643,15 +643,15 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         task.Title = "편집 후";
         task.Priority = Priority.P1;
-        task.ProjectId = project.Id;
-        task.LabelIds.Add(label.Id);
+        task.TaskGroupId = project.Id;
+        task.TagIds.Add(label.Id);
         task.When = OnDay(Today.AddDays(3));
         await store.SaveAsync(task);
 
         // Filing it under a group does not remove it from the home "모든 할 일" (All) view.
         Assert.Equal(task.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
-        Assert.Equal(task.Id, Assert.Single(await store.GetByProjectAsync(project.Id)).Id);
-        Assert.Equal(task.Id, Assert.Single(await store.GetByLabelAsync(label.Id)).Id);
+        Assert.Equal(task.Id, Assert.Single(await store.GetByTaskGroupAsync(project.Id)).Id);
+        Assert.Equal(task.Id, Assert.Single(await store.GetByTagAsync(label.Id)).Id);
         var indexed = Assert.Single(await store.GetUpcomingAsync(), item => item.Id == task.Id);
         Assert.Equal("편집 후", indexed.Title);
         Assert.Equal(Priority.P1, indexed.Priority);
