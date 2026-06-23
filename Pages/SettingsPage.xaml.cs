@@ -1,8 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using Windows.UI.ViewManagement;
 using Cue.Services;
 
 namespace Cue.Pages;
@@ -41,6 +45,7 @@ public sealed partial class SettingsPage : Page
 
     private readonly AppPreferences _preferences;
     private readonly ObservableCollection<CustomDateMeaningRow> _customDateRows = new();
+    private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private bool _loading;
 
     public SettingsPage()
@@ -133,31 +138,67 @@ public sealed partial class SettingsPage : Page
     private void BuildAccentSwatches()
     {
         AccentSwatches.Children.Clear();
+        var controlStroke = (Brush)Application.Current.Resources["ControlStrokeColorDefaultBrush"];
+        var accent = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
+        var ringStrong = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
+        var onAccent = (Brush)Application.Current.Resources["TextOnAccentFillColorPrimaryBrush"];
+
         foreach (var (name, value) in AccentOptions)
         {
             var selected = string.Equals(_preferences.AccentColor, value, StringComparison.OrdinalIgnoreCase);
-            FrameworkElement content = string.Equals(value, "System", StringComparison.Ordinal)
-                ? new TextBlock { Text = name, Margin = new Thickness(8, 0, 8, 0) }
-                : new Border
+            var isSystem = string.Equals(value, "System", StringComparison.Ordinal);
+
+            Button button;
+            if (isSystem)
+            {
+                // System keeps the OS accent — a labelled chip rather than a color dot.
+                button = new Button
                 {
-                    Width = 22,
-                    Height = 22,
-                    CornerRadius = new CornerRadius(11),
+                    Content = new TextBlock { Text = name, Margin = new Thickness(10, 0, 10, 0) },
+                    Height = 34,
+                    MinWidth = 64,
+                    Padding = new Thickness(0),
+                    CornerRadius = new CornerRadius(17),
+                    BorderThickness = new Thickness(selected ? 2 : 1),
+                    BorderBrush = selected ? accent : controlStroke,
+                };
+            }
+            else
+            {
+                // Color swatch: a saturated dot; the current pick is ringed (high-contrast, per the
+                // selection-popup pattern) with a confirming check, never covered by a theme fill.
+                var dot = new Border
+                {
+                    Width = 24,
+                    Height = 24,
+                    CornerRadius = new CornerRadius(12),
                     Background = BrushFromHex(value),
                 };
-            var button = new Button
-            {
-                Tag = value,
-                Width = string.Equals(value, "System", StringComparison.Ordinal) ? 72 : 34,
-                Height = 34,
-                Padding = new Thickness(0),
-                CornerRadius = new CornerRadius(17),
-                Content = content,
-                BorderThickness = selected ? new Thickness(2) : new Thickness(1),
-                BorderBrush = selected
-                    ? (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
-                    : (Brush)Application.Current.Resources["ControlStrokeColorDefaultBrush"],
-            };
+                var check = new FontIcon
+                {
+                    Glyph = "",
+                    FontSize = 12,
+                    Foreground = onAccent,
+                    Opacity = selected ? 1 : 0,
+                };
+                var content = new Grid();
+                content.Children.Add(dot);
+                content.Children.Add(check);
+
+                button = new Button
+                {
+                    Content = content,
+                    Width = 34,
+                    Height = 34,
+                    Padding = new Thickness(0),
+                    CornerRadius = new CornerRadius(17),
+                    BorderThickness = new Thickness(selected ? 2 : 0),
+                    BorderBrush = selected ? ringStrong : null,
+                };
+            }
+
+            button.Tag = value;
+            button.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             ToolTipService.SetToolTip(button, name);
             button.Click += AccentSwatch_Click;
             AccentSwatches.Children.Add(button);
@@ -177,6 +218,10 @@ public sealed partial class SettingsPage : Page
         _customDateRows.Clear();
         foreach (var meaning in _preferences.CustomDateMeanings)
             _customDateRows.Add(new CustomDateMeaningRow(meaning.Name, meaning.DayOfMonth));
+
+        var hasRows = _customDateRows.Count > 0;
+        CustomDatesList.Visibility = hasRows ? Visibility.Visible : Visibility.Collapsed;
+        CustomDatesEmptyHint.Visibility = hasRows ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void SectionNav_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -192,6 +237,45 @@ public sealed partial class SettingsPage : Page
         ParsingSection.Visibility = selected == "Parsing" ? Visibility.Visible : Visibility.Collapsed;
         AppearanceSection.Visibility = selected == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
         NotificationsSection.Visibility = selected == "Notifications" ? Visibility.Visible : Visibility.Collapsed;
+
+        var section = selected switch
+        {
+            "Parsing" => ParsingSection,
+            "Appearance" => AppearanceSection,
+            "Notifications" => NotificationsSection,
+            _ => (FrameworkElement)TimeSection,
+        };
+        AnimateSectionIn(section);
+    }
+
+    /// <summary>
+    /// Settle the freshly-shown section in with a short fade + upward slide on Cue's signature pane
+    /// curve (CubicBezier 0.1,0.9 0.2,1.0), so switching sections matches the app's motion language
+    /// instead of snapping. Skipped when the system has animations disabled.
+    /// </summary>
+    private void AnimateSectionIn(FrameworkElement section)
+    {
+        if (!_animationsEnabled)
+            return;
+
+        ElementCompositionPreview.SetIsTranslationEnabled(section, true);
+        var visual = ElementCompositionPreview.GetElementVisual(section);
+        var compositor = visual.Compositor;
+        var spline = compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1.0f));
+
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(0f, 0f);
+        fade.InsertKeyFrame(1f, 1f, spline);
+        fade.Duration = TimeSpan.FromMilliseconds(220);
+
+        var slide = compositor.CreateVector3KeyFrameAnimation();
+        slide.Target = "Translation";
+        slide.InsertKeyFrame(0f, new Vector3(0f, 8f, 0f));
+        slide.InsertKeyFrame(1f, Vector3.Zero, spline);
+        slide.Duration = TimeSpan.FromMilliseconds(300);
+
+        visual.StartAnimation("Opacity", fade);
+        visual.StartAnimation("Translation", slide);
     }
 
     private void FirstDayCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
