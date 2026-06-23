@@ -226,9 +226,11 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
-    private static Microsoft.UI.Xaml.Media.Brush? AccentBrush()
+    private static Microsoft.UI.Xaml.Media.Brush? AccentBrush() => ThemeBrush("AccentTextFillColorPrimaryBrush");
+
+    private static Microsoft.UI.Xaml.Media.Brush? ThemeBrush(string key)
     {
-        try { return (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]; }
+        try { return (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[key]; }
         catch { return null; }
     }
 
@@ -243,7 +245,7 @@ public sealed partial class MainWindow : Window
         };
         // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
         // tap from also navigating into the project.
-        icon.Tapped += (sender, e) => { e.Handled = true; ShowProjectIconPicker((FrameworkElement)sender, project.Id); };
+        icon.Tapped += (sender, e) => { e.Handled = true; ShowProjectIconPicker((FrameworkElement)sender, project.Id, project.Icon); };
         if (ViewModel.ProjectTaskCounts.TryGetValue(project.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };
         item.ContextFlyout = CreateRecordMenu(project, isProject: true, item);
@@ -262,7 +264,7 @@ public sealed partial class MainWindow : Window
             Icon = icon,
         };
         // Tapping the glyph opens the color picker directly (no right-click depth).
-        icon.Tapped += (sender, e) => { e.Handled = true; ShowLabelColorPicker((FrameworkElement)sender, label.Id); };
+        icon.Tapped += (sender, e) => { e.Handled = true; ShowLabelColorPicker((FrameworkElement)sender, label.Id, label.Color); };
         if (ViewModel.LabelTaskCounts.TryGetValue(label.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };
         item.ContextFlyout = CreateRecordMenu(label, isProject: false, item);
@@ -280,13 +282,13 @@ public sealed partial class MainWindow : Window
         if (isProject && record is ProjectListItem project)
         {
             var pick = new MenuFlyoutItem { Text = "아이콘 변경" };
-            pick.Click += (_, _) => ShowProjectIconPicker(owner, project.Id);
+            pick.Click += (_, _) => ShowProjectIconPicker(owner, project.Id, project.Icon);
             menu.Items.Add(pick);
         }
         if (!isProject && record is LabelListItem label)
         {
             var pick = new MenuFlyoutItem { Text = "색 변경" };
-            pick.Click += (_, _) => ShowLabelColorPicker(owner, label.Id);
+            pick.Click += (_, _) => ShowLabelColorPicker(owner, label.Id, label.Color);
             menu.Items.Add(pick);
         }
         menu.Items.Add(delete);
@@ -312,8 +314,9 @@ public sealed partial class MainWindow : Window
         return new Flyout { Content = grid };
     }
 
-    private void ShowProjectIconPicker(FrameworkElement anchor, Guid projectId)
+    private void ShowProjectIconPicker(FrameworkElement anchor, Guid projectId, string? currentGlyph)
     {
+        var accent = AccentBrush();
         Flyout? flyout = null;
         flyout = BuildSwatchGridFlyout(ProjectIcons.Length, 4, i =>
         {
@@ -325,31 +328,57 @@ public sealed partial class MainWindow : Window
                 Padding = new Thickness(0),
                 Content = new FontIcon { Glyph = glyph, FontSize = 16 },
             };
+            // The current icon is emphasized with an accent ring.
+            if (string.Equals(glyph, currentGlyph, StringComparison.Ordinal) && accent is not null)
+            {
+                button.BorderThickness = new Thickness(2);
+                button.BorderBrush = accent;
+            }
             button.Click += (_, _) => { flyout!.Hide(); PickProjectIcon(projectId, glyph); };
             return button;
         });
         flyout.ShowAt(anchor);
     }
 
-    private void ShowLabelColorPicker(FrameworkElement anchor, Guid labelId)
+    private void ShowLabelColorPicker(FrameworkElement anchor, Guid labelId, string? currentColor)
     {
+        var ring = ThemeBrush("TextFillColorPrimaryBrush");
         Flyout? flyout = null;
         flyout = BuildSwatchGridFlyout(LabelColors.Palette.Count, 4, i =>
         {
             var hex = LabelColors.Palette[i];
+            var baseColor = ((Microsoft.UI.Xaml.Media.SolidColorBrush)new HexToBrushConverter()
+                .Convert(hex, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!)).Color;
             var button = new Button
             {
                 Width = 32,
                 Height = 32,
                 Padding = new Thickness(0),
                 CornerRadius = new CornerRadius(16),
-                Background = (Microsoft.UI.Xaml.Media.Brush)new HexToBrushConverter()
-                    .Convert(hex, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!),
+                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(baseColor),
             };
+            // Hover/press only lightens the swatch instead of replacing it with a theme fill (which
+            // used to hide the color completely). Keep the color visible through both states.
+            button.Resources["ButtonBackgroundPointerOver"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Lighten(baseColor, 0.18));
+            button.Resources["ButtonBackgroundPressed"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Lighten(baseColor, 0.30));
+            // The current color is emphasized with a high-contrast ring that survives hover/press.
+            if (string.Equals(hex, currentColor, StringComparison.OrdinalIgnoreCase) && ring is not null)
+            {
+                button.BorderThickness = new Thickness(2);
+                button.BorderBrush = ring;
+                button.Resources["ButtonBorderBrushPointerOver"] = ring;
+                button.Resources["ButtonBorderBrushPressed"] = ring;
+            }
             button.Click += (_, _) => { flyout!.Hide(); PickLabelColor(labelId, hex); };
             return button;
         });
         flyout.ShowAt(anchor);
+    }
+
+    private static Windows.UI.Color Lighten(Windows.UI.Color color, double amount)
+    {
+        byte Mix(byte channel) => (byte)(channel + (255 - channel) * amount);
+        return Windows.UI.Color.FromArgb(color.A, Mix(color.R), Mix(color.G), Mix(color.B));
     }
 
     private async void PickProjectIcon(Guid projectId, string glyph)
