@@ -21,7 +21,9 @@ public partial class TaskRowViewModel : ObservableObject
     private bool _suppressToggle;
 
     public Guid Id { get; }
-    public string Title { get; }
+
+    [ObservableProperty]
+    public partial string Title { get; set; }
 
     /// <summary>
     /// The row's current LexoRank ordering key, mirrored from the index. Kept up to date as the
@@ -30,9 +32,19 @@ public partial class TaskRowViewModel : ObservableObject
     /// </summary>
     public string SortOrder { get; set; }
 
-    public string Schedule { get; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSchedule))]
+    [NotifyPropertyChangedFor(nameof(HasMetadata))]
+    public partial string Schedule { get; set; }
+
     public bool HasSchedule => Schedule.Length > 0;
-    public Priority Priority { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPriority))]
+    [NotifyPropertyChangedFor(nameof(PriorityCaption))]
+    [NotifyPropertyChangedFor(nameof(HasMetadata))]
+    public partial Priority Priority { get; set; }
+
     public bool HasPriority => Priority != Priority.None;
     public string PriorityCaption => HasPriority ? Priority.ToString() : string.Empty;
     // Subtasks are rendered as their own indented sub-list, so their presence is already obvious —
@@ -56,7 +68,7 @@ public partial class TaskRowViewModel : ObservableObject
     {
         _onUserToggled = onUserToggled;
         Id = item.Id;
-        Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
+        Title = FormatTitle(item.Title);
         SortOrder = item.SortOrder;
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
@@ -64,6 +76,22 @@ public partial class TaskRowViewModel : ObservableObject
         _suppressToggle = true;       // initial state from the index, not a user action
         IsCompleted = item.IsCompleted;
         _suppressToggle = false;
+    }
+
+    /// <summary>
+    /// Patches this row's display fields in place from a fresh index projection, preserving the row
+    /// instance — and with it the realized container, scroll position, selection accent, and any drag in
+    /// progress — so a list refresh that only changed values never recreates the row. Only ever called for
+    /// a row whose <see cref="Id"/> already matches <paramref name="item"/>. The generated setters skip the
+    /// change notification when a value is unchanged, so a refresh that touched nothing here is silent.
+    /// </summary>
+    public void Update(TaskListItem item)
+    {
+        Title = FormatTitle(item.Title);
+        Schedule = BuildSchedule(item);
+        Priority = item.Priority;
+        SortOrder = item.SortOrder;
+        SetCompletedSilently(item.IsCompleted);
     }
 
     partial void OnIsCompletedChanged(bool value)
@@ -88,6 +116,9 @@ public partial class TaskRowViewModel : ObservableObject
         Subtasks.Add(subtask);
         OnPropertyChanged(nameof(HasSubtasks));
     }
+
+    private static string FormatTitle(string title)
+        => string.IsNullOrWhiteSpace(title) ? "(제목 없음)" : title;
 
     private static string BuildSchedule(TaskListItem item)
         => item.WhenDate is { } when ? Day(when) : string.Empty;

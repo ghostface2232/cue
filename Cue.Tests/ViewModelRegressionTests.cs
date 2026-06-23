@@ -568,6 +568,120 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task DetailTitleEdit_PatchesRowInPlace_PreservingRowInstances()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var a = new TaskItem { Title = "A", SortOrder = "a" };
+        var b = new TaskItem { Title = "B", SortOrder = "b" };
+        await store.SaveAsync(a);
+        await store.SaveAsync(b);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.LoadAsync();
+        var rowA = vm.Tasks.Single(row => row.Id == a.Id);
+        var rowB = vm.Tasks.Single(row => row.Id == b.Id);
+
+        // A title edit changes neither membership nor order, so the refresh must patch the row in place.
+        await vm.Detail.OpenAsync(a.Id);
+        vm.Detail.Title = "A renamed";
+        await vm.Detail.FlushAsync();
+
+        Assert.Equal(2, vm.Tasks.Count);
+        Assert.Same(rowA, vm.Tasks.Single(row => row.Id == a.Id)); // same instance, patched not recreated
+        Assert.Same(rowB, vm.Tasks.Single(row => row.Id == b.Id)); // untouched neighbor preserved
+        Assert.Equal("A renamed", rowA.Title);
+    }
+
+    [Fact]
+    public async Task DetailPriorityEdit_InFlatView_PatchesRowInPlace()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "task", Priority = Priority.P3, SortOrder = "a" };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.LoadAsync();
+        var row = Assert.Single(vm.Tasks);
+
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        Assert.Same(row, Assert.Single(vm.Tasks)); // a flat view doesn't sort by priority — same instance
+        Assert.Equal(Priority.P1, row.Priority);
+        Assert.Equal("P1", row.PriorityCaption);
+    }
+
+    [Fact]
+    public async Task PriorityView_ChangingPriority_MovesRowToTheCorrectBucket()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var p1 = new TaskItem { Title = "urgent", Priority = Priority.P1, SortOrder = "a" };
+        var p2 = new TaskItem { Title = "later", Priority = Priority.P2, SortOrder = "b" };
+        await store.SaveAsync(p1);
+        await store.SaveAsync(p2);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Priority));
+        await vm.LoadAsync();
+        Assert.Equal(2, vm.Groups.Count); // 매우 중요 + 중요
+
+        // Promote the P2 task to P1: it must leave the 중요 bucket (now empty, so removed) and join 매우 중요.
+        await vm.Detail.OpenAsync(p2.Id);
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var group = Assert.Single(vm.Groups);
+        Assert.Equal("매우 중요", group.Name);
+        Assert.Equal(2, group.Tasks.Count);
+        Assert.Contains(p1.Id, group.Tasks.Select(row => row.Id));
+        Assert.Contains(p2.Id, group.Tasks.Select(row => row.Id));
+    }
+
+    [Fact]
+    public async Task ProjectView_MovingTaskOut_RemovesOnlyThatRow_PreservingOthers()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var project = new Project { Name = "P" };
+        await store.SaveAsync(project);
+        var stay = new TaskItem { Title = "stay", ProjectId = project.Id, SortOrder = "a" };
+        var leave = new TaskItem { Title = "leave", ProjectId = project.Id, SortOrder = "b" };
+        await store.SaveAsync(stay);
+        await store.SaveAsync(leave);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Project, project.Id));
+        await vm.LoadAsync();
+        var stayRow = vm.Tasks.Single(row => row.Id == stay.Id);
+
+        await vm.MoveTaskToProjectAsync(leave.Id, null); // moves out of the project, reconciling the list
+
+        var remaining = Assert.Single(vm.Tasks);
+        Assert.Same(stayRow, remaining);  // the surviving row keeps its instance
+        Assert.Equal(stay.Id, remaining.Id);
+    }
+
+    [Fact]
     public async Task QueuedAutoSave_PersistsSnapshot_NotLivePanelValuesChangedAfterward()
     {
         using var temp = new TempDirectory();
