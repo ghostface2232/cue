@@ -441,13 +441,23 @@ public sealed partial class MainWindow : Window
         catch { return null; }
     }
 
-    /// <summary>Insets a group/tag row's hover/selection pill (and its icon+text, kept inside the pill)
-    /// to the right — like the main list's subtasks — by overriding the pill's margin
-    /// (NavigationViewItemButtonMargin, the LayoutRoot Margin) on this item only via its Resources.</summary>
+    /// <summary>Moves a group/tag row's hover/selection pill right to meet its already-indented icon,
+    /// without moving the content. The pill is the presenter's LayoutRoot (Margin =
+    /// NavigationViewItemButtonMargin, stock 4,2,4,2). Pushing the pill's left by x and pulling the icon
+    /// box (NavigationViewItemOnLeftIconBoxMargin, stock 0) and label
+    /// (NavigationViewItemContentPresenterMargin, stock 4,-1,8,-1) back by the same x cancels for the
+    /// content — so only the highlight shifts. Set per item via its Resources (scoped to that row).
+    /// x is the CueNavHighlightInset token.</summary>
     private static void ApplyNavRowInset(NavigationViewItem item)
     {
-        try { item.Resources["NavigationViewItemButtonMargin"] = (Thickness)Application.Current.Resources["CueNavRowPillMargin"]; }
-        catch { /* fall back to the stock pill margin */ }
+        try
+        {
+            var x = (double)Application.Current.Resources["CueNavHighlightInset"];
+            item.Resources["NavigationViewItemButtonMargin"] = new Thickness(4 + x, 2, 4, 2);
+            item.Resources["NavigationViewItemOnLeftIconBoxMargin"] = new Thickness(-x, 0, 0, 0);
+            item.Resources["NavigationViewItemContentPresenterMargin"] = new Thickness(4 - x, -1, 8, -1);
+        }
+        catch { /* fall back to the stock pill margins */ }
     }
 
     private MenuFlyout CreateRecordMenu(object record, bool isGroup, NavigationViewItem owner)

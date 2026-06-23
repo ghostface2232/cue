@@ -82,13 +82,12 @@
     <x:Double x:Key="CueFontListTitle">16.5</x:Double>
     <x:Double x:Key="CueFontListMeta">13</x:Double>
 
-    <!-- Sidebar group/tag rows: the hover/selection pill (the NavigationViewItem's LayoutRoot, whose
-         Margin is NavigationViewItemButtonMargin — stock 4,2,4,2) is inset further on the left so the
-         pill leaves a left gap and starts near the row icon. Overriding this one resource moves the
-         pill AND its content together (icon stays inside the pill), unlike an outer item Margin which
-         stacked on top of the nesting indent and shoved the icons too far right. Left value is the
-         tunable knob; top/right/bottom keep the stock pill metrics. -->
-    <Thickness x:Key="CueNavRowPillMargin">26,2,4,2</Thickness>
+    <!-- Sidebar group/tag rows: the icon + label are already indented by the NavigationView nesting,
+         but the hover/selection pill still starts at the pane's left edge, so the pill begins to the
+         LEFT of the icon. This many px pushes the pill right to meet the icon while the icon + label are
+         pulled back by the same amount (see ApplyNavRowInset) — net: only the highlight moves, the
+         content stays. Tune this one value to line the pill's left edge up with the icon. -->
+    <x:Double x:Key="CueNavHighlightInset">24</x:Double>
 
     <!-- ===== Shared hover language. Main list rows, timeline bars, subtle buttons, and local panel
          controls all use the same fill so light mode does not drift between surfaces. ===== -->
