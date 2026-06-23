@@ -107,6 +107,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private readonly TimeZoneInfo _zone;
     private readonly Func<Task> _refreshOwner;
     private readonly Func<Guid, Task> _openTask;
+    private readonly INavDataChangeNotifier _navNotifier;
     private Guid? _taskId;
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
     private WhenEditorMode _loadedWhenMode;
@@ -184,6 +185,13 @@ public partial class TaskDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial Guid? ParentTaskId { get; set; }
 
+    /// <summary>True while the inline "new tag" field is showing in the tag card (replaces the old modal).</summary>
+    [ObservableProperty]
+    public partial bool IsAddingTag { get; set; }
+
+    [ObservableProperty]
+    public partial string NewTagName { get; set; } = string.Empty;
+
     public bool IsSpecificDate => SelectedWhenOption.Mode == WhenEditorMode.SpecificDate;
     public bool HasConcreteWhen => SelectedWhenOption.Mode is WhenEditorMode.Today or WhenEditorMode.SpecificDate;
 
@@ -206,7 +214,8 @@ public partial class TaskDetailViewModel : ObservableObject
         TimeProvider clock,
         TimeZoneInfo zone,
         Func<Task> refreshOwner,
-        Func<Guid, Task> openTask)
+        Func<Guid, Task> openTask,
+        INavDataChangeNotifier navNotifier)
     {
         _store = store;
         _index = index;
@@ -216,6 +225,7 @@ public partial class TaskDetailViewModel : ObservableObject
         _zone = zone;
         _refreshOwner = refreshOwner;
         _openTask = openTask;
+        _navNotifier = navNotifier;
         SelectedWhenOption = WhenOptions[0];
     }
 
@@ -477,22 +487,71 @@ public partial class TaskDetailViewModel : ObservableObject
         await LoadSubtasksAsync(parentId);
     }
 
-    [RelayCommand]
-    private async Task AddTagAsync(string name)
+    /// <summary>Reveals the inline "new tag" field in the tag card (the + 새 태그 affordance).</summary>
+    public void BeginAddTag()
     {
-        if (string.IsNullOrWhiteSpace(name)) return;
+        NewTagName = string.Empty;
+        IsAddingTag = true;
+    }
+
+    /// <summary>Dismisses the inline "new tag" field without creating anything.</summary>
+    public void CancelAddTag()
+    {
+        IsAddingTag = false;
+        NewTagName = string.Empty;
+    }
+
+    /// <summary>
+    /// Creates the tag typed inline, selects it on this task, persists the assignment, and tells the
+    /// sidebar (and any other open panel) to reload through the nav-change notifier. A blank name just
+    /// closes the field.
+    /// </summary>
+    [RelayCommand]
+    private async Task ConfirmAddTagAsync()
+    {
+        var name = NewTagName.Trim();
+        if (name.Length == 0) { CancelAddTag(); return; }
+
         var existing = await _index.GetTagsAsync();
         var tag = new Tag
         {
-            Name = name.Trim(),
+            Name = name,
             Color = TagColors.ForNewTag(existing.Count),
             SortOrder = _reorder.AppendRank(existing.Select(item => item.SortOrder)),
         };
         await _store.SaveAsync(tag);
+
         var selected = Tags.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).Append(tag.Id);
         await LoadTagsAsync(selected);
-        // A newly created tag is selected on the spot — persist the task's tag assignment too.
+        IsAddingTag = false;
+        NewTagName = string.Empty;
+        // The new tag is selected on the spot — persist the task's tag assignment too.
         await FlushAsync();
+        // The sidebar tag list and any other open detail panel reflect the new tag immediately.
+        _navNotifier.NotifyChanged();
+    }
+
+    /// <summary>
+    /// Reloads the group and tag option lists from the index while preserving the panel's current
+    /// selection, so a group/tag created elsewhere (the sidebar, another panel) appears here at once
+    /// without disturbing in-progress edits. A no-op when the panel is closed. Runs under the loading
+    /// guard so refilling the options never trips autosave.
+    /// </summary>
+    public async Task ReloadNavOptionsAsync()
+    {
+        if (!IsOpen || _taskId is null) return;
+        var wasLoading = _isLoading;
+        _isLoading = true;
+        try
+        {
+            var selectedTags = Tags.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).ToList();
+            await LoadTaskGroupsAsync(SelectedTaskGroup?.Id);
+            await LoadTagsAsync(selectedTags);
+        }
+        finally
+        {
+            _isLoading = wasLoading;
+        }
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]

@@ -7,6 +7,7 @@ using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.ViewModels;
 using Cue.Services;
+using Windows.System;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -17,6 +18,12 @@ public sealed partial class MainWindow : Window
 {
     private TaskListNavigation? _currentNavigation;
     private readonly DialogService _dialogs;
+    private readonly INavDataChangeNotifier _navNotifier;
+
+    // While the sidebar makes its own group/tag edit it refreshes the pane directly, so it ignores the
+    // notification it triggers (the detail panels still react to it). A detail-panel edit leaves this
+    // false, so the sidebar reloads in response.
+    private bool _suppressNavReload;
 
     public ShellViewModel ViewModel { get; }
 
@@ -24,7 +31,10 @@ public sealed partial class MainWindow : Window
     {
         ViewModel = App.Services.GetRequiredService<ShellViewModel>();
         _dialogs = App.Services.GetRequiredService<DialogService>();
+        _navNotifier = App.Services.GetRequiredService<INavDataChangeNotifier>();
         InitializeComponent();
+        // A group/tag created/edited in a detail panel reloads the sidebar lists at once.
+        _navNotifier.Changed += OnNavDataChanged;
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -119,22 +129,106 @@ public sealed partial class MainWindow : Window
         NavFrame.BackStack.Clear(); // flat navigation — no back history between lists
     }
 
-    // The + buttons on the 그룹 / 태그 section headers (immediately left of the expand/collapse chevron).
-    private async void AddGroup_Click(object sender, RoutedEventArgs e) => await CreateRecordAsync(isGroup: true);
-    private async void AddTag_Click(object sender, RoutedEventArgs e) => await CreateRecordAsync(isGroup: false);
-
-    private Task CreateRecordAsync(bool isGroup)
-        => RunSafelyAsync(async () =>
+    /// <summary>Reloads the sidebar lists when a group/tag changes from outside the pane (a detail
+    /// panel). The pane's own edits set <see cref="_suppressNavReload"/> since they refresh directly.</summary>
+    private async void OnNavDataChanged(object? sender, EventArgs e)
+    {
+        if (_suppressNavReload) return;
+        await RunSafelyAsync(async () =>
         {
-            var name = await PromptNameAsync(isGroup ? "새 그룹" : "새 태그", isGroup ? "그룹 이름" : "태그 이름");
-            if (name is null) return;
-            if (isGroup) await ViewModel.CreateTaskGroupCommand.ExecuteAsync(name);
-            else await ViewModel.CreateTagCommand.ExecuteAsync(name);
+            await ViewModel.LoadAsync();
             RebuildLiveNavigation();
         });
+    }
+
+    /// <summary>Runs one of the pane's own group/tag mutations with the self-notification suppressed, so
+    /// the sidebar refreshes once (via the explicit rebuild that follows) rather than twice. The detail
+    /// panels still receive the notification and reload.</summary>
+    private async Task MutateNavAsync(Func<Task> mutate)
+    {
+        _suppressNavReload = true;
+        try { await mutate(); }
+        finally { _suppressNavReload = false; }
+    }
+
+    // The + buttons on the 그룹 / 태그 section headers open an inline name field at the foot of the
+    // section (no modal); Enter or blur-with-text creates, Escape or blur-empty cancels.
+    private void AddGroup_Click(object sender, RoutedEventArgs e) => BeginInlineCreate(isGroup: true);
+    private void AddTag_Click(object sender, RoutedEventArgs e) => BeginInlineCreate(isGroup: false);
+
+    private NavigationViewItem? _inlineCreateItem;
+    private bool _inlineCreateIsGroup;
+    private bool _inlineCommitting;
+
+    private void BeginInlineCreate(bool isGroup)
+    {
+        CancelInlineCreate(); // only one inline editor at a time
+        var section = isGroup ? GroupsSection : TagsSection;
+
+        var box = new TextBox
+        {
+            PlaceholderText = isGroup ? "새 그룹 이름" : "새 태그 이름",
+            Margin = new Thickness(0, 2, 4, 2),
+        };
+        var item = new NavigationViewItem
+        {
+            SelectsOnInvoked = false,
+            Content = box,
+            Icon = new FontIcon { Glyph = isGroup ? "" : "" },
+        };
+        _inlineCreateItem = item;
+        _inlineCreateIsGroup = isGroup;
+
+        box.KeyDown += async (_, e) =>
+        {
+            if (e.Key == VirtualKey.Enter) { e.Handled = true; await CommitInlineCreateAsync(box.Text); }
+            else if (e.Key == VirtualKey.Escape) { e.Handled = true; CancelInlineCreate(); }
+        };
+        box.LostFocus += async (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(box.Text)) CancelInlineCreate();
+            else await CommitInlineCreateAsync(box.Text);
+        };
+
+        section.MenuItems.Add(item);
+        section.IsExpanded = true;
+        box.Loaded += (_, _) => box.Focus(FocusState.Programmatic);
+    }
+
+    private void CancelInlineCreate()
+    {
+        if (_inlineCreateItem is null) return;
+        var section = _inlineCreateIsGroup ? GroupsSection : TagsSection;
+        section.MenuItems.Remove(_inlineCreateItem);
+        _inlineCreateItem = null;
+    }
+
+    // Guarded so the LostFocus that fires when Enter moves focus can't double-create the record.
+    private async Task CommitInlineCreateAsync(string text)
+    {
+        if (_inlineCommitting) return;
+        _inlineCommitting = true;
+        try
+        {
+            var isGroup = _inlineCreateIsGroup;
+            var name = text.Trim();
+            CancelInlineCreate();
+            if (name.Length == 0) return;
+            await RunSafelyAsync(async () =>
+            {
+                await MutateNavAsync(() => isGroup
+                    ? ViewModel.CreateTaskGroupCommand.ExecuteAsync(name)
+                    : ViewModel.CreateTagCommand.ExecuteAsync(name));
+                RebuildLiveNavigation();
+            });
+        }
+        finally { _inlineCommitting = false; }
+    }
 
     private void RebuildLiveNavigation()
     {
+        // A rebuild replaces the section items wholesale, so any open inline-create editor is gone.
+        _inlineCreateItem = null;
         GroupsSection.MenuItems.Clear();
         GroupsSection.MenuItems.Add(CreateUnfiledItem(
             "그룹 없음", TaskListMode.NoTaskGroup, ViewModel.NoTaskGroupTaskCount));
@@ -159,6 +253,7 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(mode, null, title),
             Icon = new FontIcon { Glyph = "" },
         };
+        item.Margin = NavSubItemInset();
         if (openCount > 0)
             item.InfoBadge = CreateCountBadge(openCount);
         return item;
@@ -288,6 +383,7 @@ public sealed partial class MainWindow : Window
         // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
         // tap from also navigating into the group.
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTaskGroupIconPicker((FrameworkElement)sender, taskGroup.Id, taskGroup.Icon); };
+        item.Margin = NavSubItemInset();
         if (ViewModel.TaskGroupTaskCounts.TryGetValue(taskGroup.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(taskGroup, isGroup: true, item);
@@ -307,6 +403,7 @@ public sealed partial class MainWindow : Window
         };
         // Tapping the glyph opens the color picker directly (no right-click depth).
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTagColorPicker((FrameworkElement)sender, tag.Id, tag.Color); };
+        item.Margin = NavSubItemInset();
         if (ViewModel.TagTaskCounts.TryGetValue(tag.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(tag, isGroup: false, item);
@@ -327,6 +424,14 @@ public sealed partial class MainWindow : Window
     {
         try { return (Style)Application.Current.Resources[key]; }
         catch { return null; }
+    }
+
+    /// <summary>Left inset for the nested group/tag rows so their hover/selection fill leaves a small
+    /// gap at the pane's left edge (the CueNavSubItemInset token), instead of bleeding to the edge.</summary>
+    private static Thickness NavSubItemInset()
+    {
+        try { return (Thickness)Application.Current.Resources["CueNavSubItemInset"]; }
+        catch { return new Thickness(10, 0, 0, 0); }
     }
 
     private MenuFlyout CreateRecordMenu(object record, bool isGroup, NavigationViewItem owner)
@@ -442,14 +547,14 @@ public sealed partial class MainWindow : Window
     private async void PickTaskGroupIcon(Guid taskGroupId, string glyph)
         => await RunSafelyAsync(async () =>
         {
-            await ViewModel.SetTaskGroupIconAsync(taskGroupId, glyph);
+            await MutateNavAsync(() => ViewModel.SetTaskGroupIconAsync(taskGroupId, glyph));
             RebuildLiveNavigation();
         });
 
     private async void PickTagColor(Guid tagId, string hex)
         => await RunSafelyAsync(async () =>
         {
-            await ViewModel.SetTagColorAsync(tagId, hex);
+            await MutateNavAsync(() => ViewModel.SetTagColorAsync(tagId, hex));
             RebuildLiveNavigation();
         });
 
@@ -471,7 +576,7 @@ public sealed partial class MainWindow : Window
             var name = await PromptNameAsync("그룹 이름 변경", "그룹 이름", taskGroup.Name);
             if (name is null) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.TaskGroup && _currentNavigation.FilterId == taskGroup.Id;
-            await ViewModel.RenameTaskGroupCommand.ExecuteAsync(new RenameRecordRequest(taskGroup.Id, name));
+            await MutateNavAsync(() => ViewModel.RenameTaskGroupCommand.ExecuteAsync(new RenameRecordRequest(taskGroup.Id, name)));
             RebuildLiveNavigation();
             if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.TaskGroup, taskGroup.Id, name));
         });
@@ -485,7 +590,7 @@ public sealed partial class MainWindow : Window
             var name = await PromptNameAsync("태그 이름 변경", "태그 이름", tag.Name);
             if (name is null) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Tag && _currentNavigation.FilterId == tag.Id;
-            await ViewModel.RenameTagCommand.ExecuteAsync(new RenameRecordRequest(tag.Id, name));
+            await MutateNavAsync(() => ViewModel.RenameTagCommand.ExecuteAsync(new RenameRecordRequest(tag.Id, name)));
             RebuildLiveNavigation();
             if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Tag, tag.Id, name));
         });
@@ -499,7 +604,7 @@ public sealed partial class MainWindow : Window
             var mode = await AskTaskGroupDeletionAsync(taskGroup.Name);
             if (mode is null) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.TaskGroup && _currentNavigation.FilterId == taskGroup.Id;
-            await ViewModel.DeleteTaskGroupAsync(taskGroup.Id, mode.Value);
+            await MutateNavAsync(() => ViewModel.DeleteTaskGroupAsync(taskGroup.Id, mode.Value));
             RebuildLiveNavigation();
             if (isCurrent) NavigateHome();
         });
@@ -534,7 +639,7 @@ public sealed partial class MainWindow : Window
             if (sender is not MenuFlyoutItem { Tag: TagListItem tag }) return;
             if (!await ConfirmDeleteAsync("태그를 삭제할까요?", "할 일은 그대로 두고 이 태그만 떼어냅니다.")) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Tag && _currentNavigation.FilterId == tag.Id;
-            await ViewModel.DeleteTagCommand.ExecuteAsync(tag.Id);
+            await MutateNavAsync(() => ViewModel.DeleteTagCommand.ExecuteAsync(tag.Id));
             RebuildLiveNavigation();
             if (isCurrent) NavigateHome();
         });

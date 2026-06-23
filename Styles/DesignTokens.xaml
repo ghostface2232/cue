@@ -17,6 +17,13 @@
             <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource ControlFillColorSecondary}" />
             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource ControlFillColorDefault}" />
+            <!-- Selected sidebar item + hover/press must DEEPEN, matching the main list (where a
+                 selected row's hover stacks two SubtleFillColorSecondary layers). The stock
+                 NavigationView selected-pointer-over tone is lighter than the selected tone, which
+                 read as the opposite of the list. These theme-scoped literals approximate that
+                 double-stack (the only place the rule is unavoidable as a literal). -->
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#12000000" />
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#18000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
             <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
@@ -27,6 +34,9 @@
             <SolidColorBrush x:Key="TextControlBackground" Color="#18000000" />
             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#24000000" />
             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#18000000" />
+            <!-- Dark counterpart of the deepen-on-hover selection (white overlay). See Light note. -->
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#1DFFFFFF" />
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#28FFFFFF" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
@@ -66,6 +76,15 @@
     <x:Double x:Key="CueFontRow">15</x:Double>
     <x:Double x:Key="CueFontRowSub">14</x:Double>
     <x:Double x:Key="CueFontSecondary">12</x:Double>
+
+    <!-- Main list rows read larger and clearer than the base row scale: a 16.5 title and a 13 meta
+         line (date · time), with the rows themselves given more height (see TaskListPage padding). -->
+    <x:Double x:Key="CueFontListTitle">16.5</x:Double>
+    <x:Double x:Key="CueFontListMeta">13</x:Double>
+
+    <!-- Sidebar group/tag rows sit inset from the pane's left edge so their hover/selection fill
+         leaves a small left gap (matching their nested indent) instead of bleeding to the edge. -->
+    <Thickness x:Key="CueNavSubItemInset">10,0,0,0</Thickness>
 
     <!-- ===== Shared hover language. Main list rows, timeline bars, subtle buttons, and local panel
          controls all use the same fill so light mode does not drift between surfaces. ===== -->

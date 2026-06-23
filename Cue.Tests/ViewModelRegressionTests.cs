@@ -25,7 +25,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
         await vm.Detail.FlushAsync();
 
@@ -50,7 +50,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
         await vm.Detail.FlushAsync();
 
@@ -73,7 +73,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "zoned", When = ScheduledWhen.On(originalWhen) };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
         vm.Detail.Title = "title only";
         await vm.Detail.FlushAsync();
@@ -95,7 +95,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "stay visible" };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.LoadCommand.ExecuteAsync(null);
         var row = Assert.Single(vm.Tasks);
         row.SetCompletedSilently(true);
@@ -126,7 +126,7 @@ public sealed class ViewModelRegressionTests
         var child = new TaskItem { Title = "child", ParentTaskId = parent.Id };
         await store.SaveAsync(child);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.LoadCommand.ExecuteAsync(null);
         var row = Assert.Single(vm.Tasks);
         row.SetCompletedSilently(true);
@@ -153,7 +153,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
         vm.Detail.SelectedWhenHour = vm.Detail.Hours[13];
         vm.Detail.SelectedWhenMinute = vm.Detail.Minutes[5];
@@ -175,7 +175,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "no date yet" };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
 
         // No date yet: the "+ 날짜 추가" affordance shows, the editor is hidden.
@@ -203,7 +203,7 @@ public sealed class ViewModelRegressionTests
             new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
             clock,
             TimeZoneInfo.Utc);
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
 
         // A typed date resolves to a single When (OnDate) — the task surfaces by that date.
         vm.QuickAddText = "다음주 금요일 회의";
@@ -232,7 +232,7 @@ public sealed class ViewModelRegressionTests
             new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
             clock,
             TimeZoneInfo.Utc);
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
 
         vm.QuickAddText = "언젠가 제주도 한 달 살기";
@@ -253,7 +253,7 @@ public sealed class ViewModelRegressionTests
             new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
             clock,
             TimeZoneInfo.Utc);
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
 
         vm.QuickAddText = "매주 금요일 주간 회고";
         await vm.AddCommand.ExecuteAsync(null);
@@ -282,7 +282,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
 
         vm.Detail.ClearWhen();
@@ -313,7 +313,8 @@ public sealed class ViewModelRegressionTests
             new ReorderService(store),
             new RecurringTaskService(store),
             clock,
-            TimeZoneInfo.Utc);
+            TimeZoneInfo.Utc,
+            new NavDataChangeNotifier());
         await vm.LoadCommand.ExecuteAsync(null);
 
         var expected = ((23 - 1) * vm.DayWidth) + (vm.DayWidth / 2);
@@ -437,7 +438,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "no priority yet", Priority = Priority.None };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
 
         // Changing the priority is a single selection — it autosaves on the spot, no Save button.
@@ -461,7 +462,7 @@ public sealed class ViewModelRegressionTests
         await store.SaveAsync(task);
         var savedAt = (await store.GetAsync<TaskItem>(task.Id))!.UpdatedAt;
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
 
         // Typing updates the bound property but does not save — no per-keystroke write.
@@ -499,7 +500,7 @@ public sealed class ViewModelRegressionTests
 
         // If opening saved, the store would re-stamp UpdatedAt with the advanced clock.
         clock.Now = new DateTimeOffset(2026, 6, 23, 5, 0, 0, TimeSpan.Zero);
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
         await vm.Detail.DrainPendingSaveAsync();
 
@@ -520,7 +521,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "zoned", When = ScheduledWhen.On(originalWhen) };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
 
         // An immediate-save change that never touches the date must leave the When untouched, including
@@ -548,7 +549,7 @@ public sealed class ViewModelRegressionTests
         await store.SaveAsync(a);
         await store.SaveAsync(b);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(a.Id);
 
         // Edit A's priority (queues an autosave carrying A's snapshot) and immediately switch to B without
@@ -581,7 +582,7 @@ public sealed class ViewModelRegressionTests
         await store.SaveAsync(a);
         await store.SaveAsync(b);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.LoadAsync();
         var rowA = vm.Tasks.Single(row => row.Id == a.Id);
         var rowB = vm.Tasks.Single(row => row.Id == b.Id);
@@ -609,7 +610,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "task", Priority = Priority.P3, SortOrder = "a" };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.LoadAsync();
         var row = Assert.Single(vm.Tasks);
 
@@ -636,7 +637,7 @@ public sealed class ViewModelRegressionTests
         await store.SaveAsync(p1);
         await store.SaveAsync(p2);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         vm.SetNavigation(new TaskListNavigation(TaskListMode.Priority));
         await vm.LoadAsync();
         Assert.Equal(2, vm.Groups.Count); // 매우 중요 + 중요
@@ -669,7 +670,7 @@ public sealed class ViewModelRegressionTests
         await store.SaveAsync(stay);
         await store.SaveAsync(leave);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         vm.SetNavigation(new TaskListNavigation(TaskListMode.TaskGroup, project.Id));
         await vm.LoadAsync();
         var stayRow = vm.Tasks.Single(row => row.Id == stay.Id);
@@ -695,7 +696,7 @@ public sealed class ViewModelRegressionTests
 
         // The detail panel reads/writes through the gated store; the list still queries the real index.
         var gated = new GatedTaskStore(store);
-        var vm = new TaskListViewModel(gated, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(gated, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(a.Id);
 
         // Edit A's priority — this queues an autosave — then stall that save at its store read so we can

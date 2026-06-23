@@ -129,7 +129,7 @@
         </DataTemplate>
     </Page.Resources>
 
-    <Grid Padding="28,20,28,20">
+    <Grid Padding="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -392,7 +392,18 @@
 
                         <Border Margin="4,0,8,7" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="10">
-                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="AddTag_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
+                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="BeginAddTag_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
+                                <!-- Inline new-tag field, shown in place of the old modal when + 새 태그 is tapped. -->
+                                <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.Detail.IsAddingTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Name="NewTagBox"
+                                        KeyDown="NewTagBox_KeyDown"
+                                        LostFocus="NewTagBox_LostFocus"
+                                        PlaceholderText="태그 이름"
+                                        Text="{x:Bind ViewModel.Detail.NewTagName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Grid.Column="1" Click="ConfirmAddTag_Click" Content="추가" />
+                                </Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Tags}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:TagEditorOption">

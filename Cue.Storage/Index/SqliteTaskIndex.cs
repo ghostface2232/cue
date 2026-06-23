@@ -23,9 +23,23 @@ namespace Cue.Storage.Index;
 /// </remarks>
 public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 {
-    private const string Columns =
-        "id, title, group_id, parent_task_id, when_kind, when_date, when_time, " +
-        "completed_at, priority, sort_order";
+    // Base task columns, aliased to the tasks table (t) so list queries can left-join the group and
+    // correlate the tag set without column ambiguity.
+    private const string TaskColumns =
+        "t.id, t.title, t.group_id, t.parent_task_id, t.when_kind, t.when_date, t.when_time, " +
+        "t.completed_at, t.priority, t.sort_order";
+
+    // The list projection: base columns + the row's group (name and icon, null when unfiled or the
+    // group is deleted) + a packed tag set so a row can show its group and tags without a per-row
+    // follow-up query. Tags pack as "name<US>color" each, joined by <RS> — char(31)=US, char(30)=RS,
+    // control codes that never appear in user-entered names/colors.
+    private static readonly string SelectRows =
+        "SELECT " + TaskColumns +
+        ", g.name AS group_name, g.icon AS group_icon" +
+        ", (SELECT group_concat(tg.name || char(31) || COALESCE(tg.color, ''), char(30)) " +
+        "FROM task_tags rt JOIN tags tg ON tg.id = rt.tag_id " +
+        "WHERE rt.task_id = t.id AND tg.deleted_at IS NULL) AS tags" +
+        " FROM tasks t LEFT JOIN task_groups g ON g.id = t.group_id AND g.deleted_at IS NULL ";
 
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
@@ -388,19 +402,19 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     // still surfaces here. Subtasks are included; the view nests them under their parents.
     public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "ORDER BY completed_at IS NOT NULL, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND group_id = $group ORDER BY completed_at IS NOT NULL, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "AND t.group_id = $group ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Prefixed("t")} FROM tasks t " +
+            SelectRows +
             "INNER JOIN task_tags tt ON tt.task_id = t.id " +
             "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL " +
             "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
@@ -411,55 +425,55 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     // filing. group_id IS NULL is the unfiled-group test; the NOT IN sub-select is the no-tag test.
     public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND group_id IS NULL " +
-            "ORDER BY completed_at IS NOT NULL, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.group_id IS NULL " +
+            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND id NOT IN (SELECT task_id FROM task_tags) " +
-            "ORDER BY completed_at IS NOT NULL, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "AND t.id NOT IN (SELECT task_id FROM task_tags) " +
+            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND parent_task_id = $parent ORDER BY sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "AND t.parent_task_id = $parent ORDER BY t.sort_order;",
             cmd => Bind(cmd, "$parent", parentTaskId.ToString()), cancellationToken);
 
     // ---- Time axis (computed against the current day) ------------------------
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today " +
-            "ORDER BY completed_at IS NOT NULL, when_date, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "AND t.when_kind = 'OnDate' AND t.when_date IS NOT NULL AND t.when_date <= $today " +
+            "ORDER BY t.completed_at IS NOT NULL, t.when_date, t.sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND when_kind = 'OnDate' AND when_date > $today " +
-            "ORDER BY completed_at IS NOT NULL, when_date, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "AND t.when_kind = 'OnDate' AND t.when_date > $today " +
+            "ORDER BY t.completed_at IS NOT NULL, t.when_date, t.sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND when_kind = 'Unscheduled' ORDER BY completed_at IS NOT NULL, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "AND t.when_kind = 'Unscheduled' ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NOT NULL " +
-            "ORDER BY completed_at DESC;",
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            "ORDER BY t.completed_at DESC;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND priority <> 0 " +
-            "ORDER BY priority, completed_at IS NOT NULL, sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.priority <> 0 " +
+            "ORDER BY t.priority, t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TimelineTaskItem>> GetTimelineAsync(
@@ -591,7 +605,32 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         WhenTime: TimeOrNull(r, 6),
         IsCompleted: !r.IsDBNull(7),
         Priority: (Priority)r.GetInt64(8),
-        SortOrder: r.GetString(9));
+        SortOrder: r.GetString(9),
+        TaskGroupName: r.IsDBNull(10) ? null : r.GetString(10),
+        TaskGroupIcon: r.IsDBNull(11) ? null : r.GetString(11),
+        Tags: TagsFrom(r, 12));
+
+    // Unpacks the group_concat tag column produced by SelectRows: records split on <RS> (char 30),
+    // each "name<US>color" split on <US> (char 31); an empty color field means the tag uses no color.
+    private static IReadOnlyList<TaskListTag> TagsFrom(SqliteDataReader r, int i)
+    {
+        if (r.IsDBNull(i))
+            return Array.Empty<TaskListTag>();
+        var packed = r.GetString(i);
+        if (packed.Length == 0)
+            return Array.Empty<TaskListTag>();
+
+        var tags = new List<TaskListTag>();
+        foreach (var record in packed.Split((char)30))
+        {
+            if (record.Length == 0)
+                continue;
+            var parts = record.Split((char)31);
+            var color = parts.Length > 1 && parts[1].Length > 0 ? parts[1] : null;
+            tags.Add(new TaskListTag(parts[0], color));
+        }
+        return tags;
+    }
 
     /// <summary>The current calendar day in the configured zone — computed, never stored.</summary>
     private string Today()
@@ -624,10 +663,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     private static void Bind(SqliteCommand cmd, string name, object? value)
         => cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
-
-    /// <summary>Column list qualified with a table alias, for the tag join query.</summary>
-    private static string Prefixed(string alias)
-        => string.Join(", ", Columns.Split(',', StringSplitOptions.TrimEntries).Select(c => $"{alias}.{c}"));
 
     public async ValueTask DisposeAsync()
     {

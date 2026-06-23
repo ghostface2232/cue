@@ -30,6 +30,7 @@ public sealed partial class TaskListPage : Page
 
     public TaskListViewModel ViewModel { get; }
     private readonly DialogService _dialogs;
+    private readonly INavDataChangeNotifier _navNotifier;
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private readonly ConditionalWeakTable<FrameworkElement, DropShadow> _iconGlows = new();
     private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
@@ -47,7 +48,20 @@ public sealed partial class TaskListPage : Page
     {
         ViewModel = App.Services.GetRequiredService<TaskListViewModel>();
         _dialogs = App.Services.GetRequiredService<DialogService>();
+        _navNotifier = App.Services.GetRequiredService<INavDataChangeNotifier>();
         InitializeComponent();
+        // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
+        // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
+        _navNotifier.Changed += OnNavDataChanged;
+    }
+
+    private async void OnNavDataChanged(object? sender, EventArgs e)
+        => await RunSafelyAsync(() => ViewModel.Detail.ReloadNavOptionsAsync());
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        _navNotifier.Changed -= OnNavDataChanged;
+        base.OnNavigatedFrom(e);
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -663,14 +677,48 @@ public sealed partial class TaskListPage : Page
             ViewModel.Detail.ToggleTag(option.Id);
     }
 
-    private async void AddTag_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    // The + 새 태그 affordance now opens an inline field in the tag card (no modal): type a name and
+    // press Enter (or 추가) to create + select it; Escape or blurring an empty field dismisses it.
+    private void BeginAddTag_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        await RunSafelyAsync(async () =>
+        ViewModel.Detail.BeginAddTag();
+        DispatcherQueue.TryEnqueue(() => NewTagBox.Focus(FocusState.Programmatic));
+    }
+
+    private async void NewTagBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Enter)
         {
-            var name = await PromptNameAsync("새 태그", "태그 이름");
-            if (name is not null)
-                await ViewModel.Detail.AddTagCommand.ExecuteAsync(name);
-        });
+            e.Handled = true;
+            await CommitNewTagAsync();
+        }
+        else if (e.Key == VirtualKey.Escape)
+        {
+            e.Handled = true;
+            ViewModel.Detail.CancelAddTag();
+        }
+    }
+
+    private async void ConfirmAddTag_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        => await CommitNewTagAsync();
+
+    private async void NewTagBox_LostFocus(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(NewTagBox.Text))
+            ViewModel.Detail.CancelAddTag();
+        else
+            await CommitNewTagAsync();
+    }
+
+    // Guarded so the LostFocus that fires when 추가/Enter moves focus can't double-create the tag.
+    private bool _committingTag;
+
+    private async Task CommitNewTagAsync()
+    {
+        if (_committingTag) return;
+        _committingTag = true;
+        try { await RunSafelyAsync(() => ViewModel.Detail.ConfirmAddTagCommand.ExecuteAsync(null)); }
+        finally { _committingTag = false; }
     }
 
     private async void OpenParent_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)

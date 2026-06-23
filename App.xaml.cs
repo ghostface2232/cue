@@ -79,6 +79,10 @@ public partial class App : Application
         services.AddSingleton<IRecurringTaskService, RecurringTaskService>();
         services.AddSingleton<DialogService>();
 
+        // Cross-panel signal: the sidebar and a detail panel both edit groups/tags but are separate
+        // view models, so a change in one reloads the other through this app-scoped notifier.
+        services.AddSingleton<INavDataChangeNotifier, NavDataChangeNotifier>();
+
         // A fresh list view model per navigation.
         services.AddTransient<TaskListViewModel>();
         services.AddTransient<TimelineViewModel>();

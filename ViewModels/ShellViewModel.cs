@@ -15,6 +15,7 @@ public partial class ShellViewModel : ObservableObject
     private readonly ITaskIndex _index;
     private readonly IReorderService _reorder;
     private readonly IContainerDeletionStore _containers;
+    private readonly INavDataChangeNotifier _notifier;
 
     public ObservableCollection<TaskGroupListItem> TaskGroups { get; } = new();
     public ObservableCollection<TagListItem> Tags { get; } = new();
@@ -29,12 +30,13 @@ public partial class ShellViewModel : ObservableObject
     public int NoTaskGroupTaskCount { get; private set; }
     public int NoTagTaskCount { get; private set; }
 
-    public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder, IContainerDeletionStore containers)
+    public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder, IContainerDeletionStore containers, INavDataChangeNotifier notifier)
     {
         _store = store;
         _index = index;
         _reorder = reorder;
         _containers = containers;
+        _notifier = notifier;
     }
 
     [RelayCommand]
@@ -60,6 +62,7 @@ public partial class ShellViewModel : ObservableObject
             SortOrder = _reorder.AppendRank(TaskGroups.Select(group => group.SortOrder)),
         });
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     /// <summary>
@@ -99,6 +102,7 @@ public partial class ShellViewModel : ObservableObject
         taskGroup.Name = request.Name.Trim();
         await _store.SaveAsync(taskGroup);
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     /// <summary>Deletes a group, disposing of its tasks per <paramref name="mode"/> (reparent to the
@@ -107,6 +111,7 @@ public partial class ShellViewModel : ObservableObject
     {
         await _containers.DeleteTaskGroupAsync(id, mode);
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     /// <summary>Sets a group's sidebar icon (a Fluent glyph) and reloads so it shows at once.</summary>
@@ -117,6 +122,7 @@ public partial class ShellViewModel : ObservableObject
         taskGroup.Icon = glyph;
         await _store.SaveAsync(taskGroup);
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     [RelayCommand]
@@ -130,6 +136,7 @@ public partial class ShellViewModel : ObservableObject
             SortOrder = _reorder.AppendRank(Tags.Select(tag => tag.SortOrder)),
         });
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     [RelayCommand]
@@ -141,6 +148,7 @@ public partial class ShellViewModel : ObservableObject
         tag.Name = request.Name.Trim();
         await _store.SaveAsync(tag);
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     [RelayCommand]
@@ -148,6 +156,7 @@ public partial class ShellViewModel : ObservableObject
     {
         await _store.DeleteAsync<Tag>(id);
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     /// <summary>Recolors a tag from the navigation pane and reloads so the change shows at once.</summary>
@@ -158,6 +167,7 @@ public partial class ShellViewModel : ObservableObject
         tag.Color = color;
         await _store.SaveAsync(tag);
         await LoadAsync();
+        _notifier.NotifyChanged();
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> items)

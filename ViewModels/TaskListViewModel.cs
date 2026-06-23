@@ -103,7 +103,7 @@ public partial class TaskListViewModel : ObservableObject
     public bool HasTitleCaption => TitleCaption.Length > 0;
     public bool CanQuickAdd => _mode is not (TaskListMode.Logbook or TaskListMode.Priority);
 
-    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone)
+    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone, INavDataChangeNotifier navNotifier)
     {
         _store = store;
         _index = index;
@@ -116,7 +116,7 @@ public partial class TaskListViewModel : ObservableObject
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
-        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync);
+        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync, navNotifier);
         // Clear the row selection accent when the detail panel closes.
         Detail.PropertyChanged += (_, e) =>
         {

@@ -70,6 +70,14 @@ typography:
     fontFamily: Pretendard JP
     fontSize: 15px
     fontWeight: 400
+  list-title:            # main list row title (larger/clearer than the base row)
+    fontFamily: Pretendard JP
+    fontSize: 16.5px
+    fontWeight: 400
+  list-meta:             # main list row meta line (date · time) and right-edge group/tag chips
+    fontFamily: Pretendard JP
+    fontSize: 13px
+    fontWeight: 400
   row-sub:
     fontFamily: Pretendard JP
     fontSize: 14px
@@ -98,15 +106,14 @@ spacing:
   md: 12px
   lg: 16px
   xl: 20px
-  page-x: 28px
-  page-y: 20px
+  page: 20px   # uniform body padding on both axes (TaskListPage / TimelinePage)
 
 components:
   # --- Task row (flat + grouped lists) ---
   task-row:
     backgroundColor: transparent
     rounded: "{rounded.md}"
-    padding: 12px 8px
+    padding: 12px 12px
   task-row-hover:
     backgroundColor: "{colors.hover-fill}"
   task-row-pressed:
@@ -292,7 +299,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 - Caption (min/max/close) buttons are drawn by the system, so XAML theming does not reach them. Their glyph colors and hover/press backgrounds are set in code and reapplied on every `ActualThemeChanged` (hover bg `#14000000` light / `#20FFFFFF` dark; pressed `#28000000` / `#40FFFFFF`).
 
 ### List page — `TaskListPage.xaml`
-- Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `28,20` (`page-x` × `page-y`).
+- Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `20` (uniform on all sides).
 - Two-column body: left list (flexible) + right detail panel (resizable, default 460px). When the detail closes, the list reclaims the width.
 - The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **grouped list** (`ListView`, group header + rows). The grouped form is used only by the Priority (P1–P4) view (`IsGroupedList`); every other list, the TaskGroup list included, is flat.
 
@@ -312,7 +319,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 - The timeline's detail panel is the same component with the same behavior.
 
 ### Spacing
-The page rhythm is body padding `28,20` and card internal padding `16`. Spacing is currently applied inline in XAML (there is no centralized spacing token yet — see "Known Gaps"); the `spacing` scale in the frontmatter documents the intended rhythm.
+The page rhythm is body padding `20` (uniform on all sides) and card internal padding `16`. Spacing is currently applied inline in XAML (there is no centralized spacing token yet — see "Known Gaps"); the `spacing` scale in the frontmatter documents the intended rhythm.
 
 ## Elevation & Depth
 
@@ -352,8 +359,9 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## Components
 
 ### Task row
-- Columns: `[3px selection bar][circular check][title … priority pill]`, with a one-line metadata row (schedule) below. The schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time; an all-day (종일) task shows the date alone.
+- Columns: `[3px selection bar][circular check][title … priority pill][group · tags]`, with a one-line metadata row (schedule) below. The trailing right-edge column shows the task's group (tertiary glyph + secondary name) and its tags (8px color dot + secondary name each); each chunk hides itself when the task has no group / no tags. The schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time; an all-day (종일) task shows the date alone.
 - Selected → left 3px accent bar (`selection-bar`, radius 1.5, a dedicated column so it never shifts content) **plus a persistent row fill in the hover tone** (`{colors.hover-fill}`), so the open task reads as selected even when the pointer is elsewhere. Background hover transitions over 83ms. Radius `{rounded.md}`.
+- Rows are generously tall (12px vertical padding) with a larger, clearer title (`{typography.list-title}`, 16.5) and meta line (`{typography.list-meta}`, 13). A thin 1px `DividerStrokeColorDefault` separator sits between rows for clear row-to-row division.
 - Subtasks render as an indented nested list under the parent (with a 1px divider). Their presence is self-evident, so there is no "N subtasks" caption. Child rows reuse the same circular check, row-sub font, and spacing.
 
 ### Completion state
@@ -371,12 +379,12 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ### Quick-add (omnibar)
 - A floating pill (min height 48, radius 24). Background `ControlFillColorDefault` + `CircleElevationBorderBrush` for subtle dimension (not a shadow). Leading glyph and text are vertically centered.
 - Lifts one tone on hover; gains an accent ring on focus.
-- A natural-language date in the input defaults to the **due date** (the start date is added explicitly in detail).
+- A natural-language date in the input fills the task's single **일시 (When)** date. A dateless line stays Unscheduled (lands in 언젠가 / Anytime), except on the Today list, which pins it to today.
 
-### Start + due date card
-- Start and due dates live in **one card**. Adding a start date places it **above** the due date (natural start→due order), separated by a divider; before that, a "+ 시작일 추가" (Add start date) button holds the slot.
-- The start date can never exceed the due date (calendar `MaxDate` cap; pulling the due date earlier pulls the start with it).
-- Each date shows date + time on one line; "종일" (All day) hides the time (expires at 23:59).
+### 일시 (When) card
+- A task has a **single date** (When) — there is no separate start date or deadline. Before a date is set, a "+ 일시 추가" button holds the card; tapping it adds a date and reveals the editor (headed **일시**), with a "제거" button to clear it.
+- The editor is one date picker plus an optional time (hour : minute dropdowns). A "종일" (All day) checkbox hides the time and pins the item to end-of-day (23:59); a date added with no explicit time defaults to 종일 until the user unchecks it to set a time.
+- In the one-column (compact) layout the time dropdowns stretch to the card width instead of staying fixed-width.
 
 ### Tags
 - The detail tag card is a **checkbox-free list**. Tapping a row confirms selection with a trailing check (color glyph + name + trailing check).
@@ -390,6 +398,8 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 - Fixed items, in order: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · 언젠가 할 일 (Anytime) · 완료한 일 (Logbook) · 중요도 (Priority) · **타임라인 (Timeline)**. Below them: **그룹 (TaskGroup)** and **태그 (Tag)** sections. **앞으로 할 일 (Upcoming)** and **언젠가 할 일 (Anytime)** start hidden by default (shown via the right-click show/hide menu).
 - Group/Tag headers are 12 SemiBold `TextFillColorTertiary` (quiet hierarchy). The **new group / new tag action is a `+` icon button on the section header**, immediately left of the expand/collapse chevron — not a list row.
 - The per-group / per-tag open-task count is a **plain number** at the end of the row (`TextFillColorTertiary`, no pill/circle background) — a quiet count, not an alert badge.
+- The nested group/tag rows are **inset from the pane's left edge** (`{spacing}` left inset, the `CueNavSubItemInset` token) so their hover/selection fill leaves a small left gap instead of bleeding to the edge.
+- **Hover deepens selection, everywhere.** Hovering an already-selected row darkens it (selected + hover stacks toward `{colors.pressed-fill}`), matching the main list — the stock NavigationView's lighter selected-hover is overridden per theme so the two surfaces behave the same.
 - **Glyph click = instant picker.** Clicking a group glyph opens the icon picker; clicking a tag glyph opens the color picker — directly, no depth (right-click context menu is the fallback).
 - **Sidebar right-click = show/hide menu.** A checkable list toggles the fixed views (오늘 / 앞으로 / 언젠가 / 완료 / 중요도 / 타임라인) on and off (name left, accent check right). Saved to app-local settings. "모든 할 일" is always shown.
 
@@ -401,7 +411,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### Timeline
 - **Day-column header** (`timeline-day-header`, 58px tall): day number over weekday label, secondary text; the cell carries a right + bottom 1px divider. Today's number sits in a 28px accent circle (`today-marker`, radius 14) with on-accent text.
-- **Task bar** (`timeline-bar`): a card-surface bar (radius 8, 1px card stroke, `InnerBorderEdge`), min width 140, min height 54, positioned on a canvas by start offset and width. Carries the title + priority pill and a date caption. Hover uses the shared `CueHoverFillBrush`; the title fade appears only when the measured title overflows.
+- **Task bar** (`timeline-bar`): a card-surface bar (radius 8, 1px card stroke, `InnerBorderEdge`), fixed width 204 (the 220px day column − 16) and min height 54, positioned on a canvas at its date's offset; the title is capped at MaxWidth 142. Carries the title + priority pill and a date caption. Hover uses the shared `CueHoverFillBrush`; the title fade appears only when the measured title overflows.
 - **Now line** (`today-line`): a precise 1px accent rectangle at opacity 0.8, positioned by a `TranslateTransform` using the current time-of-day fraction, shown only when today falls in range.
 
 ### Dialogs / inline buttons
@@ -439,7 +449,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## UX Writing
 
 - **Korean-first.** Write natural Korean where intent lands immediately.
-- **Domain term mapping:** TaskGroup → **그룹 (Group)**, Tag → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), Subtask → **체크리스트 (Checklist)**, the task's single date → **날짜 (Date)**, Parent task → **할 일 (Task)**. (There is no separate deadline; a task has one date.)
+- **Domain term mapping:** TaskGroup → **그룹 (Group)**, Tag → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), Subtask → **체크리스트 (Checklist)**, the task's single date → **일시 (When)** (the detail card is titled 일시; the picker placeholder reads 날짜 선택), Parent task → **할 일 (Task)**. (There is no separate deadline; a task has one date.)
 - **Time views:** 오늘 할 일 (Today) / 앞으로 할 일 (Upcoming) / 언젠가 할 일 (Anytime) / 완료한 일 (Logbook).
 - Drop redundant labels (e.g. omit self-evident card titles).
 
@@ -458,7 +468,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ## Known Gaps
 
-- **No centralized spacing token.** `Styles/DesignTokens.xaml` defines radius, type, and color tokens, but spacing/padding is still applied inline in XAML. The `spacing` scale in the frontmatter documents the intended rhythm (page padding `28,20`, card padding `16`) but is not yet a consumed resource. This is the main unmet part of the "tokens are truth" principle.
+- **No centralized spacing token.** `Styles/DesignTokens.xaml` defines radius, type, and color tokens, but spacing/padding is still applied inline in XAML. The `spacing` scale in the frontmatter documents the intended rhythm (page padding `20`, card padding `16`) but is not yet a consumed resource. This is the main unmet part of the "tokens are truth" principle.
 - **Pretendard JP** ships as static OTFs, so weight hierarchy is family-switched (Regular vs. SemiBold) rather than `FontWeight`-driven. The frontmatter encodes the semantic weight (400/600) for non-WinUI export.
 - **Caption (window) buttons** are system-drawn and themed in code-behind (`ApplyCaptionButtonColors`), reapplied on `ActualThemeChanged` — they are not reachable as XAML tokens.
 - The Dark text-input **well** (`#18000000` / `#24000000`) is the only set of literal colors in the system; it is intentionally theme-scoped in `ThemeDictionaries`.

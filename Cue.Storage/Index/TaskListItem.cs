@@ -29,4 +29,11 @@ public sealed record TaskListItem(
     TimeOnly? WhenTime,
     bool IsCompleted,
     Priority Priority,
-    string SortOrder);
+    string SortOrder,
+    string? TaskGroupName = null,
+    string? TaskGroupIcon = null,
+    IReadOnlyList<TaskListTag>? Tags = null);
+
+/// <summary>A task's tag as a list row needs it: the display name and its optional hex color. Derived
+/// from the index join, so it carries no id — the row only shows it, never edits by it.</summary>
+public sealed record TaskListTag(string Name, string? Color);

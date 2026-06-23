@@ -46,7 +46,8 @@ public partial class TimelineViewModel : ObservableObject
         IReorderService reorder,
         IRecurringTaskService recurrence,
         TimeProvider clock,
-        TimeZoneInfo zone)
+        TimeZoneInfo zone,
+        INavDataChangeNotifier navNotifier)
     {
         _index = index;
         _clock = clock;
@@ -55,7 +56,7 @@ public partial class TimelineViewModel : ObservableObject
         var today = Today();
         _visibleMonth = new DateOnly(today.Year, today.Month, 1);
         RebuildDays();
-        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync);
+        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync, navNotifier);
     }
 
     [RelayCommand]

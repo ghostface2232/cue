@@ -18,7 +18,7 @@
         <SolidColorBrush x:Key="DetailCardBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
 
         <Style x:Key="MetadataTextStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="{StaticResource CueFontSecondary}" />
+            <Setter Property="FontSize" Value="{StaticResource CueFontListMeta}" />
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
@@ -94,8 +94,8 @@
         <DataTemplate x:Key="TaskRowTemplate" x:DataType="vm:TaskRowViewModel">
             <StackPanel HorizontalAlignment="Stretch">
                 <Border
-                    Margin="4,2"
-                    Padding="12,8"
+                    Margin="4,1"
+                    Padding="12,12"
                     Background="Transparent"
                     CornerRadius="{StaticResource CueRadiusRow}"
                     IsTabStop="True"
@@ -120,12 +120,13 @@
                             <ColumnDefinition Width="3" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <!-- Selected row gets a persistent fill (the hover tone) in addition to the accent
                              bar, so the open task reads as selected even while the pointer is elsewhere. -->
                         <Rectangle
-                            Grid.ColumnSpan="3"
-                            Margin="-12,-8"
+                            Grid.ColumnSpan="4"
+                            Margin="-12,-12"
                             Fill="{StaticResource TaskHoverBrush}"
                             RadiusX="8"
                             RadiusY="8"
@@ -141,13 +142,13 @@
                             VerticalAlignment="Center"
                             IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                             Style="{StaticResource CueCircleCheckBoxStyle}" />
-                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4">
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="5">
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock MaxWidth="520" VerticalAlignment="Center" FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock MaxWidth="520" VerticalAlignment="Center" FontSize="{StaticResource CueFontListTitle}" Text="{x:Bind Title, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                 <Border
                                     Grid.Column="1"
                                     Padding="7,1"
@@ -161,6 +162,38 @@
                             <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
                             </StackPanel>
+                        </StackPanel>
+                        <!-- Right edge: the task's group (icon + name) and tags (color dot + name).
+                             Each chunk hides itself when the task has no group / no tags. -->
+                        <StackPanel
+                            Grid.Column="3"
+                            Margin="12,0,2,0"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal"
+                            Spacing="12">
+                            <StackPanel
+                                Orientation="Horizontal"
+                                Spacing="5"
+                                VerticalAlignment="Center"
+                                Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
+                                <TextBlock FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" />
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="8" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TaskRowTag">
+                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                            <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind Color, Converter={StaticResource HexToBrush}}" />
+                                            <TextBlock FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Name}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -178,11 +211,13 @@
                         ItemTemplate="{StaticResource ChildTaskRowTemplate}"
                         ItemsSource="{x:Bind Subtasks}" />
                 </Grid>
+                <!-- Thin separator between list rows for clear row-to-row division. -->
+                <Rectangle Height="1" Margin="8,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
             </StackPanel>
         </DataTemplate>
     </Page.Resources>
 
-    <Grid Padding="28,20,28,20">
+    <Grid Padding="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -467,7 +502,18 @@
 
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="10">
-                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="AddTag_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
+                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="BeginAddTag_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
+                                <!-- Inline new-tag field, shown in place of the old modal when + 새 태그 is tapped. -->
+                                <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.Detail.IsAddingTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Name="NewTagBox"
+                                        KeyDown="NewTagBox_KeyDown"
+                                        LostFocus="NewTagBox_LostFocus"
+                                        PlaceholderText="태그 이름"
+                                        Text="{x:Bind ViewModel.Detail.NewTagName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Grid.Column="1" Click="ConfirmAddTag_Click" Content="추가" />
+                                </Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Tags}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:TagEditorOption">

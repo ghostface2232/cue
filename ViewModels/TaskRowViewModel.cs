@@ -6,6 +6,9 @@ using Cue.Storage.Index;
 
 namespace Cue.ViewModels;
 
+/// <summary>A tag as shown at the right edge of a task row: a colored dot + name. View-only.</summary>
+public sealed record TaskRowTag(string Name, string? Color);
+
 /// <summary>
 /// One row in a task list — a display projection of a <see cref="TaskListItem"/> (which comes
 /// straight from the index) plus a completion toggle that writes back through the store.
@@ -47,6 +50,24 @@ public partial class TaskRowViewModel : ObservableObject
 
     public bool HasPriority => Priority != Priority.None;
     public string PriorityCaption => HasPriority ? Priority.ToString() : string.Empty;
+
+    /// <summary>The row's group name, shown as a chip at the right edge; empty when the task is unfiled.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasGroup))]
+    public partial string GroupName { get; set; } = string.Empty;
+
+    /// <summary>The group's sidebar glyph for the row chip (default folder glyph when the group set none).</summary>
+    [ObservableProperty]
+    public partial string GroupGlyph { get; set; } = DefaultGroupGlyph;
+
+    public bool HasGroup => GroupName.Length > 0;
+
+    /// <summary>The row's tags (color + name), shown as chips at the right edge; empty when untagged.</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<TaskRowTag> Tags { get; set; } = Array.Empty<TaskRowTag>();
+
+    // Matches the sidebar's default group glyph (Segoe Fluent folder) when a group carries no icon.
+    private const string DefaultGroupGlyph = "";
     // Subtasks are rendered as their own indented sub-list, so their presence is already obvious —
     // they intentionally do not add a "하위 작업 N" caption to the parent row's metadata line.
     public bool HasMetadata => HasSchedule || HasPriority;
@@ -76,6 +97,7 @@ public partial class TaskRowViewModel : ObservableObject
         SortOrder = item.SortOrder;
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
+        ApplyGroupAndTags(item);
 
         _suppressToggle = true;       // initial state from the index, not a user action
         IsCompleted = item.IsCompleted;
@@ -95,7 +117,17 @@ public partial class TaskRowViewModel : ObservableObject
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
         SortOrder = item.SortOrder;
+        ApplyGroupAndTags(item);
         SetCompletedSilently(item.IsCompleted);
+    }
+
+    private void ApplyGroupAndTags(TaskListItem item)
+    {
+        GroupName = item.TaskGroupName ?? string.Empty;
+        GroupGlyph = string.IsNullOrEmpty(item.TaskGroupIcon) ? DefaultGroupGlyph : item.TaskGroupIcon!;
+        Tags = item.Tags is { Count: > 0 }
+            ? item.Tags.Select(tag => new TaskRowTag(tag.Name, tag.Color)).ToArray()
+            : Array.Empty<TaskRowTag>();
     }
 
     partial void OnIsCompletedChanged(bool value)
