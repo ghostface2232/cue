@@ -159,7 +159,7 @@
                             ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
                             Loaded="ReorderRepeater_Loaded" />
                         <StackPanel Margin="0,18,0,0" Visibility="{x:Bind ViewModel.HasEveningTasks, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Margin="14,0,0,7" Style="{StaticResource SubtitleTextBlockStyle}" Text="오늘 저녁" />
+                            <TextBlock Margin="14,0,0,7" FontSize="{StaticResource CueFontSection}" Style="{StaticResource SubtitleTextBlockStyle}" Text="오늘 저녁" />
                             <ItemsRepeater
                                 ElementClearing="TaskRepeater_ElementClearing"
                                 ElementPrepared="TaskRepeater_ElementPrepared"
@@ -183,12 +183,12 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Name}" />
+                                        <TextBlock FontSize="{StaticResource CueFontSection}" Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Name}" />
                                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DeadlineCaption}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="{x:Bind CanEdit, Converter={StaticResource BoolToVisibility}}">
-                                        <Button Click="RenameSection_Click" Content="이름 변경" Tag="{x:Bind Id}" />
-                                        <Button Click="DeleteSection_Click" Content="삭제" Tag="{x:Bind Id}" />
+                                        <Button Click="RenameSection_Click" Content="이름 변경" Style="{StaticResource CueSubtleTextButtonStyle}" Tag="{x:Bind Id}" />
+                                        <Button Click="DeleteSection_Click" Content="삭제" Style="{StaticResource CueSubtleTextButtonStyle}" Tag="{x:Bind Id}" />
                                     </StackPanel>
                                 </Grid>
                                 <ItemsRepeater ElementClearing="TaskRepeater_ElementClearing" ElementPrepared="TaskRepeater_ElementPrepared" ItemTemplate="{StaticResource TaskRowTemplate}" ItemsSource="{x:Bind Tasks}" Loaded="ReorderRepeater_Loaded" />
@@ -197,7 +197,14 @@
                     </ListView.ItemTemplate>
                 </ListView>
 
-                <TextBlock Margin="8,10,0,0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="표시할 할 일이 없습니다." Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock
+                    Margin="0,96,0,0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    FontSize="14"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="표시할 할 일이 없습니다."
+                    Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
             </Grid>
 
             <Border
@@ -281,6 +288,7 @@
                             Margin="4,0,0,2"
                             Click="EnableWhen_Click"
                             Content="+ 예정 추가"
+                            Style="{StaticResource CueSubtleTextButtonStyle}"
                             Visibility="{x:Bind ViewModel.Detail.CanAddWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -323,7 +331,7 @@
 
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="10">
-                                <Grid><TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" /></Grid>
+                                <Grid><TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
                                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:LabelEditorOption"><CheckBox Margin="0,0,14,7" Content="{x:Bind Name}" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" /></DataTemplate></ItemsControl.ItemTemplate>

@@ -76,6 +76,9 @@
                 <NavigationViewItem
                     x:Name="ProjectsGroup"
                     Content="Projects"
+                    FontSize="12"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                     IsExpanded="True"
                     SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>
@@ -88,6 +91,9 @@
                 <NavigationViewItem
                     x:Name="LabelsGroup"
                     Content="Labels"
+                    FontSize="12"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                     IsExpanded="True"
                     SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>
