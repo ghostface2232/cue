@@ -227,20 +227,20 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         var project = new TaskGroup { Name = "통째로 삭제할 프로젝트" };
         var open = new TaskItem { Title = "열린 일", TaskGroupId = project.Id };
         var done = new TaskItem { Title = "완료한 일", TaskGroupId = project.Id, CompletedAt = Now };
-        var subtask = new TaskItem { Title = "하위 작업", ParentTaskId = open.Id, TaskGroupId = project.Id };
+        var third = new TaskItem { Title = "또 다른 일", TaskGroupId = project.Id };
         var other = new TaskItem { Title = "다른 곳의 일" };
         await store.SaveAsync(project);
         await store.SaveAsync(open);
         await store.SaveAsync(done);
-        await store.SaveAsync(subtask);
+        await store.SaveAsync(third);
         await store.SaveAsync(other);
 
-        // Opt-in destructive deletion: the group and all its tasks (open, completed, subtasks) are tombstoned.
+        // Opt-in destructive deletion: the group and all its tasks (open and completed) are tombstoned.
         await store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks);
 
         Assert.NotNull((await store.GetAsync<TaskItem>(open.Id))!.DeletedAt);
         Assert.NotNull((await store.GetAsync<TaskItem>(done.Id))!.DeletedAt);
-        Assert.NotNull((await store.GetAsync<TaskItem>(subtask.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<TaskItem>(third.Id))!.DeletedAt);
         Assert.NotNull((await store.GetAsync<TaskGroup>(project.Id))!.DeletedAt);
         Assert.Empty(await store.GetByTaskGroupAsync(project.Id));
         // A task that was never in the group is untouched and stays in the home "모든 할 일" view.
@@ -268,24 +268,23 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeleteTask_CascadesSoftDeleteToItsSubtaskSubtree()
+    public async Task DeleteTask_IsAPlainSoftDelete_WithItsEmbeddedChecklist()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var parent = new TaskItem { Title = "부모" };
-        var child = new TaskItem { Title = "자식", ParentTaskId = parent.Id };
-        var grandchild = new TaskItem { Title = "손주", ParentTaskId = child.Id };
+        var task = new TaskItem { Title = "부모" };
+        task.Checklist.Add(new ChecklistItem { Title = "항목" });
         var unrelated = new TaskItem { Title = "남" };
-        foreach (var t in new[] { parent, child, grandchild, unrelated })
-            await store.SaveAsync(t);
+        await store.SaveAsync(task);
+        await store.SaveAsync(unrelated);
 
-        // Deleting a task tombstones its whole subtree — no orphaned, unreachable children remain.
-        await store.DeleteAsync<TaskItem>(parent.Id);
+        // Deleting a task tombstones just that task; its embedded checklist goes with the record.
+        await store.DeleteAsync<TaskItem>(task.Id);
 
-        Assert.NotNull((await store.GetAsync<TaskItem>(parent.Id))!.DeletedAt);
-        Assert.NotNull((await store.GetAsync<TaskItem>(child.Id))!.DeletedAt);
-        Assert.NotNull((await store.GetAsync<TaskItem>(grandchild.Id))!.DeletedAt);
-        Assert.Empty(await store.GetSubtasksAsync(parent.Id));
+        var deleted = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(deleted!.DeletedAt);
+        Assert.Single(deleted.Checklist);
+        Assert.DoesNotContain(await store.GetAllActiveAsync(), item => item.Id == task.Id);
         // An unrelated task is left alone.
         Assert.Null((await store.GetAsync<TaskItem>(unrelated.Id))!.DeletedAt);
     }
@@ -577,16 +576,14 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         await using var store = await OpenAsync(root, clock);
 
         // The store enforces no referential integrity, so the index and views must tolerate floating
-        // references: a project/label/parent that no record exists for.
+        // references: a project/label that no record exists for.
         var missingGroup = Guid.NewGuid();
         var missingTag = Guid.NewGuid();
-        var missingParent = Guid.NewGuid();
         var orphan = new TaskItem
         {
             Title = "떠 있는 참조",
             When = OnDay(Today),
             TaskGroupId = missingGroup,
-            ParentTaskId = missingParent,   // a sub-task whose parent never existed
             TagIds = { missingTag },
         };
         await store.SaveAsync(orphan);
@@ -603,28 +600,27 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SubtaskList_ComesFromIndex_IncludesCompleted_AndExcludesTombstones()
+    public async Task Checklist_IsMirroredInTheIndex_AndRebuildsFromFiles()
     {
         var root = NewRoot();
         var clock = new MutableTimeProvider(Now);
         await using var store = await OpenAsync(root, clock);
-        var parent = new TaskItem { Title = "부모" };
-        var open = new TaskItem { Title = "열린 하위 작업", ParentTaskId = parent.Id };
-        var completed = new TaskItem { Title = "완료한 하위 작업", ParentTaskId = parent.Id, CompletedAt = Now };
-        var other = new TaskItem { Title = "다른 부모의 작업", ParentTaskId = Guid.NewGuid() };
-        await store.SaveAsync(parent);
-        await store.SaveAsync(open);
-        await store.SaveAsync(completed);
-        await store.SaveAsync(other);
-        await store.DeleteAsync<TaskItem>(other.Id);
+        var task = new TaskItem { Title = "부모" };
+        task.Checklist.Add(new ChecklistItem { Title = "열린 항목" });
+        task.Checklist.Add(new ChecklistItem { Title = "완료한 항목", IsChecked = true });
+        await store.SaveAsync(task);
 
-        Assert.Equal(
-            new[] { open.Id, completed.Id }.OrderBy(id => id),
-            (await store.GetSubtasksAsync(parent.Id)).Select(item => item.Id).OrderBy(id => id));
+        var listed = Assert.Single(await store.GetAllActiveAsync());
+        Assert.NotNull(listed.Checklist);
+        Assert.Equal(new[] { "열린 항목", "완료한 항목" }, listed.Checklist!.Select(c => c.Title));
+        Assert.False(listed.Checklist![0].IsChecked);
+        Assert.True(listed.Checklist![1].IsChecked);
 
-        // Prove this list is read from SQLite, not by scanning task files.
-        File.Delete(Path.Combine(root, "tasks", open.Id + ".json"));
-        Assert.Contains(await store.GetSubtasksAsync(parent.Id), item => item.Id == open.Id);
+        // The checklist projection survives a full index rebuild from the files (it is derived, not stored).
+        await store.InitializeAsync();
+        var rebuilt = Assert.Single(await store.GetAllActiveAsync());
+        Assert.Equal(2, rebuilt.Checklist!.Count);
+        Assert.True(rebuilt.Checklist![1].IsChecked);
     }
 
     [Fact]

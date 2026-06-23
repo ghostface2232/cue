@@ -113,7 +113,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task CompletingParentCascadesCompletionToItsSubtasks()
+    public async Task Checklist_Add_Toggle_Delete_PersistThroughTheStore()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -121,20 +121,31 @@ public sealed class ViewModelRegressionTests
             new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
             clock,
             TimeZoneInfo.Utc);
-        var parent = new TaskItem { Title = "parent" };
-        await store.SaveAsync(parent);
-        var child = new TaskItem { Title = "child", ParentTaskId = parent.Id };
-        await store.SaveAsync(child);
+        var task = new TaskItem { Title = "parent" };
+        await store.SaveAsync(task);
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.LoadCommand.ExecuteAsync(null);
-        var row = Assert.Single(vm.Tasks);
-        row.SetCompletedSilently(true);
-        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.Detail.OpenAsync(task.Id);
 
-        // Completing the parent pulls its checklist down with it — no orphaned open subtask.
-        Assert.True((await store.GetAsync<TaskItem>(parent.Id))!.IsCompleted);
-        Assert.True((await store.GetAsync<TaskItem>(child.Id))!.IsCompleted);
+        // Add a checklist item from the detail panel.
+        vm.Detail.NewChecklistItemTitle = "사기";
+        await vm.Detail.AddChecklistItemCommand.ExecuteAsync(null);
+        var item = Assert.Single((await store.GetAsync<TaskItem>(task.Id))!.Checklist);
+        Assert.Equal("사기", item.Title);
+        Assert.False(item.IsChecked);
+
+        // It shows as a nested row in the list; ticking it from there persists onto the parent.
+        var checkRow = Assert.Single(Assert.Single(vm.Tasks).ChecklistItems);
+        Assert.Equal(item.Id, checkRow.Id);
+        checkRow.SetCheckedSilently(true);
+        await vm.ToggleChecklistItemCommand.ExecuteAsync(checkRow);
+        Assert.True((await store.GetAsync<TaskItem>(task.Id))!.Checklist[0].IsChecked);
+
+        // Deleting it from the detail panel removes it outright (no tombstone for an embedded item).
+        await vm.Detail.DeleteChecklistItemCommand.ExecuteAsync(item.Id);
+        Assert.Empty((await store.GetAsync<TaskItem>(task.Id))!.Checklist);
+        Assert.Empty(vm.Detail.Checklist);
     }
 
     [Fact]
@@ -311,7 +322,6 @@ public sealed class ViewModelRegressionTests
             store,
             store,
             new ReorderService(store),
-            new RecurringTaskService(store),
             clock,
             TimeZoneInfo.Utc,
             new NavDataChangeNotifier());

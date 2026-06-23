@@ -289,15 +289,6 @@
                     </Border>
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="2,0,16,0" Spacing="13">
-                        <Button
-                            HorizontalAlignment="Left"
-                            Padding="2,0"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Click="OpenParent_Click"
-                            Content="← 할 일로 돌아가기"
-                            Visibility="{x:Bind ViewModel.Detail.HasParentTask, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-
                         <Grid ColumnSpacing="7">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -455,17 +446,20 @@
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="체크리스트" />
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewSubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewChecklistItemTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                     <Button Grid.Column="1" Click="AddSubtask_Click" Content="추가" />
                                 </Grid>
-                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Subtasks}">
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Checklist}">
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:SubtaskRowViewModel">
-                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="10" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+                                        <DataTemplate x:DataType="vm:ChecklistItemViewModel">
+                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="10">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                                <CheckBox VerticalAlignment="Center" IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
-                                                <Button Grid.Column="1" Padding="6,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Click="OpenSubtask_Click" Content="{x:Bind Title}" CornerRadius="{StaticResource CueRadiusSmall}" FontSize="{StaticResource CueFontRowSub}" Tag="{x:Bind Id}" />
-                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
+                                                <CheckBox VerticalAlignment="Top" Margin="0,5,0,0" IsChecked="{x:Bind IsChecked, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
+                                                <StackPanel Grid.Column="1" Spacing="3" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+                                                    <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
+                                                    <TextBox PlaceholderText="메모" Text="{x:Bind Note, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

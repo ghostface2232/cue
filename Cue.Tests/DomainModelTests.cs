@@ -18,7 +18,8 @@ public class DomainModelTests
         Assert.False(task.When.HasDate);
         Assert.Equal(Priority.None, task.Priority);
         Assert.Null(task.TaskGroupId);
-        Assert.Null(task.ParentTaskId);
+        Assert.NotNull(task.Checklist);
+        Assert.Empty(task.Checklist);
         Assert.Null(task.Recurrence);
         Assert.NotNull(task.TagIds);
         Assert.Empty(task.TagIds);
@@ -106,20 +107,21 @@ public class DomainModelTests
     }
 
     [Fact]
-    public void Subtask_PointsAtParentAndKeepsItsOwnProperties()
+    public void Checklist_HoldsLightweightItemsInOrder()
     {
-        var parent = new TaskItem { Title = "Plan trip" };
-        var child = new TaskItem
-        {
-            Title = "Book flights",
-            ParentTaskId = parent.Id,
-            Priority = Priority.P1,
-            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 18, 0, 0), "Asia/Seoul")),
-        };
+        var task = new TaskItem { Title = "Plan trip" };
+        task.Checklist.Add(new ChecklistItem { Title = "Book flights", IsChecked = true, Note = "aisle seat" });
+        task.Checklist.Add(new ChecklistItem { Title = "Pack bags" });
 
-        Assert.Equal(parent.Id, child.ParentTaskId);
-        Assert.Equal(Priority.P1, child.Priority);
-        Assert.True(child.When.HasDate);
+        Assert.Equal(2, task.Checklist.Count);
+        Assert.Equal("Book flights", task.Checklist[0].Title);
+        Assert.True(task.Checklist[0].IsChecked);
+        Assert.Equal("aisle seat", task.Checklist[0].Note);
+        Assert.Equal("Pack bags", task.Checklist[1].Title);
+        Assert.False(task.Checklist[1].IsChecked);
+        Assert.Null(task.Checklist[1].Note);
+        Assert.NotEqual(Guid.Empty, task.Checklist[0].Id);
+        Assert.NotEqual(task.Checklist[0].Id, task.Checklist[1].Id);
     }
 
     [Fact]

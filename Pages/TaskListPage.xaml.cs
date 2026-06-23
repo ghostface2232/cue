@@ -669,7 +669,7 @@ public sealed partial class TaskListPage : Page
         => await ViewModel.Detail.FlushAsync();
 
     private async void AddSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-        => await RunSafelyAsync(() => ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null));
+        => await RunSafelyAsync(() => ViewModel.Detail.AddChecklistItemCommand.ExecuteAsync(null));
 
     private void TagRow_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
@@ -721,15 +721,6 @@ public sealed partial class TaskListPage : Page
         finally { _committingTag = false; }
     }
 
-    private async void OpenParent_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-        => await RunSafelyAsync(() => ViewModel.Detail.OpenParentCommand.ExecuteAsync(null));
-
-    private async void OpenSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: Guid id })
-            await RunSafelyAsync(() => ViewModel.Detail.OpenSubtaskCommand.ExecuteAsync(id));
-    }
-
     private async void DeleteSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         if (sender is not Button { Tag: Guid id }) return;
@@ -737,7 +728,7 @@ public sealed partial class TaskListPage : Page
         {
             XamlRoot = XamlRoot,
             Title = "체크리스트 항목을 삭제할까요?",
-            Content = "파일은 지우지 않고 삭제 시각만 기록됩니다.",
+            Content = "이 항목을 목록에서 지웁니다.",
             PrimaryButtonText = "삭제",
             CloseButtonText = "취소",
             DefaultButton = ContentDialogButton.Close,
@@ -745,7 +736,7 @@ public sealed partial class TaskListPage : Page
         await RunSafelyAsync(async () =>
         {
             if (await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary)
-                await ViewModel.Detail.DeleteSubtaskCommand.ExecuteAsync(id);
+                await ViewModel.Detail.DeleteChecklistItemCommand.ExecuteAsync(id);
         });
     }
 

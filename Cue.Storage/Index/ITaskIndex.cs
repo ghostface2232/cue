@@ -48,8 +48,8 @@ public interface ITaskIndex
 
     // ---- Classification axis -------------------------------------------------
 
-    /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (AllTasks) list.
-    /// Subtasks are returned too; the view nests them under their parents.</summary>
+    /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (AllTasks) list. Each
+    /// row carries its embedded checklist for the nested rows the view shows under it.</summary>
     Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Non-deleted tasks belonging to the given task group.</summary>
@@ -58,20 +58,13 @@ public interface ITaskIndex
     /// <summary>Non-deleted tasks carrying the given tag.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks in no group at all — the 그룹 없음 list that re-gathers unfiled captures.
-    /// Subtasks are returned too; the view nests them under their parents.</summary>
+    /// <summary>Non-deleted tasks in no group at all — the 그룹 없음 list that re-gathers unfiled
+    /// captures.</summary>
     Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Non-deleted tasks carrying no tag at all — the 태그 없음 list that re-gathers unfiled
-    /// captures. Subtasks are returned too; the view nests them under their parents.</summary>
+    /// captures.</summary>
     Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Full task records projected as rows whose <see cref="TaskItem.ParentTaskId"/> matches the
-    /// parent. Includes completed children so a parent detail can show and reopen them; excludes
-    /// tombstones.
-    /// </summary>
-    Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default);
 
     // ---- Time axis (computed against the current day) ------------------------
 

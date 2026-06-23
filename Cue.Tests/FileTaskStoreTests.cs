@@ -26,7 +26,11 @@ public sealed class FileTaskStoreTests : IDisposable
         When = ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)),
         Priority = Priority.P1,
         TaskGroupId = Guid.NewGuid(),
-        ParentTaskId = Guid.NewGuid(),
+        Checklist =
+        {
+            new ChecklistItem { Title = "초안 작성", IsChecked = true, Note = "**굵게** 메모" },
+            new ChecklistItem { Title = "검토 요청" },
+        },
         TagIds = { Guid.NewGuid(), Guid.NewGuid() },
         Recurrence = new RecurrenceRule("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO", Zoned(2026, 6, 22, 9, 0)),
         SortOrder = "0|hzzzzz:",
@@ -50,7 +54,14 @@ public sealed class FileTaskStoreTests : IDisposable
         Assert.Equal(task.When, loaded.When);
         Assert.Equal(task.Priority, loaded.Priority);
         Assert.Equal(task.TaskGroupId, loaded.TaskGroupId);
-        Assert.Equal(task.ParentTaskId, loaded.ParentTaskId);
+        Assert.Equal(2, loaded.Checklist.Count);
+        Assert.Equal(task.Checklist[0].Id, loaded.Checklist[0].Id);
+        Assert.Equal("초안 작성", loaded.Checklist[0].Title);
+        Assert.True(loaded.Checklist[0].IsChecked);
+        Assert.Equal("**굵게** 메모", loaded.Checklist[0].Note);
+        Assert.Equal("검토 요청", loaded.Checklist[1].Title);
+        Assert.False(loaded.Checklist[1].IsChecked);
+        Assert.Null(loaded.Checklist[1].Note);
         Assert.Equal(task.TagIds, loaded.TagIds);
         Assert.NotNull(loaded.Recurrence);
         Assert.Equal(task.Recurrence!.Rule, loaded.Recurrence!.Rule);

@@ -116,7 +116,7 @@ public partial class TaskListViewModel : ObservableObject
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
-        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync, navNotifier);
+        Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, navNotifier);
         // Clear the row selection accent when the detail panel closes.
         Detail.PropertyChanged += (_, e) =>
         {
@@ -132,12 +132,13 @@ public partial class TaskListViewModel : ObservableObject
             row.IsSelected = row.Id == id;
     }
 
-    /// <summary>Every realized row across the flat list and all groups, including subtask rows.</summary>
+    /// <summary>Every realized task row across the flat list and all groups. Checklist rows are not
+    /// included — they are not selectable.</summary>
     private IEnumerable<TaskRowViewModel> AllRows()
     {
-        foreach (var row in Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
+        foreach (var row in Tasks) yield return row;
         foreach (var group in Groups)
-            foreach (var row in group.Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
+            foreach (var row in group.Tasks) yield return row;
     }
 
     /// <summary>Switches which index view this list reflects, and retitles accordingly.</summary>
@@ -252,16 +253,15 @@ public partial class TaskListViewModel : ObservableObject
         // (every save routes through here) reuses unchanged row instances. That keeps scroll position,
         // focus, selection, a drag in progress, and the item-entrance animation intact, and avoids
         // recreating hundreds of rows when a single detail-panel edit changed one value.
-        var roots = BuildForest(items);
         if (_mode == TaskListMode.Priority)
         {
             SyncRows(Tasks, []);   // the 중요도 view is grouped; its rows live in the buckets, not the flat list
-            SyncGroups(roots);
+            SyncGroups(items);
         }
         else
         {
             SyncGroups([]);        // every other view is flat; keep the bucket list empty
-            SyncRows(Tasks, roots);
+            SyncRows(Tasks, items);
         }
 
         IsEmpty = IsGroupedList
@@ -309,27 +309,34 @@ public partial class TaskListViewModel : ObservableObject
             foreach (var row in group.Tasks) yield return row.SortOrder;
     }
 
-    /// <summary>Marks every open descendant (the full checklist subtree) of a completed task done.</summary>
-    private async Task CompleteDescendantsAsync(Guid parentId, DateTimeOffset at)
+    /// <summary>Toggles one nested checklist item from the list: loads its owning task, flips the item
+    /// by id, and saves the parent through the store. Serialized through the same gate as completion so
+    /// rapid checks can't reorder their writes; on failure the checkbox is restored.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task ToggleChecklistItemAsync(ChecklistRowViewModel row)
     {
-        foreach (var child in await _index.GetSubtasksAsync(parentId))
+        var isChecked = row.IsChecked;
+        await _toggleGate.WaitAsync();
+        try
         {
-            if (child.IsCompleted) continue;
-            var task = await _store.GetAsync<TaskItem>(child.Id);
-            if (task is null || task.IsDeleted) continue;
-            task.CompletedAt = at;
-            await _store.SaveAsync(task);
-            await CompleteDescendantsAsync(child.Id, at);
+            var parent = await _store.GetAsync<TaskItem>(row.ParentTaskId);
+            var item = parent?.Checklist.FirstOrDefault(i => i.Id == row.Id);
+            if (parent is null || parent.IsDeleted || item is null)
+            {
+                row.SetCheckedSilently(!isChecked);
+                return;
+            }
+            item.IsChecked = isChecked;
+            await _store.SaveAsync(parent);
+            await LoadAsync();
         }
-    }
-
-    /// <summary>Every row beneath this one, depth-first — its subtasks and their subtasks.</summary>
-    private static IEnumerable<TaskRowViewModel> Descendants(TaskRowViewModel row)
-    {
-        foreach (var sub in row.Subtasks)
+        catch
         {
-            yield return sub;
-            foreach (var deeper in Descendants(sub)) yield return deeper;
+            row.SetCheckedSilently(!isChecked);
+        }
+        finally
+        {
+            _toggleGate.Release();
         }
     }
 
@@ -345,7 +352,11 @@ public partial class TaskListViewModel : ObservableObject
         => _filterId ?? throw new InvalidOperationException($"{_mode} navigation requires an id.");
 
     private TaskRowViewModel CreateRow(TaskListItem item)
-        => new(item, row => ToggleCompleteCommand.Execute(row));
+    {
+        var row = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r));
+        SyncChecklistRows(row, item);
+        return row;
+    }
 
     // Fixed priority buckets for the 중요도 view, in display order. A bucket is shown only when it has rows.
     private static readonly (Priority Priority, string Name)[] PriorityBuckets =
@@ -353,66 +364,52 @@ public partial class TaskListViewModel : ObservableObject
         (Priority.P1, "매우 중요"), (Priority.P2, "중요"), (Priority.P3, "보통"), (Priority.P4, "사소"),
     ];
 
-    /// <summary>Groups a flat, source-ordered index projection into a forest: roots (items whose parent
-    /// isn't in the result set) in order, each carrying its child rows in order — mirroring how the list
-    /// nests subtasks under their parent.</summary>
-    private static List<RowNode> BuildForest(IReadOnlyList<TaskListItem> items)
-    {
-        var byId = items.ToDictionary(item => item.Id, item => new RowNode(item));
-        var roots = new List<RowNode>();
-        foreach (var item in items)
-        {
-            var node = byId[item.Id];
-            if (item.ParentTaskId is { } parentId && byId.TryGetValue(parentId, out var parent))
-                parent.Children.Add(node);
-            else
-                roots.Add(node);
-        }
-        return roots;
-    }
-
     /// <summary>
-    /// Reconciles <paramref name="target"/> in place to match <paramref name="nodes"/> by id, reusing the
+    /// Reconciles <paramref name="target"/> in place to match <paramref name="items"/> by id, reusing the
     /// existing row instances: an unchanged row is patched (silently when nothing actually changed), a
     /// moved row is repositioned, a row that's gone is removed, and only a genuinely new row is created.
-    /// Recurses into each row's subtasks. This is what lets a save-triggered refresh avoid recreating the
-    /// whole list, preserving scroll, focus, selection, and the entrance animation for unchanged rows.
+    /// Each row's nested checklist is re-synced too. This is what lets a save-triggered refresh avoid
+    /// recreating the whole list, preserving scroll, focus, selection, and the entrance animation for
+    /// unchanged rows. The list is flat — there is no task nesting.
     /// </summary>
-    private void SyncRows(ObservableCollection<TaskRowViewModel> target, IReadOnlyList<RowNode> nodes)
+    private void SyncRows(ObservableCollection<TaskRowViewModel> target, IReadOnlyList<TaskListItem> items)
     {
-        var desired = new HashSet<Guid>(nodes.Count);
-        foreach (var node in nodes) desired.Add(node.Item.Id);
+        var desired = new HashSet<Guid>(items.Count);
+        foreach (var item in items) desired.Add(item.Id);
         for (var i = target.Count - 1; i >= 0; i--)
             if (!desired.Contains(target[i].Id))
                 target.RemoveAt(i);
 
-        for (var i = 0; i < nodes.Count; i++)
+        for (var i = 0; i < items.Count; i++)
         {
-            var node = nodes[i];
-            if (i >= target.Count || target[i].Id != node.Item.Id)
+            var item = items[i];
+            if (i >= target.Count || target[i].Id != item.Id)
             {
-                var existing = IndexOfRow(target, node.Item.Id);
+                var existing = IndexOfRow(target, item.Id);
                 if (existing >= 0)
                 {
                     target.Move(existing, i);
                 }
                 else
                 {
-                    target.Insert(i, BuildRow(node)); // BuildRow assembles the whole subtree
+                    target.Insert(i, CreateRow(item));
                     continue;
                 }
             }
-            target[i].Update(node.Item);
-            SyncRows(target[i].Subtasks, node.Children);
+            target[i].Update(item);
+            SyncChecklistRows(target[i], item);
         }
     }
 
-    private TaskRowViewModel BuildRow(RowNode node)
+    /// <summary>Rebuilds a row's nested checklist rows from its projection. The checklist is short and
+    /// its rows are non-interactive beyond the checkbox, so a clear-and-rebuild keeps title and checked
+    /// state always fresh without the bookkeeping an in-place reconcile would need.</summary>
+    private void SyncChecklistRows(TaskRowViewModel row, TaskListItem item)
     {
-        var row = CreateRow(node.Item);
-        foreach (var child in node.Children)
-            row.AddSubtask(BuildRow(child));
-        return row;
+        row.ChecklistItems.Clear();
+        if (item.Checklist is { Count: > 0 } items)
+            foreach (var checklistItem in items)
+                row.AddChecklistItem(new ChecklistRowViewModel(item.Id, checklistItem, r => ToggleChecklistItemCommand.Execute(r)));
     }
 
     private static int IndexOfRow(ObservableCollection<TaskRowViewModel> rows, Guid id)
@@ -424,13 +421,13 @@ public partial class TaskListViewModel : ObservableObject
 
     /// <summary>Reconciles the priority buckets (the only grouped view) in place: keeps a group per
     /// priority that has rows, in P1→P4 order, reusing existing group instances and syncing each group's
-    /// rows. Pass an empty forest to clear the buckets for an ungrouped view.</summary>
-    private void SyncGroups(IReadOnlyList<RowNode> roots)
+    /// rows. Pass an empty list to clear the buckets for an ungrouped view.</summary>
+    private void SyncGroups(IReadOnlyList<TaskListItem> items)
     {
-        var desired = new List<(string Name, List<RowNode> Roots)>();
+        var desired = new List<(string Name, List<TaskListItem> Items)>();
         foreach (var (priority, name) in PriorityBuckets)
         {
-            var bucket = roots.Where(node => node.Item.Priority == priority).ToList();
+            var bucket = items.Where(item => item.Priority == priority).ToList();
             if (bucket.Count > 0) desired.Add((name, bucket));
         }
 
@@ -457,14 +454,6 @@ public partial class TaskListViewModel : ObservableObject
         for (var i = 0; i < Groups.Count; i++)
             if (Groups[i].Name == name) return i;
         return -1;
-    }
-
-    /// <summary>A node in the desired row forest built from an index projection: one item plus its ordered
-    /// child nodes.</summary>
-    private sealed class RowNode(TaskListItem item)
-    {
-        public TaskListItem Item { get; } = item;
-        public List<RowNode> Children { get; } = new();
     }
 
     // ---- Row context-menu actions (move group / tag / rename / delete) -------
@@ -512,8 +501,8 @@ public partial class TaskListViewModel : ObservableObject
         await LoadAsync();
     }
 
-    /// <summary>Soft-deletes a task (cascading to its subtask subtree, handled by the store), closes
-    /// the detail panel if this task was open, and refreshes the list.</summary>
+    /// <summary>Soft-deletes a task (its embedded checklist goes with it), closes the detail panel if
+    /// this task was open, and refreshes the list.</summary>
     [RelayCommand]
     public async Task DeleteTaskAsync(Guid id)
     {
@@ -554,18 +543,9 @@ public partial class TaskListViewModel : ObservableObject
             if (completed)
             {
                 // Completion runs through the recurrence service: a repeating task leaves a completed
-                // Logbook copy and advances to its next cycle, a one-off is simply stamped done.
-                var now = _clock.GetUtcNow();
-                await _recurrence.CompleteAsync(row.Id, now);
-                // If the task was truly completed (not a recurring task that advanced to its next
-                // cycle), pull its whole checklist down with it — a parent is never "done" while its
-                // subtasks linger open.
-                var parent = await _store.GetAsync<TaskItem>(row.Id);
-                if (parent is { CompletedAt: not null })
-                {
-                    await CompleteDescendantsAsync(row.Id, now);
-                    foreach (var descendant in Descendants(row)) descendant.SetCompletedSilently(true);
-                }
+                // Logbook copy and advances to its next cycle, a one-off is simply stamped done. The
+                // task's embedded checklist items are independent and left as they are.
+                await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
             }
             else
             {

@@ -122,7 +122,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         {
             if (typeof(T) == typeof(TaskGroup)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.TaskGroup, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
             else if (typeof(T) == typeof(Tag)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Tag, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
-            else if (typeof(T) == typeof(TaskItem)) await DeleteTaskSubtreeAsync(id, cancellationToken).ConfigureAwait(false);
             else await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
         }
         finally { _mutationGate.Release(); }
@@ -139,18 +138,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try { await RunContainerDeletionCoreAsync(ContainerDeletionKind.TaskGroup, taskGroupId, mode == TaskGroupDeletionMode.DeleteTasks, cancellationToken).ConfigureAwait(false); }
         finally { _mutationGate.Release(); }
-    }
-
-    /// <summary>
-    /// Soft-deletes a task and its whole subtask subtree (depth-first), so a deleted parent never
-    /// leaves orphaned, unreachable children behind. Each node is tombstoned and reflected into the
-    /// index individually.
-    /// </summary>
-    private async Task DeleteTaskSubtreeAsync(Guid id, CancellationToken cancellationToken)
-    {
-        foreach (var child in await _index.GetSubtasksAsync(id, cancellationToken).ConfigureAwait(false))
-            await DeleteTaskSubtreeAsync(child.Id, cancellationToken).ConfigureAwait(false);
-        await SoftDeleteAndReflectAsync<TaskItem>(id, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RunContainerDeletionCoreAsync(ContainerDeletionKind kind, Guid id, bool cascadeTasks, CancellationToken cancellationToken)
@@ -219,9 +206,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     private async Task DeleteTaskGroupCascadingTasksAsync(Guid taskGroupId, CancellationToken cancellationToken)
     {
-        // Opt-in destructive deletion: tombstone every task filed under the group (open and completed,
-        // including their subtask subtrees, which share the group) before the group itself. Idempotent
-        // — already-tombstoned tasks are excluded by the index query, so a resumed crash re-runs cleanly.
+        // Opt-in destructive deletion: tombstone every task filed under the group (open and completed)
+        // before the group itself. Idempotent — already-tombstoned tasks are excluded by the index
+        // query, so a resumed crash re-runs cleanly.
         foreach (var taskId in await _index.GetTaskIdsByTaskGroupAsync(taskGroupId, cancellationToken).ConfigureAwait(false))
             await SoftDeleteAndReflectAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
 
@@ -284,9 +271,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default)
         => _index.GetWithoutTagAsync(cancellationToken);
-
-    public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
-        => _index.GetSubtasksAsync(parentTaskId, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => _index.GetTodayAsync(cancellationToken);

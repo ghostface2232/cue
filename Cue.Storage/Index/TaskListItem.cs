@@ -23,7 +23,6 @@ public sealed record TaskListItem(
     Guid Id,
     string Title,
     Guid? TaskGroupId,
-    Guid? ParentTaskId,
     WhenKind WhenKind,
     DateOnly? WhenDate,
     TimeOnly? WhenTime,
@@ -32,8 +31,14 @@ public sealed record TaskListItem(
     string SortOrder,
     string? TaskGroupName = null,
     string? TaskGroupIcon = null,
-    IReadOnlyList<TaskListTag>? Tags = null);
+    IReadOnlyList<TaskListTag>? Tags = null,
+    IReadOnlyList<TaskListChecklistItem>? Checklist = null);
 
 /// <summary>A task's tag as a list row needs it: the display name and its optional hex color. Derived
 /// from the index join, so it carries no id — the row only shows it, never edits by it.</summary>
 public sealed record TaskListTag(string Name, string? Color);
+
+/// <summary>A checklist item as the list needs it to render the nested rows under a task: the id (to
+/// toggle it through its parent), its text, and whether it is ticked. The memo is omitted — it is
+/// edited only in the detail panel, which loads the full <see cref="TaskItem"/>.</summary>
+public sealed record TaskListChecklistItem(Guid Id, string Title, bool IsChecked);
