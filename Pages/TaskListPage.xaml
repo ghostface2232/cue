@@ -354,7 +354,7 @@
                                     <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="예정" />
                                     <Button HorizontalAlignment="Right" Padding="8,3" Background="Transparent" BorderThickness="0" Click="ClearWhen_Click" Content="제거" />
                                 </Grid>
-                                <Grid ColumnSpacing="8">
+                                <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -365,13 +365,14 @@
                                         VerticalAlignment="Center"
                                         Orientation="Horizontal"
                                         Spacing="7"
-                                        Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                        Visibility="{x:Bind ViewModel.Detail.ShowWhenTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                         <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenHour, Mode=TwoWay}" />
                                         <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
                                         <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
                                     </StackPanel>
                                 </Grid>
                                 <StackPanel Orientation="Horizontal" Spacing="18">
+                                    <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                     <CheckBox Content="저녁" IsChecked="{x:Bind ViewModel.Detail.IsEvening, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                     <CheckBox Content="언젠가" IsChecked="{x:Bind ViewModel.Detail.IsSomeday, Mode=TwoWay}" />
                                 </StackPanel>
@@ -392,12 +393,13 @@
                                         VerticalAlignment="Center"
                                         Orientation="Horizontal"
                                         Spacing="7"
-                                        Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                        Visibility="{x:Bind ViewModel.Detail.ShowDeadlineTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                         <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
                                         <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
                                         <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
                                     </StackPanel>
                                 </Grid>
+                                <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsDeadlineAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </Border>
 
