@@ -148,6 +148,17 @@ public sealed class KoreanDateParserTests
     }
 
     [Fact]
+    public void BareEarlyHour_CanKeepMorning_WhenAfternoonHeuristicIsDisabled()
+    {
+        var parser = new KoreanDateParser(
+            options: new KoreanDateParserOptions { AutoAfternoonForBareOneToSix = false });
+        var at10 = new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero);
+        var r = parser.Parse("오늘 3시 미팅", at10, Tz);
+        Assert.Equal("미팅", r.Title);
+        Assert.Equal(3, WhenHour(r.When));
+    }
+
+    [Fact]
     public void BareLateMorningHour_OnFutureDate_StaysMorning()
     {
         // 7–11 o'clock is a plausible morning slot (a 9am meeting), so a future bare hour keeps AM.
@@ -405,6 +416,17 @@ public sealed class KoreanDateParserTests
         Assert.Equal("정산", r.Title);
         Assert.NotNull(r.Recurrence);
         Assert.Equal("FREQ=MONTHLY;BYMONTHDAY=31", r.Recurrence!.Rule);
+    }
+
+    [Fact]
+    public void CustomDayOfMonthRule_MapsSemanticDateName()
+    {
+        var parser = new KoreanDateParser(
+            [new CustomDayOfMonthRule(new Dictionary<string, int> { ["월급날"] = 25 })]);
+        var r = parser.Parse("월급날 적금 자동이체 확인", Now, Tz);
+        Assert.Equal("적금 자동이체 확인", r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(2026, 6, 25), WhenDate(r.When));
     }
 
     // ---- 9. Word order + 11. composite --------------------------------------

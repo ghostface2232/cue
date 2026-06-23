@@ -20,6 +20,7 @@ namespace Cue;
 public partial class App : Application
 {
     private Window? _window;
+    internal static Window? CurrentWindow { get; private set; }
 
     /// <summary>The app-wide service provider. Built once at launch, after the store is opened.</summary>
     public static IServiceProvider Services { get; private set; } = null!;
@@ -33,11 +34,15 @@ public partial class App : Application
     {
         try
         {
+            var preferences = new AppPreferences();
+            var timeZone = preferences.ResolveTimeZone();
             var store = await IndexedTaskStore.OpenAsync(
-                FileTaskStoreOptions.CreateDefault(), TimeProvider.System, TimeZoneInfo.Local);
+                FileTaskStoreOptions.CreateDefault(), TimeProvider.System, timeZone);
 
-            Services = ConfigureServices(store);
+            Services = ConfigureServices(store, preferences, timeZone);
             _window = new MainWindow();
+            CurrentWindow = _window;
+            AppPreferences.ApplyThemeAndAccent(_window, preferences);
             _window.Activate();
         }
         catch (Exception exception)
@@ -47,17 +52,18 @@ public partial class App : Application
     }
 
     /// <summary>Registers the services and view models. The store is supplied as a ready instance.</summary>
-    private static IServiceProvider ConfigureServices(IndexedTaskStore store)
+    private static IServiceProvider ConfigureServices(IndexedTaskStore store, AppPreferences preferences, TimeZoneInfo timeZone)
     {
         var services = new ServiceCollection();
 
         // Clock + zone that resolve "now"/"today" and pin parsed dates — the same ones the store
         // was opened with, so the index and the parser agree on the day.
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton(TimeZoneInfo.Local);
+        services.AddSingleton(timeZone);
+        services.AddSingleton(preferences);
 
         // The quick-add parser.
-        services.AddSingleton<IDateParser, KoreanDateParser>();
+        services.AddSingleton<IDateParser, PreferenceDateParser>();
 
         // One store instance, exposed through both faces it implements: the write side (ITaskStore)
         // and the query side (ITaskIndex).

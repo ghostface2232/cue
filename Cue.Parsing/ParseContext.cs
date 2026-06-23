@@ -9,13 +9,14 @@ namespace Cue.Parsing;
 /// </summary>
 public sealed class ParseContext
 {
-    public ParseContext(DateTimeOffset now, string timeZoneId)
+    public ParseContext(DateTimeOffset now, string timeZoneId, KoreanDateParserOptions? options = null)
     {
         if (string.IsNullOrWhiteSpace(timeZoneId))
             throw new ArgumentException("A time zone id is required.", nameof(timeZoneId));
 
         Now = now;
         TimeZoneId = timeZoneId;
+        Options = options ?? new KoreanDateParserOptions();
         LocalNow = ZonedDateTime.FromUtc(now, timeZoneId).ToLocal();
         Today = DateOnly.FromDateTime(LocalNow.DateTime);
     }
@@ -28,6 +29,9 @@ public sealed class ParseContext
 
     /// <summary><see cref="Now"/> projected into <see cref="TimeZoneId"/>.</summary>
     public DateTimeOffset LocalNow { get; }
+
+    /// <summary>Runtime parser behavior toggles.</summary>
+    public KoreanDateParserOptions Options { get; }
 
     /// <summary>The local calendar day "today" falls on.</summary>
     public DateOnly Today { get; }
@@ -54,8 +58,10 @@ public sealed class ParseContext
     {
         if (meridiemGiven || hour is < 1 or > 11)
             return hour;
-        if (hour <= 6)
+        if (hour <= 6 && Options.AutoAfternoonForBareOneToSix)
             return hour + 12;
+        if (hour <= 6)
+            return hour;
         return Zoned(date, hour, minute).Utc < Now ? hour + 12 : hour;
     }
 

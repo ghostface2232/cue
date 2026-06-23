@@ -119,6 +119,14 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (item.Tag is string settings && settings == "settings")
+        {
+            _currentNavigation = null;
+            NavFrame.Navigate(typeof(SettingsPage));
+            NavFrame.BackStack.Clear();
+            return;
+        }
+
         if (item.Tag is not (string or TaskListNavigation)) return;
         _currentNavigation = item.Tag as TaskListNavigation;
         NavFrame.Navigate(typeof(TaskListPage), item.Tag);

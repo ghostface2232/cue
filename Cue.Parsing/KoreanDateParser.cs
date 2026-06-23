@@ -28,17 +28,19 @@ public sealed class KoreanDateParser : IDateParser
 
     private readonly IReadOnlyList<IQuickAddRule> _rules;
     private readonly DateTimeModel _library;
+    private readonly KoreanDateParserOptions _options;
 
     /// <param name="boostRules">
     /// Optional custom rules, run before the built-ins so they take precedence.
     /// </param>
-    public KoreanDateParser(IEnumerable<IQuickAddRule>? boostRules = null)
+    public KoreanDateParser(IEnumerable<IQuickAddRule>? boostRules = null, KoreanDateParserOptions? options = null)
     {
         var rules = new List<IQuickAddRule>();
         if (boostRules is not null)
             rules.AddRange(boostRules);
         rules.AddRange(DefaultRules());
         _rules = rules;
+        _options = options ?? new KoreanDateParserOptions();
         _library = new DateTimeRecognizer(Culture.Korean).GetDateTimeModel();
     }
 
@@ -60,7 +62,7 @@ public sealed class KoreanDateParser : IDateParser
 
         try
         {
-            var context = new ParseContext(now, timeZoneId);
+            var context = new ParseContext(now, timeZoneId, _options);
             var result = new QuickAddResult();
 
             var work = input;
