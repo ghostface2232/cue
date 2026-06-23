@@ -13,8 +13,8 @@
     <Page.Resources>
         <!-- Theme-aware interactive brushes: Color comes from a ThemeResource so it flips light/dark
              (fixes the old hardcoded #0F000000 hover that was invisible in dark mode). -->
-        <SolidColorBrush x:Key="TaskHoverBrush" Color="{ThemeResource SubtleFillColorSecondary}" />
-        <SolidColorBrush x:Key="TaskPressedBrush" Color="{ThemeResource SubtleFillColorTertiary}" />
+        <StaticResource x:Key="TaskHoverBrush" ResourceKey="CueHoverFillBrush" />
+        <StaticResource x:Key="TaskPressedBrush" ResourceKey="CuePressedFillBrush" />
         <SolidColorBrush x:Key="DetailCardBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
 
         <Style x:Key="MetadataTextStyle" TargetType="TextBlock">
@@ -299,21 +299,21 @@
                 Loaded="DetailPanel_Loaded"
                 Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                 <Border.Resources>
-                    <!-- Slightly stronger hover/press inside the detail cards: the default subtle fills
-                         are hard to see on the card surface. Scoped to this panel; theme-aware. -->
+                    <!-- Detail controls use the same hover/press fill as task rows so interaction
+                         color stays consistent across light and dark surfaces. -->
                     <ResourceDictionary>
                         <ResourceDictionary.ThemeDictionaries>
                             <ResourceDictionary x:Key="Light">
-                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#14000000" />
-                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#1F000000" />
-                                <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#14000000" />
-                                <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#1F000000" />
+                                <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="CuePressedFillBrush" />
                             </ResourceDictionary>
                             <ResourceDictionary x:Key="Dark">
-                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#22FFFFFF" />
-                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#30FFFFFF" />
-                                <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#22FFFFFF" />
-                                <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#30FFFFFF" />
+                                <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="CuePressedFillBrush" />
                             </ResourceDictionary>
                         </ResourceDictionary.ThemeDictionaries>
                     </ResourceDictionary>
