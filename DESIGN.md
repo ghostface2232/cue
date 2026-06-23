@@ -144,7 +144,7 @@ components:
   detail-panel:
     backgroundColor: "{colors.page-surface}"
     rounded: "{rounded.lg}"
-    width: 460px
+    width: 460px       # default; user-resizable 320–680 (abs. min 260), see "Detail panel"
     padding: 16px 6px 20px 18px
   detail-card:
     backgroundColor: "{colors.card-surface}"
@@ -293,18 +293,22 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 
 ### List page — `TaskListPage.xaml`
 - Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `28,20` (`page-x` × `page-y`).
-- Two-column body: left list (flexible) + right detail panel (fixed 460px). When the detail closes, the list reclaims the width.
+- Two-column body: left list (flexible) + right detail panel (resizable, default 460px). When the detail closes, the list reclaims the width.
 - The list takes **two forms**: a **flat list** (`ItemsRepeater`, with secondary sections like "오늘 저녁" / This Evening) and a **grouped list** (`ListView`, group header + rows). The grouped form is shared by the Project (per-section) and Priority (P1–P4) views (`IsGroupedList`).
 
 ### Timeline page — `TimelinePage.xaml`
 - A horizontally-scrolling month view (gantt-like). One framed canvas (`{rounded.lg}`, 1px card stroke) holds a row of day-column headers above a stack of task bars.
 - Header row: title + range caption, with prev-month / 오늘 (Today) / next-month controls (`subtle-text-button`, 34px icon buttons with chevron glyphs).
 - Panning: pointer drag and mouse-wheel both scroll the timeline horizontally; keyboard scrolling is supported (the ScrollViewer is a tab stop).
-- Shares the **same detail panel** as the list page (460px, identical card stack).
+- Shares the **same detail panel** as the list page (resizable, identical card stack and behavior).
 
 ### Detail panel
-- Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in.
+- Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in (and slides out on close — see "Motion").
 - A vertical stack of cards (radius 8, 1px stroke, no shadow): task info (notes · importance · group) / start + due date / tags / checklist.
+- **Resizable.** A 10px transparent grab strip on the panel's left edge drag-resizes it. Width is clamped to 320–680px (absolute min 260px) and further capped so the primary list keeps ≥340px — the panel never starves the list.
+- **Responsive.** Below a compact width (~390px), paired side-by-side fields (importance + group, date + time) reflow to stack vertically so nothing is squeezed.
+- **Edge fade for clipped content** (see "Elevation & Depth"): the scroll body fades at the bottom and overflowing inline text (e.g. tag names) fades at the right edge instead of hard-clipping.
+- The timeline's detail panel is the same component with the same behavior.
 
 ### Spacing
 The page rhythm is body padding `28,20` and card internal padding `16`. Spacing is currently applied inline in XAML (there is no centralized spacing token yet — see "Known Gaps"); the `spacing` scale in the frontmatter documents the intended rhythm.
@@ -322,6 +326,7 @@ Separation is carried by **stroke and tone, not shadow.**
 - In-flow surfaces use **zero shadow**. A 1px `CardStrokeColorDefault` (cards) or `DividerStrokeColorDefault` (inner dividers) does the separating. Stroked cards set `BackgroundSizing="InnerBorderEdge"` so the 1px sits inside the radius.
 - When something needs to feel lifted (the quick-add omnibar) it uses `CircleElevationBorderBrush` — a top-light / bottom-dark gradient stroke — for subtle dimension **instead of** a drop shadow.
 - Shadows belong only to true overlays (flyouts, popups).
+- **Edge fades signal clipped content.** Where content is cut off by a scroll viewport or a width cap, a short gradient (transparent → the surface color) fades the edge rather than hard-clipping or showing ellipsis: the detail panel fades its scroll body at the bottom (→ `LayerFillColorDefault`); overflowing tag names fade at the right (→ `CardBackgroundFillColorDefault`); timeline bar titles fade at the right to the bar's own surface (and to the hover fill while hovered, so the fade always matches the current background).
 
 ## Shapes
 
@@ -354,7 +359,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 - **Completing a parent completes its whole checklist (subtasks).** A parent is never left complete with open subtasks — except a repeating task that has rolled to its next cycle (the work continues).
 
 ### Priority pill
-- Rendered **after** the row title as a text pill (not a leading dot). Labels: 매우 중요 / 중요 / 보통 / 사소.
+- Rendered **directly beside** the row title as a text pill (not a leading dot). The title is width-capped and truncates, so the pill hugs the title's trailing edge rather than being pushed to the far right. Labels: 매우 중요 / 중요 / 보통 / 사소.
 - Background is a ~17% tint of the priority color; text is the saturated tone. Radius 9. Color mapping per the priority tokens; text via `PriorityToLabel`, tint via `PriorityToTint`, saturated color via `PriorityToBrush`.
 
 ### Circular completion check — `CueCircleCheckBoxStyle`
@@ -423,9 +428,11 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 - **Color transitions are unified at 83ms, ease-out.** Task-row backgrounds hover via a declarative `BrushTransition` (`0:0:0.083`), not a code-behind swap.
 - **Completion (celebration moment):** empty outline → filled accent circle + check glyph, with a scale overshoot 0.6 → 1.15 → 1.0 (~280ms; spline `KeySpline 0.1,0.9 0.2,1.0`). The completed row then fades to opacity 0.48 in place.
 - **Detail-panel entrance:** Composition `Translation` (28→0) + `Opacity`, slide-in over ~350ms on the signature cubic-bezier `(0.1,0.9)(0.2,1.0)`, run on the compositor thread.
+- **Detail-panel close:** the reverse — `Translation` (0→24) + `Opacity` fade out, faster (~180ms slide / ~160ms fade) on an accelerating ease `(0.4,0)(1,1)`. The actual close is deferred ~170ms so the panel animates out before it is removed.
 - **Page transition:** subtle `Opacity` + `Scale` settle (≈0.99→1.0) on navigation.
 - **List reposition:** rows carry `RepositionThemeTransition`. To avoid virtualization conflicts, motion is attached **only to realized containers** (`ElementPrepared` / `ElementClearing`); Storyboards are never keyed to virtual items. Drag-reorder surfaces use their own motion with default transitions off.
 - **Cross-cutting:** for virtualized rows, prefer Composition implicit animations over Storyboards. `ConnectedAnimation` is not used.
+- **Respect reduced motion.** Motion is gated on the system `UISettings.AnimationsEnabled`; when off, transitions are skipped and the end state is applied directly (e.g. the detail panel closes immediately rather than animating out).
 
 ## UX Writing
 
