@@ -605,7 +605,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private async Task LoadProjectsAsync(Guid? selectedId)
     {
         Projects.Clear();
-        Projects.Add(new ProjectEditorOption(null, "Cue Inbox"));
+        Projects.Add(new ProjectEditorOption(null, "Cue"));
         foreach (var project in await _index.GetProjectsAsync())
             Projects.Add(new ProjectEditorOption(project.Id, project.Name));
 
@@ -622,9 +622,9 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         var selected = selectedIds.Where(id => id != Guid.Empty).ToHashSet();
         Labels.Clear();
-        // A synthetic "라벨 없음" row (Guid.Empty) makes the no-label state explicit and is checked by
-        // default; it stays mutually exclusive with the real labels via ToggleLabel/SyncNoLabelOption.
-        Labels.Add(new LabelEditorOption(Guid.Empty, "라벨 없음", selected.Count == 0));
+        // A synthetic "태그 없음" row (Guid.Empty) makes the no-tag state explicit and is checked by
+        // default; it stays mutually exclusive with the real tags via ToggleLabel/SyncNoLabelOption.
+        Labels.Add(new LabelEditorOption(Guid.Empty, "태그 없음", selected.Count == 0));
         foreach (var label in await _index.GetLabelsAsync())
             Labels.Add(new LabelEditorOption(label.Id, label.Name, selected.Contains(label.Id), label.Color));
     }

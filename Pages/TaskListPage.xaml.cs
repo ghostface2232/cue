@@ -343,7 +343,7 @@ public sealed partial class TaskListPage : Page
     {
         await RunSafelyAsync(async () =>
         {
-            var name = await PromptNameAsync("새 라벨", "라벨 이름");
+            var name = await PromptNameAsync("새 태그", "태그 이름");
             if (name is not null)
                 await ViewModel.Detail.AddLabelCommand.ExecuteAsync(name);
         });
@@ -364,8 +364,8 @@ public sealed partial class TaskListPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "서브태스크를 삭제할까요?",
-            Content = "파일은 지우지 않고 삭제 시각이 기록됩니다.",
+            Title = "체크리스트 항목을 삭제할까요?",
+            Content = "파일은 지우지 않고 삭제 시각만 기록됩니다.",
             PrimaryButtonText = "삭제",
             CloseButtonText = "취소",
             DefaultButton = ContentDialogButton.Close,
@@ -405,7 +405,7 @@ public sealed partial class TaskListPage : Page
         {
             XamlRoot = XamlRoot,
             Title = "섹션을 삭제할까요?",
-            Content = "섹션의 작업은 삭제하지 않고 Cue Inbox로 이동합니다.",
+            Content = "섹션 안의 할 일은 지우지 않고 Cue로 옮깁니다.",
             PrimaryButtonText = "삭제",
             CloseButtonText = "취소",
             DefaultButton = ContentDialogButton.Close,

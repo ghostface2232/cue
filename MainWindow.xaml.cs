@@ -99,7 +99,7 @@ public sealed partial class MainWindow : Window
         if (item.Tag is string action && action is "create-project" or "create-label")
         {
             var isProject = action == "create-project";
-            var name = await PromptNameAsync(isProject ? "새 프로젝트" : "새 라벨", isProject ? "프로젝트 이름" : "라벨 이름");
+            var name = await PromptNameAsync(isProject ? "새 그룹" : "새 태그", isProject ? "그룹 이름" : "태그 이름");
             if (name is not null)
             {
                 if (isProject) await ViewModel.CreateProjectCommand.ExecuteAsync(name);
@@ -120,12 +120,12 @@ public sealed partial class MainWindow : Window
     private void RebuildLiveNavigation()
     {
         ProjectsGroup.MenuItems.Clear();
-        ProjectsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 프로젝트", Tag = "create-project" });
+        ProjectsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 그룹", Tag = "create-project" });
         foreach (var project in ViewModel.Projects)
             ProjectsGroup.MenuItems.Add(CreateProjectItem(project));
 
         LabelsGroup.MenuItems.Clear();
-        LabelsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 라벨", Tag = "create-label" });
+        LabelsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 태그", Tag = "create-label" });
         foreach (var label in ViewModel.Labels)
             LabelsGroup.MenuItems.Add(CreateLabelItem(label));
     }
@@ -134,11 +134,11 @@ public sealed partial class MainWindow : Window
     // it is the home list and is always present.
     private static readonly (string Key, string Glyph, string Name)[] ToggleableNav =
     {
-        ("today", "", "Today"),
-        ("upcoming", "", "Upcoming"),
-        ("anytime", "", "Anytime"),
-        ("someday", "", "Someday"),
-        ("logbook", "", "Logbook"),
+        ("today", "", "오늘 할 일"),
+        ("upcoming", "", "앞으로 할 일"),
+        ("anytime", "", "언제든 할 일"),
+        ("someday", "", "나중에 할 일"),
+        ("logbook", "", "완료한 일"),
     };
 
     private NavigationViewItem NavItemFor(string key) => key switch
@@ -410,7 +410,7 @@ public sealed partial class MainWindow : Window
         await RunSafelyAsync(async () =>
         {
             if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
-            var name = await PromptNameAsync("프로젝트 이름 변경", "프로젝트 이름", project.Name);
+            var name = await PromptNameAsync("그룹 이름 변경", "그룹 이름", project.Name);
             if (name is null) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
             await ViewModel.RenameProjectCommand.ExecuteAsync(new RenameRecordRequest(project.Id, name));
@@ -424,7 +424,7 @@ public sealed partial class MainWindow : Window
         await RunSafelyAsync(async () =>
         {
             if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
-            var name = await PromptNameAsync("라벨 이름 변경", "라벨 이름", label.Name);
+            var name = await PromptNameAsync("태그 이름 변경", "태그 이름", label.Name);
             if (name is null) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
             await ViewModel.RenameLabelCommand.ExecuteAsync(new RenameRecordRequest(label.Id, name));
@@ -438,7 +438,7 @@ public sealed partial class MainWindow : Window
         await RunSafelyAsync(async () =>
         {
             if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
-            if (!await ConfirmDeleteAsync("프로젝트를 삭제할까요?", "프로젝트의 작업은 삭제하지 않고 Cue Inbox로 이동합니다.")) return;
+            if (!await ConfirmDeleteAsync("그룹을 삭제할까요?", "그룹 안의 할 일은 지우지 않고 Cue로 옮깁니다.")) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
             await ViewModel.DeleteProjectCommand.ExecuteAsync(project.Id);
             RebuildLiveNavigation();
@@ -451,7 +451,7 @@ public sealed partial class MainWindow : Window
         await RunSafelyAsync(async () =>
         {
             if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
-            if (!await ConfirmDeleteAsync("라벨을 삭제할까요?", "작업은 유지되고 이 라벨 참조만 제거됩니다.")) return;
+            if (!await ConfirmDeleteAsync("태그를 삭제할까요?", "할 일은 그대로 두고 이 태그만 떼어냅니다.")) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
             await ViewModel.DeleteLabelCommand.ExecuteAsync(label.Id);
             RebuildLiveNavigation();

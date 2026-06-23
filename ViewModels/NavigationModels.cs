@@ -28,9 +28,9 @@ public sealed class TaskSectionGroupViewModel
     public TaskSectionGroupViewModel(SectionListItem? section)
     {
         Id = section?.Id;
-        Name = section?.Name ?? "No Section";
+        Name = section?.Name ?? "기타";
         DeadlineCaption = section?.DeadlineDate is { } deadline
-            ? $"마감 {deadline.Month}월 {deadline.Day}일"
+            ? $"마감일 {deadline.Month}월 {deadline.Day}일"
             : string.Empty;
     }
 }

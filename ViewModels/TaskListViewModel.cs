@@ -143,17 +143,17 @@ public partial class TaskListViewModel : ObservableObject
         Title = navigation.Title ?? navigation.Mode switch
         {
             TaskListMode.Inbox => "Cue",
-            TaskListMode.Today => "Today",
-            TaskListMode.Upcoming => "Upcoming",
-            TaskListMode.Anytime => "Anytime",
-            TaskListMode.Someday => "Someday",
-            TaskListMode.Logbook => "Logbook",
-            TaskListMode.Project => "Project",
-            TaskListMode.Label => "Label",
+            TaskListMode.Today => "오늘 할 일",
+            TaskListMode.Upcoming => "앞으로 할 일",
+            TaskListMode.Anytime => "언제든 할 일",
+            TaskListMode.Someday => "나중에 할 일",
+            TaskListMode.Logbook => "완료한 일",
+            TaskListMode.Project => "그룹",
+            TaskListMode.Label => "태그",
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
         TitleCaption = navigation.DeadlineDate is { } deadline
-            ? $"마감 {deadline.Month}월 {deadline.Day}일"
+            ? $"마감일 {deadline.Month}월 {deadline.Day}일"
             : string.Empty;
         OnPropertyChanged(nameof(HasTitleCaption));
         IsProjectMode = _mode == TaskListMode.Project;

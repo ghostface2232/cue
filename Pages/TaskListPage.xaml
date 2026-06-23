@@ -320,7 +320,7 @@
                             Background="Transparent"
                             BorderThickness="0"
                             Click="OpenParent_Click"
-                            Content="← 상위 작업으로 돌아가기"
+                            Content="← 할 일로 돌아가기"
                             Visibility="{x:Bind ViewModel.Detail.HasParentTask, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
                         <Grid ColumnSpacing="7">
@@ -336,7 +336,7 @@
                                 BorderThickness="0"
                                 FontFamily="{StaticResource CueFontFamilySemiBold}"
                                 FontSize="27"
-                                PlaceholderText="작업 제목"
+                                PlaceholderText="할 일 제목"
                                 Text="{x:Bind ViewModel.Detail.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 TextWrapping="Wrap" />
                             <HyperlinkButton
@@ -377,53 +377,40 @@
 
                         <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
-                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="작업 정보" />
                                 <TextBox AcceptsReturn="True" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5"><TextBlock Text="우선순위" /><ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.Detail.Priorities}" SelectedItem="{x:Bind ViewModel.Detail.SelectedPriority, Mode=TwoWay}" /></StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="5"><TextBlock Text="프로젝트" /><ComboBox HorizontalAlignment="Stretch" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.Detail.Projects}" SelectedItem="{x:Bind ViewModel.Detail.SelectedProject, Mode=TwoWay}" /></StackPanel>
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="중요도" />
+                                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.Detail.Priorities}" SelectedItem="{x:Bind ViewModel.Detail.SelectedPriority, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Converter={StaticResource PriorityToLabel}}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="5"><TextBlock Text="그룹" /><ComboBox HorizontalAlignment="Stretch" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.Detail.Projects}" SelectedItem="{x:Bind ViewModel.Detail.SelectedProject, Mode=TwoWay}" /></StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>
 
-                        <!-- 마감 + 예정 are one card: the deadline sits on top; the + 예정 추가 button below it
-                             reveals the scheduled ("예정") sub-section under a divider, inside the same card.
-                             A scheduled date can never be later than the deadline (WhenMaxDate cap). -->
+                        <!-- 시작일 + 마감일 are one card. Once a 시작일 is added it sits on top, above the
+                             마감일 (the natural start→due order), separated by a divider; before that the
+                             + 시작일 추가 button takes its place. A 시작일 can never be later than the
+                             마감일 (WhenMaxDate cap). -->
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
-                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="마감" />
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
-                                    <StackPanel
-                                        Grid.Column="1"
-                                        VerticalAlignment="Center"
-                                        Orientation="Horizontal"
-                                        Spacing="7"
-                                        Visibility="{x:Bind ViewModel.Detail.ShowDeadlineTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
-                                        <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
-                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
-                                    </StackPanel>
-                                </Grid>
-                                <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsDeadlineAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-
                                 <Button
                                     HorizontalAlignment="Left"
-                                    Margin="0,1,0,0"
                                     Click="EnableWhen_Click"
-                                    Content="+ 예정 추가"
+                                    Content="+ 시작일 추가"
                                     Style="{StaticResource CueSubtleTextButtonStyle}"
                                     Visibility="{x:Bind ViewModel.Detail.CanAddWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
                                 <StackPanel Spacing="11" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                    <Rectangle Height="1" Margin="0,2" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
                                     <Grid>
-                                        <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="예정" />
+                                        <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="시작일" />
                                         <Button HorizontalAlignment="Right" Padding="8,3" Background="Transparent" BorderThickness="0" Click="ClearWhen_Click" Content="제거" />
                                     </Grid>
                                     <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -444,13 +431,34 @@
                                         </StackPanel>
                                     </Grid>
                                     <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                    <Rectangle Height="1" Margin="0,2" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
                                 </StackPanel>
+
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="마감일" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
+                                    <StackPanel
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal"
+                                        Spacing="7"
+                                        Visibility="{x:Bind ViewModel.Detail.ShowDeadlineTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
+                                        <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
+                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
+                                    </StackPanel>
+                                </Grid>
+                                <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsDeadlineAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </Border>
 
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="10">
-                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
+                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:LabelEditorOption">
@@ -483,10 +491,10 @@
 
                         <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
-                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="서브태스크" />
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="체크리스트" />
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <TextBox PlaceholderText="서브태스크 제목" Text="{x:Bind ViewModel.Detail.NewSubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewSubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                     <Button Grid.Column="1" Click="AddSubtask_Click" Content="추가" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Subtasks}">
@@ -496,7 +504,7 @@
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                 <CheckBox VerticalAlignment="Center" IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
                                                 <Button Grid.Column="1" Padding="6,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Click="OpenSubtask_Click" Content="{x:Bind Title}" CornerRadius="{StaticResource CueRadiusSmall}" FontSize="{StaticResource CueFontRowSub}" Tag="{x:Bind Id}" />
-                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="서브태스크 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
+                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
