@@ -171,11 +171,25 @@ public partial class TaskListViewModel : ObservableObject
             return;
 
         var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId);
+
+        // A concrete date typed in quick-add is treated as a deadline (due date) by default — that is
+        // the natural reading of "내일 3시 회의". The scheduled "예정" (when you plan to work on it) is a
+        // deliberate, separate act made in the detail panel. A recurring task keeps its parsed When as
+        // the recurrence anchor (recurrence is inherently a scheduling concept), and SomeDay is a When
+        // concept rather than a datetime, so neither is promoted to a deadline.
+        var parsedWhen = parsed.When;
+        var deadline = parsed.Deadline;
+        if (parsed.Recurrence is null && parsedWhen.Date is { } scheduled)
+        {
+            deadline ??= scheduled;
+            parsedWhen = ScheduledWhen.Unscheduled;
+        }
+
         var task = new TaskItem
         {
             Title = parsed.Title,
-            When = QuickAddContext.Apply(parsed.When, _mode, _clock.GetUtcNow(), _timeZone),
-            Deadline = parsed.Deadline,
+            When = QuickAddContext.Apply(parsedWhen, _mode, _clock.GetUtcNow(), _timeZone),
+            Deadline = deadline,
             Recurrence = parsed.Recurrence,
             ProjectId = _mode == TaskListMode.Project ? _filterId : null,
             // New tasks append to the end of the list the user is currently looking at.

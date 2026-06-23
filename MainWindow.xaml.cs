@@ -131,12 +131,16 @@ public sealed partial class MainWindow : Window
 
     private NavigationViewItem CreateProjectItem(ProjectListItem project)
     {
+        var icon = new FontIcon { Glyph = string.IsNullOrEmpty(project.Icon) ? "\uE8B7" : project.Icon };
         var item = new NavigationViewItem
         {
             Content = project.Name,
             Tag = new TaskListNavigation(TaskListMode.Project, project.Id, project.Name, project.DeadlineDate),
-            Icon = new FontIcon { Glyph = string.IsNullOrEmpty(project.Icon) ? "\uE8B7" : project.Icon },
+            Icon = icon,
         };
+        // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
+        // tap from also navigating into the project.
+        icon.Tapped += (sender, e) => { e.Handled = true; ShowProjectIconPicker((FrameworkElement)sender, project.Id); };
         if (ViewModel.ProjectTaskCounts.TryGetValue(project.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };
         item.ContextFlyout = CreateRecordMenu(project, isProject: true, item);
@@ -154,6 +158,8 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(TaskListMode.Label, label.Id, label.Name),
             Icon = icon,
         };
+        // Tapping the glyph opens the color picker directly (no right-click depth).
+        icon.Tapped += (sender, e) => { e.Handled = true; ShowLabelColorPicker((FrameworkElement)sender, label.Id); };
         if (ViewModel.LabelTaskCounts.TryGetValue(label.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };
         item.ContextFlyout = CreateRecordMenu(label, isProject: false, item);

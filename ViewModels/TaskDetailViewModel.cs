@@ -189,6 +189,10 @@ public partial class TaskDetailViewModel : ObservableObject
     public bool HasConcreteWhen => SelectedWhenOption.Mode is WhenEditorMode.Today or WhenEditorMode.ThisEvening or WhenEditorMode.SpecificDate;
     public bool HasDeadline => DeadlineDate is not null;
 
+    /// <summary>The latest day the 예정 (When) may fall on — capped at the deadline so a task is never
+    /// scheduled to be worked on after it is due. Far-future (effectively unbounded) with no deadline.</summary>
+    public DateTimeOffset WhenMaxDate => DeadlineDate ?? new DateTimeOffset(2200, 12, 31, 0, 0, 0, TimeSpan.Zero);
+
     /// <summary>Time pickers show only with a concrete date that is neither all-day nor evening
     /// (evening implies an unspecified evening time, so a numeric clock would be misleading).</summary>
     public bool ShowWhenTime => HasConcreteWhen && !IsWhenAllDay && !IsEvening;
@@ -307,8 +311,12 @@ public partial class TaskDetailViewModel : ObservableObject
             SetDeadlineTimeEditors(DeadlineTime);
         if (value is null)
             IsDeadlineAllDay = false;
+        // The 예정 date can never be later than the deadline; pull it back if the new deadline is earlier.
+        if (value is { } deadline && WhenDate is { } when && when.Date > deadline.Date)
+            WhenDate = deadline;
         OnPropertyChanged(nameof(HasDeadline));
         OnPropertyChanged(nameof(ShowDeadlineTime));
+        OnPropertyChanged(nameof(WhenMaxDate));
     }
 
     partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
@@ -383,7 +391,10 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public void EnableWhenEditor()
     {
-        WhenDate = LocalNow();
+        // Seed today, but never past the deadline — a task can't be scheduled after it is due.
+        var start = LocalNow();
+        if (DeadlineDate is { } deadline && start.Date > deadline.Date) start = deadline;
+        WhenDate = start;
         WhenTime ??= TimeSpan.FromHours(12);
         SetWhenTimeEditors(WhenTime);
         SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
