@@ -46,6 +46,12 @@
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
 
+        <Style x:Key="SettingsTextColumnStyle" TargetType="StackPanel">
+            <Setter Property="MaxWidth" Value="300" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="SettingsCardStyle" TargetType="Border">
             <Setter Property="Padding" Value="16" />
             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusCard}" />
@@ -159,16 +165,16 @@
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="320" />
+                                        <ColumnDefinition Width="240" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5" VerticalAlignment="Center">
+                                    <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="주 시작 요일" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="주간 보기와 달력 선택에서 먼저 오는 요일" />
                                     </StackPanel>
                                     <ComboBox
                                         x:Name="FirstDayCombo"
                                         Grid.Column="1"
-                                        Width="320"
+                                        Width="220"
                                         VerticalAlignment="Center"
                                         SelectionChanged="FirstDayCombo_SelectionChanged" />
                                 </Grid>
@@ -178,16 +184,16 @@
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="320" />
+                                        <ColumnDefinition Width="240" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5" VerticalAlignment="Center">
+                                    <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="기본 시간대" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="오늘, 앞으로 할 일, 빠른 입력 날짜 기준. 다음 실행부터 전체 반영" />
                                     </StackPanel>
                                     <ComboBox
                                         x:Name="TimeZoneCombo"
                                         Grid.Column="1"
-                                        Width="320"
+                                        Width="220"
                                         VerticalAlignment="Center"
                                         SelectionChanged="TimeZoneCombo_SelectionChanged" />
                                 </Grid>
@@ -206,9 +212,9 @@
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="320" />
+                                        <ColumnDefinition Width="240" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5" VerticalAlignment="Center">
+                                    <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="1-6시를 오후로 해석" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="오전/오후가 없을 때 3시는 15:00으로 저장" />
                                     </StackPanel>
@@ -288,16 +294,16 @@
                             <Grid MinHeight="64" ColumnSpacing="20">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="320" />
+                                    <ColumnDefinition Width="240" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="5" VerticalAlignment="Center">
+                                <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="화면 모드" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="시스템, 라이트, 다크" />
                                 </StackPanel>
                                 <ComboBox
                                     x:Name="ThemeCombo"
                                     Grid.Column="1"
-                                    Width="320"
+                                    Width="220"
                                     VerticalAlignment="Center"
                                     SelectionChanged="ThemeCombo_SelectionChanged" />
                             </Grid>
@@ -324,9 +330,9 @@
                             <Grid MinHeight="64" ColumnSpacing="20">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="320" />
+                                    <ColumnDefinition Width="240" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="5" VerticalAlignment="Center">
+                                <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="리마인더" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="리마인더 구현 단계에서 활성화" />
                                 </StackPanel>
