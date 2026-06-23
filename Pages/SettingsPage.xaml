@@ -47,7 +47,7 @@
         </Style>
 
         <Style x:Key="SettingsTextColumnStyle" TargetType="StackPanel">
-            <Setter Property="MaxWidth" Value="300" />
+            <Setter Property="MaxWidth" Value="240" />
             <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -100,6 +100,8 @@
                 SelectionMode="Single"
                 SelectedIndex="0">
                 <ListView.Resources>
+                    <CornerRadius x:Key="ListViewItemCornerRadius">8</CornerRadius>
+                    <CornerRadius x:Key="ListViewItemSelectionIndicatorCornerRadius">2</CornerRadius>
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="{ThemeResource SubtleFillColorSecondary}" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
@@ -153,7 +155,7 @@
                 Grid.Column="1"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-                <Grid MaxWidth="680" HorizontalAlignment="Left">
+                <Grid MaxWidth="560" HorizontalAlignment="Left">
                     <StackPanel
                         x:Name="TimeSection"
                         Spacing="12"
@@ -165,7 +167,7 @@
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="240" />
+                                        <ColumnDefinition Width="220" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="주 시작 요일" />
@@ -174,7 +176,7 @@
                                     <ComboBox
                                         x:Name="FirstDayCombo"
                                         Grid.Column="1"
-                                        Width="220"
+                                        Width="200"
                                         VerticalAlignment="Center"
                                         SelectionChanged="FirstDayCombo_SelectionChanged" />
                                 </Grid>
@@ -184,7 +186,7 @@
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="240" />
+                                        <ColumnDefinition Width="220" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="기본 시간대" />
@@ -193,7 +195,7 @@
                                     <ComboBox
                                         x:Name="TimeZoneCombo"
                                         Grid.Column="1"
-                                        Width="220"
+                                        Width="200"
                                         VerticalAlignment="Center"
                                         SelectionChanged="TimeZoneCombo_SelectionChanged" />
                                 </Grid>
@@ -212,7 +214,7 @@
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="240" />
+                                        <ColumnDefinition Width="220" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="1-6시를 오후로 해석" />
@@ -263,7 +265,7 @@
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="128" />
+                                        <ColumnDefinition Width="112" />
                                         <ColumnDefinition Width="74" />
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="CustomDateNameBox" PlaceholderText="예: 월급날" />
@@ -294,7 +296,7 @@
                             <Grid MinHeight="64" ColumnSpacing="20">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="220" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="화면 모드" />
@@ -303,7 +305,7 @@
                                 <ComboBox
                                     x:Name="ThemeCombo"
                                     Grid.Column="1"
-                                    Width="220"
+                                    Width="200"
                                     VerticalAlignment="Center"
                                     SelectionChanged="ThemeCombo_SelectionChanged" />
                             </Grid>
@@ -311,7 +313,7 @@
 
                         <Border Style="{StaticResource SettingsCardStyle}">
                             <StackPanel Spacing="16">
-                                <StackPanel Spacing="5">
+                                <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="강조 컬러" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="선택 표시, 체크, 포커스 링에만 사용" />
                                 </StackPanel>
@@ -330,7 +332,7 @@
                             <Grid MinHeight="64" ColumnSpacing="20">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="220" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Spacing="5" Style="{StaticResource SettingsTextColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="리마인더" />
