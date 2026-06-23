@@ -29,7 +29,41 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon("Assets/AppIcon.ico");
+
+        // The system caption buttons (minimize/maximize/close) are drawn by AppWindow, not XAML, so
+        // their glyph color must be set per theme — otherwise they stay dark in dark mode. Re-apply
+        // whenever the app theme changes.
+        if (Content is FrameworkElement root)
+            root.ActualThemeChanged += (_, _) => ApplyCaptionButtonColors();
+        ApplyCaptionButtonColors();
+
         NavView.Loaded += NavView_Loaded;
+    }
+
+    /// <summary>Tints the system caption buttons to match the current theme (transparent backgrounds,
+    /// theme-appropriate glyph color, subtle hover/press fills).</summary>
+    private void ApplyCaptionButtonColors()
+    {
+        var titleBar = AppWindow.TitleBar;
+        var isDark = Content is FrameworkElement root && root.ActualTheme == ElementTheme.Dark;
+        var glyph = isDark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        var inactiveGlyph = isDark
+            ? Windows.UI.Color.FromArgb(0xFF, 0x9A, 0x9A, 0x9A)
+            : Windows.UI.Color.FromArgb(0xFF, 0x86, 0x86, 0x86);
+
+        titleBar.ButtonForegroundColor = glyph;
+        titleBar.ButtonHoverForegroundColor = glyph;
+        titleBar.ButtonPressedForegroundColor = glyph;
+        titleBar.ButtonInactiveForegroundColor = inactiveGlyph;
+
+        titleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        titleBar.ButtonHoverBackgroundColor = isDark
+            ? Windows.UI.Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0x14, 0x00, 0x00, 0x00);
+        titleBar.ButtonPressedBackgroundColor = isDark
+            ? Windows.UI.Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)
+            : Windows.UI.Color.FromArgb(0x28, 0x00, 0x00, 0x00);
     }
 
     private void TitleBar_PaneToggleRequested(TitleBar sender, object args)

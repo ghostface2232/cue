@@ -305,6 +305,10 @@
                                 PointerExited="IconAction_PointerExited"
                                 ToolTipService.ToolTip="저장"
                                 AutomationProperties.Name="저장">
+                                <HyperlinkButton.Resources>
+                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{ThemeResource SystemFillColorSuccess}" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{ThemeResource SystemFillColorSuccess}" />
+                                </HyperlinkButton.Resources>
                                 <FontIcon FontSize="18" Glyph="&#xE73E;" />
                             </HyperlinkButton>
                             <HyperlinkButton
@@ -316,6 +320,10 @@
                                 PointerExited="IconAction_PointerExited"
                                 ToolTipService.ToolTip="닫기"
                                 AutomationProperties.Name="닫기">
+                                <HyperlinkButton.Resources>
+                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{ThemeResource SystemFillColorCritical}" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{ThemeResource SystemFillColorCritical}" />
+                                </HyperlinkButton.Resources>
                                 <FontIcon FontSize="17" Glyph="&#xE711;" />
                             </HyperlinkButton>
                         </Grid>
