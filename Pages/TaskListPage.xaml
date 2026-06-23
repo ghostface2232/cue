@@ -181,16 +181,27 @@
 
         <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="작업을 완료하지 못했습니다" />
 
-        <TextBox
-            Grid.Row="2"
-            Margin="4,0,4,12"
-            Padding="14,8,8,8"
-            MinHeight="40"
-            CornerRadius="20"
-            IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
-            KeyDown="QuickAdd_KeyDown"
-            PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
-            Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Grid Grid.Row="2" Margin="4,2,4,14">
+            <TextBox
+                MinHeight="48"
+                Padding="44,11,12,11"
+                VerticalContentAlignment="Center"
+                Background="{ThemeResource ControlFillColorDefaultBrush}"
+                CornerRadius="24"
+                FontSize="15"
+                IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
+                KeyDown="QuickAdd_KeyDown"
+                PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
+                Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <FontIcon
+                Margin="18,0,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Center"
+                FontSize="16"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Glyph="&#xE710;"
+                IsHitTestVisible="False" />
+        </Grid>
 
         <Grid Grid.Row="3" ColumnSpacing="16">
             <Grid.ColumnDefinitions>

@@ -55,6 +55,15 @@
     <SolidColorBrush x:Key="CuePriorityP3Brush" Color="{ThemeResource SystemAccentColor}" />
     <SolidColorBrush x:Key="CuePriorityP4Brush" Color="{ThemeResource TextFillColorTertiary}" />
 
+    <!-- ===== Flatten text inputs: remove the Fluent bottom "accent bar" (the focused 2px bottom
+         border and the resting gradient) so all input fields read as calm, uniform 1px boxes.
+         Brush Color is a ThemeResource so it still flips light/dark. ===== -->
+    <Thickness x:Key="TextControlBorderThemeThickness">1</Thickness>
+    <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
+    <SolidColorBrush x:Key="TextControlBorderBrush" Color="{ThemeResource ControlStrokeColorDefault}" />
+    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{ThemeResource ControlStrokeColorDefault}" />
+    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{ThemeResource ControlStrokeColorDefault}" />
+
     <!-- ===== NavigationView: flatten the selected-item text to primary (calmer, Things-3-like).
          Mirrors Files/Settings NavigationViewItemButtonStyle. Overrides the stock keys app-wide;
          theme-correct because the Color is itself a ThemeResource. ===== -->
