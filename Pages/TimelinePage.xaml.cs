@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using Windows.System;
 using Windows.UI.ViewManagement;
 using Cue.ViewModels;
 
@@ -13,7 +14,15 @@ namespace Cue.Pages;
 /// <summary>A horizontally scrolling month timeline over the index-backed task date projection.</summary>
 public sealed partial class TimelinePage : Page
 {
+    private const double KeyboardScrollStep = 440;
+
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
+    private bool _isPointerPanning;
+    private uint _panPointerId;
+    private double _panStartX;
+    private double _panStartY;
+    private double _panStartHorizontalOffset;
+    private double _panStartVerticalOffset;
 
     public TimelineViewModel ViewModel { get; }
 
@@ -26,17 +35,139 @@ public sealed partial class TimelinePage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        await RunSafelyAsync(() => ViewModel.LoadCommand.ExecuteAsync(null));
+        await RunSafelyAsync(async () =>
+        {
+            await ViewModel.LoadCommand.ExecuteAsync(null);
+            CenterTodayInView();
+        });
     }
 
     private async void PreviousMonth_Click(object sender, RoutedEventArgs e)
-        => await RunSafelyAsync(() => ViewModel.PreviousMonthCommand.ExecuteAsync(null));
+        => await RunSafelyAsync(async () =>
+        {
+            await ViewModel.PreviousMonthCommand.ExecuteAsync(null);
+            FocusTimeline();
+        });
 
     private async void Today_Click(object sender, RoutedEventArgs e)
-        => await RunSafelyAsync(() => ViewModel.GoTodayCommand.ExecuteAsync(null));
+        => await RunSafelyAsync(async () =>
+        {
+            await ViewModel.GoTodayCommand.ExecuteAsync(null);
+            CenterTodayInView();
+        });
 
     private async void NextMonth_Click(object sender, RoutedEventArgs e)
-        => await RunSafelyAsync(() => ViewModel.NextMonthCommand.ExecuteAsync(null));
+        => await RunSafelyAsync(async () =>
+        {
+            await ViewModel.NextMonthCommand.ExecuteAsync(null);
+            FocusTimeline();
+        });
+
+    private void TimelineScrollViewer_Loaded(object sender, RoutedEventArgs e)
+    {
+        FocusTimeline();
+        CenterTodayInView();
+    }
+
+    private void TimelineScrollViewer_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var delta = e.Key switch
+        {
+            VirtualKey.Left => -KeyboardScrollStep,
+            VirtualKey.Right => KeyboardScrollStep,
+            _ => 0,
+        };
+        if (delta == 0) return;
+
+        e.Handled = true;
+        ScrollBy(delta, 0, disableAnimation: false);
+    }
+
+    private void TimelineScrollViewer_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(TimelineScrollViewer);
+        if (!point.Properties.IsLeftButtonPressed)
+            return;
+
+        _isPointerPanning = true;
+        _panPointerId = point.PointerId;
+        _panStartX = point.Position.X;
+        _panStartY = point.Position.Y;
+        _panStartHorizontalOffset = TimelineScrollViewer.HorizontalOffset;
+        _panStartVerticalOffset = TimelineScrollViewer.VerticalOffset;
+        TimelineScrollViewer.CapturePointer(e.Pointer);
+        FocusTimeline();
+        e.Handled = true;
+    }
+
+    private void TimelineScrollViewer_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isPointerPanning)
+            return;
+
+        var point = e.GetCurrentPoint(TimelineScrollViewer);
+        if (point.PointerId != _panPointerId || !point.Properties.IsLeftButtonPressed)
+        {
+            EndPointerPan(e);
+            return;
+        }
+
+        TimelineScrollViewer.ChangeView(
+            ClampOffset(_panStartHorizontalOffset - (point.Position.X - _panStartX), TimelineScrollViewer.ScrollableWidth),
+            ClampOffset(_panStartVerticalOffset - (point.Position.Y - _panStartY), TimelineScrollViewer.ScrollableHeight),
+            null,
+            disableAnimation: true);
+        e.Handled = true;
+    }
+
+    private void TimelineScrollViewer_PointerReleased(object sender, PointerRoutedEventArgs e)
+        => EndPointerPan(e);
+
+    private void TimelineScrollViewer_PointerCanceled(object sender, PointerRoutedEventArgs e)
+        => EndPointerPan(e);
+
+    private void EndPointerPan(PointerRoutedEventArgs e)
+    {
+        if (!_isPointerPanning)
+            return;
+
+        _isPointerPanning = false;
+        TimelineScrollViewer.ReleasePointerCapture(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void CenterTodayInView()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            TimelineScrollViewer.UpdateLayout();
+            FocusTimeline();
+            if (!ViewModel.HasTodayInRange)
+                return;
+
+            var target = ViewModel.TodayLineOffset - (TimelineScrollViewer.ViewportWidth / 2);
+            TimelineScrollViewer.ChangeView(
+                ClampOffset(target, TimelineScrollViewer.ScrollableWidth),
+                null,
+                null,
+                disableAnimation: false);
+        });
+    }
+
+    private void FocusTimeline()
+        => TimelineScrollViewer.Focus(FocusState.Programmatic);
+
+    private void ScrollBy(double horizontalDelta, double verticalDelta, bool disableAnimation)
+    {
+        TimelineScrollViewer.ChangeView(
+            ClampOffset(TimelineScrollViewer.HorizontalOffset + horizontalDelta, TimelineScrollViewer.ScrollableWidth),
+            ClampOffset(TimelineScrollViewer.VerticalOffset + verticalDelta, TimelineScrollViewer.ScrollableHeight),
+            null,
+            disableAnimation);
+    }
+
+    private static double ClampOffset(double value, double maximum)
+        => Math.Min(Math.Max(0, value), Math.Max(0, maximum));
 
     private void TimelineBar_PointerEntered(object sender, PointerRoutedEventArgs e)
     {

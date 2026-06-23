@@ -54,18 +54,19 @@
         </DataTemplate>
 
         <DataTemplate x:Key="TimelineRowTemplate" x:DataType="vm:TimelineTaskRowViewModel">
-            <Grid Width="{x:Bind TrackWidth}" Height="50" Opacity="{x:Bind VisualOpacity}">
+            <Grid Width="{x:Bind TrackWidth}" Height="70" Opacity="{x:Bind VisualOpacity}">
                 <Rectangle
                     Height="1"
                     VerticalAlignment="Bottom"
                     Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                <Canvas Width="{x:Bind TrackWidth}" Height="50">
+                <Canvas Width="{x:Bind TrackWidth}" Height="70">
                     <Border
                         Canvas.Left="{x:Bind StartOffset}"
-                        Canvas.Top="7"
+                        Canvas.Top="8"
                         Width="{x:Bind BarWidth}"
-                        Height="36"
-                        Padding="10,0"
+                        MinWidth="140"
+                        MinHeight="54"
+                        Padding="12,0"
                         Background="{StaticResource TimelineBarBrush}"
                         BackgroundSizing="InnerBorderEdge"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -88,8 +89,10 @@
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                                 <TextBlock
                                     FontSize="{StaticResource CueFontRow}"
+                                    MaxLines="2"
                                     Text="{x:Bind Title}"
-                                    TextTrimming="CharacterEllipsis" />
+                                    TextTrimming="WordEllipsis"
+                                    TextWrapping="Wrap" />
                                 <TextBlock
                                     Style="{StaticResource TimelineMetadataTextStyle}"
                                     Text="{x:Bind DateCaption}"
@@ -169,8 +172,16 @@
                 BorderThickness="1"
                 CornerRadius="{StaticResource CueRadiusPanel}">
                 <ScrollViewer
+                    x:Name="TimelineScrollViewer"
                     HorizontalScrollBarVisibility="Auto"
                     HorizontalScrollMode="Enabled"
+                    IsTabStop="True"
+                    KeyDown="TimelineScrollViewer_KeyDown"
+                    Loaded="TimelineScrollViewer_Loaded"
+                    PointerCanceled="TimelineScrollViewer_PointerCanceled"
+                    PointerMoved="TimelineScrollViewer_PointerMoved"
+                    PointerPressed="TimelineScrollViewer_PointerPressed"
+                    PointerReleased="TimelineScrollViewer_PointerReleased"
                     VerticalScrollBarVisibility="Auto"
                     VerticalScrollMode="Enabled"
                     ZoomMode="Disabled">

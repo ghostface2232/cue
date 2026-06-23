@@ -10,7 +10,7 @@ namespace Cue.ViewModels;
 /// <summary>View model for the horizontal month timeline.</summary>
 public partial class TimelineViewModel : ObservableObject
 {
-    private const double DayWidthValue = 88;
+    private const double DayWidthValue = 220;
     private readonly ITaskIndex _index;
     private readonly TimeProvider _clock;
     private readonly TimeZoneInfo _zone;
