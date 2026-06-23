@@ -5,6 +5,7 @@ using Cue.Domain;
 using Cue.Parsing;
 using Cue.Storage;
 using Cue.Storage.Index;
+using Cue.Storage.Ranking;
 
 namespace Cue.ViewModels;
 
@@ -47,9 +48,13 @@ public partial class TaskListViewModel : ObservableObject
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
     private readonly IDateParser _parser;
+    private readonly IReorderService _reorder;
     private readonly TimeProvider _clock;
     private readonly string _timeZoneId;
     private readonly TimeZoneInfo _timeZone;
+
+    // Serializes reorder persists so a fast run of drops can't interleave their rank writes.
+    private readonly SemaphoreSlim _reorderGate = new(1, 1);
 
     // Serializes completion toggles so concurrent/rapid checks can't reorder their saves.
     private readonly SemaphoreSlim _toggleGate = new(1, 1);
@@ -90,18 +95,19 @@ public partial class TaskListViewModel : ObservableObject
     public bool HasTitleCaption => TitleCaption.Length > 0;
     public bool CanQuickAdd => _mode != TaskListMode.Logbook;
 
-    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, TimeProvider clock, TimeZoneInfo zone)
+    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, TimeProvider clock, TimeZoneInfo zone)
     {
         _store = store;
         _index = index;
         _parser = parser;
+        _reorder = reorder;
         _clock = clock;
         _timeZoneId = zone.Id;
         _timeZone = zone;
 
         Title = "Cue";
         QuickAddText = string.Empty;
-        Detail = new TaskDetailViewModel(store, index, clock, zone, LoadAsync, SelectTaskAsync);
+        Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, SelectTaskAsync);
     }
 
     /// <summary>Switches which index view this list reflects, and retitles accordingly.</summary>
@@ -147,6 +153,8 @@ public partial class TaskListViewModel : ObservableObject
             Deadline = parsed.Deadline,
             Recurrence = parsed.Recurrence,
             ProjectId = _mode == TaskListMode.Project ? _filterId : null,
+            // New tasks append to the end of the list the user is currently looking at.
+            SortOrder = _reorder.AppendRank(VisibleRowRanks()),
         };
         if (_mode == TaskListMode.Label && _filterId is { } labelId)
             task.LabelIds.Add(labelId);
@@ -234,7 +242,14 @@ public partial class TaskListViewModel : ObservableObject
     private async Task CreateSectionAsync(string name)
     {
         if (!IsProjectMode || string.IsNullOrWhiteSpace(name)) return;
-        await _store.SaveAsync(new Section { ProjectId = RequiredFilterId(), Name = name.Trim() });
+        var projectId = RequiredFilterId();
+        var existing = await _index.GetSectionsByProjectAsync(projectId);
+        await _store.SaveAsync(new Section
+        {
+            ProjectId = projectId,
+            Name = name.Trim(),
+            SortOrder = _reorder.AppendRank(existing.Select(section => section.SortOrder)),
+        });
         await LoadAsync();
     }
 
@@ -254,6 +269,44 @@ public partial class TaskListViewModel : ObservableObject
     {
         await _store.DeleteAsync<Section>(id);
         await LoadAsync();
+    }
+
+    /// <summary>
+    /// Commits a drag-reorder inside one list. The row has already been moved optimistically in
+    /// <paramref name="list"/> (the reorder surface drives the visuals); here we persist the moved
+    /// row's new rank through the rank service, which writes <i>only</i> that record — except for the
+    /// rare rebalance. Each row's <see cref="TaskRowViewModel.SortOrder"/> is refreshed to the
+    /// returned ranks so a following drag computes against current keys. A failed save reloads the
+    /// list from the index, snapping it back to the persisted truth.
+    /// </summary>
+    public async Task PersistReorderAsync(ObservableCollection<TaskRowViewModel> list, Guid movedId)
+    {
+        await _reorderGate.WaitAsync();
+        try
+        {
+            var ordered = list.Select(row => new RankedItem(row.Id, row.SortOrder)).ToList();
+            var result = await _reorder.MoveAsync<TaskItem>(movedId, ordered);
+            foreach (var row in list)
+                if (result.ChangedRanks.TryGetValue(row.Id, out var rank))
+                    row.SortOrder = rank;
+        }
+        catch
+        {
+            await LoadAsync();
+        }
+        finally
+        {
+            _reorderGate.Release();
+        }
+    }
+
+    /// <summary>Every task row's current rank across the visible lists — the basis for an append rank.</summary>
+    private IEnumerable<string?> VisibleRowRanks()
+    {
+        foreach (var row in Tasks) yield return row.SortOrder;
+        foreach (var row in EveningTasks) yield return row.SortOrder;
+        foreach (var group in ProjectGroups)
+            foreach (var row in group.Tasks) yield return row.SortOrder;
     }
 
     private Guid RequiredFilterId()

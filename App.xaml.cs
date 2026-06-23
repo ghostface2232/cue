@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using Cue.Parsing;
 using Cue.Storage;
 using Cue.Storage.Index;
+using Cue.Storage.Ranking;
 using Cue.ViewModels;
 using Cue.Services;
 
@@ -61,6 +62,9 @@ public partial class App : Application
         // and the query side (ITaskIndex).
         services.AddSingleton<ITaskStore>(store);
         services.AddSingleton<ITaskIndex>(store);
+
+        // The rank service owns LexoRank assignment and persists reorders through the store.
+        services.AddSingleton<IReorderService, ReorderService>();
         services.AddSingleton<DialogService>();
 
         // A fresh list view model per navigation.

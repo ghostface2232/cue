@@ -25,6 +25,11 @@ public sealed partial class TaskListPage : Page
     private readonly DialogService _dialogs;
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private readonly ConditionalWeakTable<FrameworkElement, DropShadow> _iconGlows = new();
+    private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
+
+    // Set while a drag-reorder commits, so the row that moves in the bound collection does not also
+    // play the list's entrance animation on top of the drop settle.
+    private bool _suppressItemEntrance;
 
     public TaskListPage()
     {
@@ -135,9 +140,25 @@ public sealed partial class TaskListPage : Page
         visual.Scale = Vector3.One;
     }
 
+    /// <summary>
+    /// Attaches the drag-to-reorder surface to a task <see cref="ItemsRepeater"/> the first time it
+    /// loads. The surface is layout-agnostic, so the same wiring serves the standard list, the This
+    /// Evening section, and each project section's repeater.
+    /// </summary>
+    private void ReorderRepeater_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ItemsRepeater repeater || _reorderSurfaces.TryGetValue(repeater, out _)) return;
+        var surface = ReorderSurface.Attach(
+            repeater,
+            (items, movedId) => ViewModel.PersistReorderAsync(items, movedId),
+            _animationsEnabled,
+            suppress => _suppressItemEntrance = suppress);
+        _reorderSurfaces.Add(repeater, surface);
+    }
+
     private void TaskRepeater_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
     {
-        if (!_animationsEnabled || args.Element is not UIElement element) return;
+        if (_suppressItemEntrance || !_animationsEnabled || args.Element is not UIElement element) return;
         var visual = ElementCompositionPreview.GetElementVisual(element);
         visual.StopAnimation("Opacity");
         visual.StopAnimation("Scale");
