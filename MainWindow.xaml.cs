@@ -455,6 +455,11 @@ public sealed partial class MainWindow : Window
         // ContentPresenter = the label.
         if (FindDescendantByName(root, "LayoutRoot") is { } pill)
             pill.Margin = new Thickness(NavD("CueNavPillLeft", 8), 2, 4, 2);
+        // PresenterContentRootGrid holds the accent bar + content and gets its own nesting indent from
+        // the NavigationView, which is the gap between the highlight's left edge and the content. Override
+        // it so the bar/content sit close to that edge.
+        if (FindDescendantByName(root, "PresenterContentRootGrid") is { } inner)
+            inner.Margin = new Thickness(NavD("CueNavBarInset", 0), 0, 0, 0);
         if (FindDescendantByName(root, "ContentGrid") is { } content)
             content.Margin = new Thickness(NavD("CueNavIconLeft", 20), 0, 14, 0);
         if (FindDescendantByName(root, "ContentPresenter") is { } label)
