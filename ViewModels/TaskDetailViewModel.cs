@@ -5,6 +5,7 @@ using Cue.Domain;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.Storage.Ranking;
+using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
@@ -83,6 +84,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
     private readonly IReorderService _reorder;
+    private readonly IRecurringTaskService _recurrence;
     private readonly TimeProvider _clock;
     private readonly TimeZoneInfo _zone;
     private readonly Func<Task> _refreshOwner;
@@ -180,6 +182,7 @@ public partial class TaskDetailViewModel : ObservableObject
         ITaskStore store,
         ITaskIndex index,
         IReorderService reorder,
+        IRecurringTaskService recurrence,
         TimeProvider clock,
         TimeZoneInfo zone,
         Func<Task> refreshOwner,
@@ -188,6 +191,7 @@ public partial class TaskDetailViewModel : ObservableObject
         _store = store;
         _index = index;
         _reorder = reorder;
+        _recurrence = recurrence;
         _clock = clock;
         _zone = zone;
         _refreshOwner = refreshOwner;
@@ -399,10 +403,18 @@ public partial class TaskDetailViewModel : ObservableObject
         var completed = row.IsCompleted;
         try
         {
-            var task = await _store.GetAsync<TaskItem>(row.Id);
-            if (task is null || task.IsDeleted) return;
-            task.CompletedAt = completed ? _clock.GetUtcNow() : null;
-            await _store.SaveAsync(task);
+            if (completed)
+            {
+                // Recurring subtasks advance and leave a Logbook copy just like top-level tasks.
+                await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
+            }
+            else
+            {
+                var task = await _store.GetAsync<TaskItem>(row.Id);
+                if (task is null || task.IsDeleted) return;
+                task.CompletedAt = null;
+                await _store.SaveAsync(task);
+            }
             await _refreshOwner();
             if (_taskId is { } parentId) await LoadSubtasksAsync(parentId);
         }

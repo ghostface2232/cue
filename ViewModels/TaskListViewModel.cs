@@ -6,6 +6,7 @@ using Cue.Parsing;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.Storage.Ranking;
+using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
@@ -49,6 +50,7 @@ public partial class TaskListViewModel : ObservableObject
     private readonly ITaskIndex _index;
     private readonly IDateParser _parser;
     private readonly IReorderService _reorder;
+    private readonly IRecurringTaskService _recurrence;
     private readonly TimeProvider _clock;
     private readonly string _timeZoneId;
     private readonly TimeZoneInfo _timeZone;
@@ -95,19 +97,20 @@ public partial class TaskListViewModel : ObservableObject
     public bool HasTitleCaption => TitleCaption.Length > 0;
     public bool CanQuickAdd => _mode != TaskListMode.Logbook;
 
-    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, TimeProvider clock, TimeZoneInfo zone)
+    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone)
     {
         _store = store;
         _index = index;
         _parser = parser;
         _reorder = reorder;
+        _recurrence = recurrence;
         _clock = clock;
         _timeZoneId = zone.Id;
         _timeZone = zone;
 
         Title = "Cue";
         QuickAddText = string.Empty;
-        Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, SelectTaskAsync);
+        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync);
     }
 
     /// <summary>Switches which index view this list reflects, and retitles accordingly.</summary>
@@ -357,11 +360,20 @@ public partial class TaskListViewModel : ObservableObject
         await _toggleGate.WaitAsync();
         try
         {
-            var task = await _store.GetAsync<TaskItem>(row.Id);
-            if (task is not null)
+            if (completed)
             {
-                task.CompletedAt = completed ? _clock.GetUtcNow() : null;
-                await _store.SaveAsync(task);
+                // Completion runs through the recurrence service: a repeating task leaves a completed
+                // Logbook copy and advances to its next cycle, a one-off is simply stamped done.
+                await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
+            }
+            else
+            {
+                var task = await _store.GetAsync<TaskItem>(row.Id);
+                if (task is not null)
+                {
+                    task.CompletedAt = null;
+                    await _store.SaveAsync(task);
+                }
             }
             // Keep the row in place for this session so completion has a visible, reversible
             // acknowledgement. Index-backed navigation/reload naturally removes it later.

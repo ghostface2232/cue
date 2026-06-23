@@ -5,6 +5,7 @@ using Cue.Parsing;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.Storage.Ranking;
+using Cue.Storage.Recurrence;
 using Cue.ViewModels;
 using Cue.Services;
 
@@ -65,6 +66,10 @@ public partial class App : Application
 
         // The rank service owns LexoRank assignment and persists reorders through the store.
         services.AddSingleton<IReorderService, ReorderService>();
+
+        // Recurrence completion: advances a repeating task to its next cycle and keeps the Logbook
+        // copy. The Ical.Net engine lives behind this service, inside the storage layer.
+        services.AddSingleton<IRecurringTaskService, RecurringTaskService>();
         services.AddSingleton<DialogService>();
 
         // A fresh list view model per navigation.

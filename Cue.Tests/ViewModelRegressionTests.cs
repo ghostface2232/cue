@@ -2,6 +2,7 @@ using Cue.Domain;
 using Cue.Parsing;
 using Cue.Storage;
 using Cue.Storage.Ranking;
+using Cue.Storage.Recurrence;
 using Cue.ViewModels;
 
 namespace Cue.Tests;
@@ -25,7 +26,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
         await vm.Detail.SaveCommand.ExecuteAsync(null);
 
@@ -53,7 +54,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
         await vm.Detail.SaveCommand.ExecuteAsync(null);
 
@@ -77,7 +78,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "zoned", When = ScheduledWhen.On(originalWhen), Deadline = originalDeadline };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
         vm.Detail.Title = "title only";
         await vm.Detail.SaveCommand.ExecuteAsync(null);
@@ -100,7 +101,7 @@ public sealed class ViewModelRegressionTests
         var task = new TaskItem { Title = "stay visible" };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.LoadCommand.ExecuteAsync(null);
         var row = Assert.Single(vm.Tasks);
         row.SetCompletedSilently(true);
@@ -130,7 +131,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
         vm.Detail.SelectedWhenHour = vm.Detail.Hours[13];
         vm.Detail.SelectedWhenMinute = vm.Detail.Minutes[5];
@@ -156,7 +157,7 @@ public sealed class ViewModelRegressionTests
         };
         await store.SaveAsync(task);
 
-        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), clock, TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
 
         Assert.True(vm.Detail.HasDeadline);
