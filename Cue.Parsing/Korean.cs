@@ -46,13 +46,14 @@ internal static class Korean
     /// whether a concrete clock time was actually given. Returns false for impossible times
     /// (e.g. "24시"), which the caller treats as "not a time" so it stays in the title.
     /// </summary>
-    public static bool TryResolveTime(Match m, out int hour, out int minute, out bool evening, out bool hasTime)
+    public static bool TryResolveTime(Match m, out int hour, out int minute, out bool evening, out bool hasTime, out bool meridiemGiven)
     {
         hour = 0; minute = 0; evening = false; hasTime = false;
 
         var meridiem = First(m, "mer", "daypart");
         var isEveningWord = meridiem is "저녁" or "밤";
         evening = isEveningWord;
+        meridiemGiven = meridiem is not null; // any AM/PM word fixes the half-day; its absence leaves the hour ambiguous
 
         if (!m.Groups["h"].Success)
         {

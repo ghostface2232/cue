@@ -39,6 +39,21 @@ public sealed class ParseContext
     /// <summary>"Now" as a zoned value — used as a recurrence anchor for clock-relative rules.</summary>
     public ZonedDateTime ZonedNow => ZonedDateTime.FromUtc(Now, TimeZoneId);
 
+    /// <summary>
+    /// Disambiguates a bare clock hour — one typed with no AM/PM word, e.g. "오늘 3시". Korean
+    /// speakers usually mean the next such time of day, so when the morning reading on
+    /// <paramref name="date"/> has already passed "now", they mean the afternoon: 1–11 o'clock is
+    /// bumped by 12 hours. Hours typed with an explicit meridiem, plus noon, midnight, and the
+    /// already-unambiguous afternoon hours (12–23) are returned unchanged. For a future date the
+    /// morning reading is never past, so it is left alone (e.g. "내일 3시" stays 03:00).
+    /// </summary>
+    public int DisambiguateBareHour(DateOnly date, int hour, int minute, bool meridiemGiven)
+    {
+        if (meridiemGiven || hour is < 1 or > 11)
+            return hour;
+        return Zoned(date, hour, minute).Utc < Now ? hour + 12 : hour;
+    }
+
     /// <summary>The next date (today allowed) that lands on <paramref name="target"/>.</summary>
     public DateOnly UpcomingWeekday(DayOfWeek target, bool allowToday = true)
     {

@@ -118,6 +118,55 @@ public sealed class KoreanDateParserTests
         Assert.True(r.When.IsEvening);
     }
 
+    [Fact]
+    public void BareHour_WhenMorningReadingHasPassed_IsTakenAsAfternoon()
+    {
+        // It's 10:00; a bare "3시" today is ambiguous, but 3am is already gone, so it means 3pm.
+        var at10 = new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("오늘 3시 미팅", at10, Tz);
+        Assert.Equal("미팅", r.Title);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(15, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void BareHour_WhenMorningReadingStillAhead_StaysMorning()
+    {
+        // It's 01:00; 3am is still ahead today, so a bare "3시" keeps its morning reading.
+        var at1 = new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("오늘 3시 미팅", at1, Tz);
+        Assert.Equal(3, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void BareHour_OnAFutureDate_StaysMorning()
+    {
+        // Tomorrow's 3am is never "past now", so a bare hour on a future date is left as morning.
+        var at10 = new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("내일 3시 미팅", at10, Tz);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(3, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void ExplicitMeridiem_IsNeverBumped()
+    {
+        // "오전 3시" stays 3am even after 3am has passed — an explicit meridiem is authoritative.
+        var at10 = new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("오늘 오전 3시 미팅", at10, Tz);
+        Assert.Equal(3, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void BareTimeWithoutDate_AlsoDisambiguatesAgainstNow()
+    {
+        // The date-less rule resolves to today; the same morning-passed bump applies.
+        var at14 = new DateTimeOffset(2026, 6, 23, 14, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("3시 미팅", at14, Tz);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(15, WhenHour(r.When));
+    }
+
     // ---- 5. Deadlines -------------------------------------------------------
 
     [Fact]
