@@ -441,23 +441,44 @@ public sealed partial class MainWindow : Window
         catch { return null; }
     }
 
-    /// <summary>Moves a group/tag row's hover/selection pill right to meet its already-indented icon,
-    /// without moving the content. The pill is the presenter's LayoutRoot (Margin =
-    /// NavigationViewItemButtonMargin, stock 4,2,4,2). Pushing the pill's left by x and pulling the icon
-    /// box (NavigationViewItemOnLeftIconBoxMargin, stock 0) and label
-    /// (NavigationViewItemContentPresenterMargin, stock 4,-1,8,-1) back by the same x cancels for the
-    /// content — so only the highlight shifts. Set per item via its Resources (scoped to that row).
-    /// x is the CueNavHighlightInset token.</summary>
-    private static void ApplyNavRowInset(NavigationViewItem item)
+    /// <summary>Positions a group/tag row's hover/selection pill, icon, and label independently so the
+    /// pill sits left of the (indented) icon, then the icon, then the label. Resource overrides don't
+    /// reach the nesting indent the NavigationView puts on the inner ContentGrid, so this sets the three
+    /// presenter elements directly once the row is realized. Idempotent, so it's safe on container reuse.</summary>
+    private void ApplyNavRowInset(NavigationViewItem item) => item.Loaded += NavRow_Loaded;
+
+    private void NavRow_Loaded(object sender, RoutedEventArgs e)
     {
-        try
+        if (sender is not DependencyObject root) return;
+        // LayoutRoot = the pill (hover/selection background + the accent indicator);
+        // ContentGrid = the icon + label block (carries the nesting indent we override);
+        // ContentPresenter = the label.
+        if (FindDescendantByName(root, "LayoutRoot") is { } pill)
+            pill.Margin = new Thickness(NavD("CueNavPillLeft", 8), 2, 4, 2);
+        if (FindDescendantByName(root, "ContentGrid") is { } content)
+            content.Margin = new Thickness(NavD("CueNavIconLeft", 20), 0, 14, 0);
+        if (FindDescendantByName(root, "ContentPresenter") is { } label)
+            label.Margin = new Thickness(NavD("CueNavLabelLeft", 4), -1, 8, -1);
+    }
+
+    private static double NavD(string key, double fallback)
+    {
+        try { return (double)Application.Current.Resources[key]; }
+        catch { return fallback; }
+    }
+
+    private static FrameworkElement? FindDescendantByName(DependencyObject root, string name)
+    {
+        var count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
         {
-            var x = (double)Application.Current.Resources["CueNavHighlightInset"];
-            item.Resources["NavigationViewItemButtonMargin"] = new Thickness(4 + x, 2, 4, 2);
-            item.Resources["NavigationViewItemOnLeftIconBoxMargin"] = new Thickness(-x, 0, 0, 0);
-            item.Resources["NavigationViewItemContentPresenterMargin"] = new Thickness(4 - x, -1, 8, -1);
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is FrameworkElement fe && fe.Name == name)
+                return fe;
+            if (FindDescendantByName(child, name) is { } match)
+                return match;
         }
-        catch { /* fall back to the stock pill margins */ }
+        return null;
     }
 
     private MenuFlyout CreateRecordMenu(object record, bool isGroup, NavigationViewItem owner)
