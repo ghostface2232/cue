@@ -10,9 +10,9 @@ namespace Cue.Storage.Index;
 /// <remarks>
 /// Queries fall on two axes:
 /// <list type="bullet">
-/// <item><b>Classification</b> — by container: a project, a label, or the unclassified Cue home
-/// (tasks with no project). These return non-deleted task rows in that container; completed rows are
-/// kept visible and dimmed in active lists, while badge counts below stay open-only.</item>
+/// <item><b>Classification</b> — by container: a project, a label, or the home "모든 할 일" (All)
+/// list which spans every group. These return non-deleted task rows; completed rows are kept visible
+/// and dimmed in active lists, while badge counts below stay open-only.</item>
 /// <item><b>Time</b> — Today / Upcoming / Anytime / Logbook, all computed from the single When date.
 /// These are <i>never stored</i>: each is computed by comparing the task's When date against the
 /// current day at query time, which is exactly what lets an item scheduled for a past date roll
@@ -42,8 +42,9 @@ public interface ITaskIndex
 
     // ---- Classification axis -------------------------------------------------
 
-    /// <summary>Non-deleted tasks with no owning project — the unclassified Cue home list.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetInboxAsync(CancellationToken cancellationToken = default);
+    /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (All) list.
+    /// Subtasks are returned too; the view nests them under their parents.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Non-deleted tasks belonging to the given project.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);

@@ -14,6 +14,7 @@ public partial class ShellViewModel : ObservableObject
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
     private readonly IReorderService _reorder;
+    private readonly IContainerDeletionStore _containers;
 
     public ObservableCollection<ProjectListItem> Projects { get; } = new();
     public ObservableCollection<LabelListItem> Labels { get; } = new();
@@ -23,11 +24,12 @@ public partial class ShellViewModel : ObservableObject
     public IReadOnlyDictionary<Guid, int> ProjectTaskCounts { get; private set; } = new Dictionary<Guid, int>();
     public IReadOnlyDictionary<Guid, int> LabelTaskCounts { get; private set; } = new Dictionary<Guid, int>();
 
-    public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder)
+    public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder, IContainerDeletionStore containers)
     {
         _store = store;
         _index = index;
         _reorder = reorder;
+        _containers = containers;
     }
 
     [RelayCommand]
@@ -92,10 +94,11 @@ public partial class ShellViewModel : ObservableObject
         await LoadAsync();
     }
 
-    [RelayCommand]
-    private async Task DeleteProjectAsync(Guid id)
+    /// <summary>Deletes a group, disposing of its tasks per <paramref name="mode"/> (reparent to the
+    /// Cue home, or soft-delete alongside the group), then reloads the navigation.</summary>
+    public async Task DeleteProjectAsync(Guid id, ProjectDeletionMode mode)
     {
-        await _store.DeleteAsync<Project>(id);
+        await _containers.DeleteProjectAsync(id, mode);
         await LoadAsync();
     }
 

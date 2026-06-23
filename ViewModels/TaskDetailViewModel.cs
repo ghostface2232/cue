@@ -469,6 +469,17 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
+    /// <summary>Soft-deletes the task currently open in the panel (cascading to its subtask subtree,
+    /// handled by the store), closes the panel, and asks the owning list to refresh.</summary>
+    [RelayCommand]
+    private async Task DeleteTaskAsync()
+    {
+        if (_taskId is not { } id) return;
+        await _store.DeleteAsync<TaskItem>(id);
+        Close();
+        await _refreshOwner();
+    }
+
     [RelayCommand]
     private async Task DeleteSubtaskAsync(Guid id)
     {
@@ -548,7 +559,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private async Task LoadProjectsAsync(Guid? selectedId)
     {
         Projects.Clear();
-        Projects.Add(new ProjectEditorOption(null, "Cue"));
+        Projects.Add(new ProjectEditorOption(null, "그룹 없음"));
         foreach (var project in await _index.GetProjectsAsync())
             Projects.Add(new ProjectEditorOption(project.Id, project.Name));
 

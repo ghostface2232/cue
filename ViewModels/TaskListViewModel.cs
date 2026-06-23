@@ -13,8 +13,8 @@ namespace Cue.ViewModels;
 /// <summary>Which index-backed list this view shows.</summary>
 public enum TaskListMode
 {
-    /// <summary>Home / Cue — project-less (unclassified) active tasks, with completed rows dimmed.</summary>
-    Inbox,
+    /// <summary>Home / 모든 할 일 — every active task regardless of group, with completed rows dimmed.</summary>
+    All,
 
     /// <summary>Today — active tasks with a When date today or earlier, with completed rows dimmed.</summary>
     Today,
@@ -61,7 +61,7 @@ public partial class TaskListViewModel : ObservableObject
     // Serializes completion toggles so concurrent/rapid checks can't reorder their saves.
     private readonly SemaphoreSlim _toggleGate = new(1, 1);
 
-    private TaskListMode _mode = TaskListMode.Inbox;
+    private TaskListMode _mode = TaskListMode.All;
     private Guid? _filterId;
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
@@ -108,7 +108,7 @@ public partial class TaskListViewModel : ObservableObject
         _timeZoneId = zone.Id;
         _timeZone = zone;
 
-        Title = "Cue";
+        Title = "모든 할 일";
         QuickAddText = string.Empty;
         Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync);
         // Clear the row selection accent when the detail panel closes.
@@ -141,7 +141,7 @@ public partial class TaskListViewModel : ObservableObject
         _filterId = navigation.FilterId;
         Title = navigation.Title ?? navigation.Mode switch
         {
-            TaskListMode.Inbox => "모든 할 일",
+            TaskListMode.All => "모든 할 일",
             TaskListMode.Today => "오늘 할 일",
             TaskListMode.Upcoming => "앞으로 할 일",
             TaskListMode.Anytime => "언젠가 할 일",
@@ -200,8 +200,8 @@ public partial class TaskListViewModel : ObservableObject
 
         switch (_mode)
         {
-            case TaskListMode.Inbox:
-                items = await _index.GetInboxAsync();
+            case TaskListMode.All:
+                items = await _index.GetAllActiveAsync();
                 break;
             case TaskListMode.Today:
                 items = await _index.GetTodayAsync();
@@ -341,6 +341,61 @@ public partial class TaskListViewModel : ObservableObject
             else
                 destination.Add(row);
         }
+    }
+
+    // ---- Row context-menu actions (move group / tag / rename / delete) -------
+
+    /// <summary>The live task record by id, so a row context menu can reflect its current group and
+    /// tags. Reads the file source of truth.</summary>
+    public Task<TaskItem?> GetTaskAsync(Guid id) => _store.GetAsync<TaskItem>(id);
+
+    /// <summary>Active groups, for the row context menu's "move to group" submenu.</summary>
+    public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync() => _index.GetProjectsAsync();
+
+    /// <summary>Active tags, for the row context menu's tag submenu.</summary>
+    public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync() => _index.GetLabelsAsync();
+
+    /// <summary>Moves a task into a group, or to the Cue home when <paramref name="projectId"/> is
+    /// null, then refreshes. A no-op if the task is gone or already there.</summary>
+    public async Task MoveTaskToProjectAsync(Guid taskId, Guid? projectId)
+    {
+        var task = await _store.GetAsync<TaskItem>(taskId);
+        if (task is null || task.IsDeleted || task.ProjectId == projectId) return;
+        task.ProjectId = projectId;
+        await _store.SaveAsync(task);
+        await LoadAsync();
+    }
+
+    /// <summary>Adds the tag if absent, removes it if present, then refreshes.</summary>
+    public async Task ToggleTaskLabelAsync(Guid taskId, Guid labelId)
+    {
+        var task = await _store.GetAsync<TaskItem>(taskId);
+        if (task is null || task.IsDeleted) return;
+        if (!task.LabelIds.Remove(labelId)) task.LabelIds.Add(labelId);
+        await _store.SaveAsync(task);
+        await LoadAsync();
+    }
+
+    /// <summary>Renames a task, then refreshes. A blank name is ignored.</summary>
+    public async Task RenameTaskAsync(Guid taskId, string title)
+    {
+        var trimmed = title.Trim();
+        if (trimmed.Length == 0) return;
+        var task = await _store.GetAsync<TaskItem>(taskId);
+        if (task is null || task.IsDeleted) return;
+        task.Title = trimmed;
+        await _store.SaveAsync(task);
+        await LoadAsync();
+    }
+
+    /// <summary>Soft-deletes a task (cascading to its subtask subtree, handled by the store), closes
+    /// the detail panel if this task was open, and refreshes the list.</summary>
+    [RelayCommand]
+    public async Task DeleteTaskAsync(Guid id)
+    {
+        await _store.DeleteAsync<TaskItem>(id);
+        if (Detail.IsOpen && Detail.CurrentTaskId == id) Detail.Close();
+        await LoadAsync();
     }
 
     [RelayCommand]

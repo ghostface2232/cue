@@ -19,7 +19,7 @@ namespace Cue.Storage;
 /// <see cref="ITaskIndex"/> surface) are answered from SQLite and never scan the folder.
 /// </para>
 /// </remarks>
-public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
+public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletionStore, IAsyncDisposable
 {
     private readonly ITaskStore _files;
     private readonly SqliteTaskIndex _index;
@@ -120,16 +120,42 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (typeof(T) == typeof(Project)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Project, id, cancellationToken).ConfigureAwait(false);
-            else if (typeof(T) == typeof(Label)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Label, id, cancellationToken).ConfigureAwait(false);
+            if (typeof(T) == typeof(Project)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Project, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
+            else if (typeof(T) == typeof(Label)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Label, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
+            else if (typeof(T) == typeof(TaskItem)) await DeleteTaskSubtreeAsync(id, cancellationToken).ConfigureAwait(false);
             else await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
         }
         finally { _mutationGate.Release(); }
     }
 
-    private async Task RunContainerDeletionCoreAsync(ContainerDeletionKind kind, Guid id, CancellationToken cancellationToken)
+    /// <summary>
+    /// Deletes a group with an explicit task disposition. <see cref="ProjectDeletionMode.Reparent"/>
+    /// matches the generic <see cref="DeleteAsync{T}"/> default (move tasks to the Cue home);
+    /// <see cref="ProjectDeletionMode.DeleteTasks"/> soft-deletes the group's tasks alongside it. Both
+    /// run through the durable deletion journal.
+    /// </summary>
+    public async Task DeleteProjectAsync(Guid projectId, ProjectDeletionMode mode, CancellationToken cancellationToken = default)
     {
-        var operation = new ContainerDeletionOperation { Kind = kind, TargetId = id };
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await RunContainerDeletionCoreAsync(ContainerDeletionKind.Project, projectId, mode == ProjectDeletionMode.DeleteTasks, cancellationToken).ConfigureAwait(false); }
+        finally { _mutationGate.Release(); }
+    }
+
+    /// <summary>
+    /// Soft-deletes a task and its whole subtask subtree (depth-first), so a deleted parent never
+    /// leaves orphaned, unreachable children behind. Each node is tombstoned and reflected into the
+    /// index individually.
+    /// </summary>
+    private async Task DeleteTaskSubtreeAsync(Guid id, CancellationToken cancellationToken)
+    {
+        foreach (var child in await _index.GetSubtasksAsync(id, cancellationToken).ConfigureAwait(false))
+            await DeleteTaskSubtreeAsync(child.Id, cancellationToken).ConfigureAwait(false);
+        await SoftDeleteAndReflectAsync<TaskItem>(id, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RunContainerDeletionCoreAsync(ContainerDeletionKind kind, Guid id, bool cascadeTasks, CancellationToken cancellationToken)
+    {
+        var operation = new ContainerDeletionOperation { Kind = kind, TargetId = id, CascadeTasks = cascadeTasks };
         if (_deletionJournal is not null) await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
         await ApplyContainerDeletionAsync(operation, cancellationToken).ConfigureAwait(false);
         operation.IsCompleted = true;
@@ -150,7 +176,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     private Task ApplyContainerDeletionAsync(ContainerDeletionOperation operation, CancellationToken cancellationToken)
         => operation.Kind switch
         {
-            ContainerDeletionKind.Project => DeleteProjectAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.Project when operation.CascadeTasks => DeleteProjectCascadingTasksAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.Project => ReparentProjectTasksAndDeleteAsync(operation.TargetId, cancellationToken),
             ContainerDeletionKind.Label => DeleteLabelAsync(operation.TargetId, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(operation.Kind)),
         };
@@ -174,11 +201,11 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
             await ReflectAsync(tombstone, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task DeleteProjectAsync(Guid projectId, CancellationToken cancellationToken)
+    private async Task ReparentProjectTasksAndDeleteAsync(Guid projectId, CancellationToken cancellationToken)
     {
-        // Foundation deletion policy: preserve user work by moving every live task to the unclassified
-        // Cue home (clear ProjectId) rather than cascading task tombstones. The least destructive
-        // default. With sections gone the cascade is a single reparent step.
+        // Least-destructive default ("그룹만 제거"): preserve user work by ungrouping every live task
+        // (clear ProjectId) rather than cascading task tombstones. The task stays visible in the home
+        // "모든 할 일" (All) list. With sections gone the reparent is a single step.
         foreach (var taskId in await _index.GetTaskIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
         {
             var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
@@ -186,6 +213,17 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
             task.ProjectId = null;
             await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
+
+        await SoftDeleteAndReflectAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DeleteProjectCascadingTasksAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        // Opt-in destructive deletion: tombstone every task filed under the group (open and completed,
+        // including their subtask subtrees, which share the project) before the group itself. Idempotent
+        // — already-tombstoned tasks are excluded by the index query, so a resumed crash re-runs cleanly.
+        foreach (var taskId in await _index.GetTaskIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
+            await SoftDeleteAndReflectAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
 
         await SoftDeleteAndReflectAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
     }
@@ -226,8 +264,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default)
         => _index.GetOpenTaskCountsByLabelAsync(cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetInboxAsync(CancellationToken cancellationToken = default)
-        => _index.GetInboxAsync(cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
+        => _index.GetAllActiveAsync(cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
         => _index.GetByProjectAsync(projectId, cancellationToken);

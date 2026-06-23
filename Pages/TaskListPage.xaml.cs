@@ -60,7 +60,7 @@ public sealed partial class TaskListPage : Page
             {
                 var mode = Enum.TryParse<TaskListMode>(e.Parameter as string, ignoreCase: true, out var parsed)
                     ? parsed
-                    : TaskListMode.Inbox;
+                    : TaskListMode.All;
                 navigation = new TaskListNavigation(mode);
             }
             ViewModel.SetNavigation(navigation);
@@ -79,11 +79,137 @@ public sealed partial class TaskListPage : Page
 
     private async void TaskSurface_Tapped(object sender, TappedRoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { Tag: Guid id } || IsInteractiveElement(e.OriginalSource as DependencyObject))
+        if (sender is not FrameworkElement { Tag: Guid id } element || IsInteractiveElement(e.OriginalSource as DependencyObject))
             return;
         e.Handled = true;
+        // Give the row keyboard focus too, so a follow-up Delete acts on the just-selected task.
+        element.Focus(FocusState.Pointer);
         await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(id));
     }
+
+    /// <summary>Delete on a focused row soft-deletes that task (with confirmation).</summary>
+    private async void TaskSurface_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Delete || sender is not FrameworkElement { Tag: Guid id })
+            return;
+        e.Handled = true;
+        await RunSafelyAsync(async () =>
+        {
+            if (await ConfirmDeleteTaskAsync())
+                await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
+        });
+    }
+
+    /// <summary>Right-click on a row opens its context menu: move to a group, toggle tags, rename, delete.</summary>
+    private async void TaskSurface_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: Guid id } element)
+            return;
+        e.Handled = true;
+        await RunSafelyAsync(async () =>
+        {
+            var menu = await BuildTaskContextMenuAsync(id);
+            menu.ShowAt(element, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+            {
+                Position = e.GetPosition(element),
+            });
+        });
+    }
+
+    private async Task<MenuFlyout> BuildTaskContextMenuAsync(Guid id)
+    {
+        var task = await ViewModel.GetTaskAsync(id);
+        var projects = await ViewModel.GetProjectsAsync();
+        var labels = await ViewModel.GetLabelsAsync();
+        var menu = new MenuFlyout();
+
+        // 그룹으로 이동 — every group, plus a "no group" entry that returns the task to the Cue home.
+        var moveGroup = new MenuFlyoutSubItem { Text = "그룹으로 이동" };
+        var clearGroup = new MenuFlyoutItem { Text = "그룹에서 빼기" };
+        if (task?.ProjectId is null) clearGroup.Icon = CheckIcon();
+        clearGroup.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToProjectAsync(id, null));
+        moveGroup.Items.Add(clearGroup);
+        if (projects.Count > 0) moveGroup.Items.Add(new MenuFlyoutSeparator());
+        foreach (var project in projects)
+        {
+            var projectId = project.Id;
+            var item = new MenuFlyoutItem { Text = project.Name };
+            if (task?.ProjectId == projectId) item.Icon = CheckIcon();
+            item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToProjectAsync(id, projectId));
+            moveGroup.Items.Add(item);
+        }
+        menu.Items.Add(moveGroup);
+
+        // 태그 — a checkable list; each click toggles one tag on the task.
+        var tagGroup = new MenuFlyoutSubItem { Text = "태그" };
+        if (labels.Count == 0)
+        {
+            tagGroup.Items.Add(new MenuFlyoutItem { Text = "태그 없음", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var label in labels)
+            {
+                var labelId = label.Id;
+                var item = new ToggleMenuFlyoutItem
+                {
+                    Text = label.Name,
+                    IsChecked = task?.LabelIds.Contains(labelId) == true,
+                };
+                item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ToggleTaskLabelAsync(id, labelId));
+                tagGroup.Items.Add(item);
+            }
+        }
+        menu.Items.Add(tagGroup);
+
+        var rename = new MenuFlyoutItem { Text = "이름 바꾸기" };
+        rename.Click += async (_, _) => await RunSafelyAsync(async () =>
+        {
+            var name = await PromptNameAsync("할 일 이름 바꾸기", "할 일 제목", task?.Title ?? string.Empty);
+            if (name is not null) await ViewModel.RenameTaskAsync(id, name);
+        });
+        menu.Items.Add(rename);
+
+        menu.Items.Add(new MenuFlyoutSeparator());
+
+        var delete = new MenuFlyoutItem { Text = "삭제" };
+        if (Application.Current.Resources["SystemFillColorCriticalBrush"] is Microsoft.UI.Xaml.Media.Brush critical)
+            delete.Foreground = critical;
+        delete.Click += async (_, _) => await RunSafelyAsync(async () =>
+        {
+            if (await ConfirmDeleteTaskAsync())
+                await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
+        });
+        menu.Items.Add(delete);
+
+        return menu;
+    }
+
+    private static FontIcon CheckIcon() => new() { Glyph = "", FontSize = 14 };
+
+    private Task<bool> ConfirmDeleteTaskAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "할 일을 삭제할까요?",
+            Content = "파일은 지우지 않고 삭제 시각만 기록됩니다. 하위 체크리스트도 함께 삭제됩니다.",
+            PrimaryButtonText = "삭제",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return ConfirmAsync(dialog);
+    }
+
+    private async Task<bool> ConfirmAsync(ContentDialog dialog)
+        => await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary;
+
+    private async void DeleteTask_Click(object sender, RoutedEventArgs e)
+        => await RunSafelyAsync(async () =>
+        {
+            if (await ConfirmDeleteTaskAsync())
+                await ViewModel.Detail.DeleteTaskCommand.ExecuteAsync(null);
+        });
 
     private void TaskSurface_Loaded(object sender, RoutedEventArgs e)
     {

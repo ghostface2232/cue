@@ -366,10 +366,12 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     // Active lists keep completed tasks (shown dimmed) rather than dropping them on the next load, so
     // finishing an item doesn't make it vanish; they sink below the open rows via the completed-last
     // ordering. Open-task counts (badges) still exclude completed — see GetOpenTaskCounts*.
-    public Task<IReadOnlyList<TaskListItem>> GetInboxAsync(CancellationToken cancellationToken = default)
+    // The home "모든 할 일" (All) list spans every group — no project filter — so a task in a group
+    // still surfaces here. Subtasks are included; the view nests them under their parents.
+    public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND project_id IS NULL ORDER BY completed_at IS NOT NULL, sort_order;",
+            "ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)

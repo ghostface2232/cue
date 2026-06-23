@@ -461,6 +461,24 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
+
+                        <!-- Destructive action at the bottom, set apart by the critical color. -->
+                        <Button
+                            x:Name="DeleteTaskButton"
+                            Margin="4,2,8,4"
+                            Padding="10,9"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="Transparent"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            Click="DeleteTask_Click"
+                            CornerRadius="{StaticResource CueRadiusCard}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE74D;" />
+                                <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="할 일 삭제" />
+                            </StackPanel>
+                        </Button>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

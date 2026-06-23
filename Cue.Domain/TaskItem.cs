@@ -5,7 +5,7 @@ namespace Cue.Domain;
 /// </summary>
 /// <remarks>
 /// A task's container is a single optional <see cref="ProjectId"/>: it either belongs to one
-/// project or, when null, is unclassified (free / Cue home).
+/// project or, when null, has no group. Either way it appears in the home 모든 할 일 (All) view.
 /// <para>
 /// Sub-tasks are <i>not</i> a lightweight checklist: each is its own <see cref="TaskItem"/>
 /// record (own file) pointing at its parent via <see cref="ParentTaskId"/>, so a sub-task can
@@ -53,7 +53,7 @@ public sealed class TaskItem : RecordBase, ISortable
     /// <summary>Priority flag.</summary>
     public Priority Priority { get; set; } = Priority.None;
 
-    /// <summary>Owning project, if any. <c>null</c> means the task is unclassified (free / Cue home).</summary>
+    /// <summary>Owning group, if any. <c>null</c> means the task has no group (still shown in 모든 할 일).</summary>
     public Guid? ProjectId { get; set; }
 
     /// <summary>Parent task when this is a sub-task; <c>null</c> for a top-level task.</summary>

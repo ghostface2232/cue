@@ -28,10 +28,13 @@
                 Padding="12,6"
                 Background="Transparent"
                 CornerRadius="{StaticResource CueRadiusSmall}"
+                IsTabStop="True"
+                KeyDown="TaskSurface_KeyDown"
                 Loaded="TaskSurface_Loaded"
                 Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
                 PointerEntered="TaskSurface_PointerEntered"
                 PointerExited="TaskSurface_PointerExited"
+                RightTapped="TaskSurface_RightTapped"
                 Tapped="TaskSurface_Tapped"
                 Tag="{x:Bind Id}">
                 <Border.BackgroundTransition>
@@ -86,10 +89,13 @@
                     Padding="12,8"
                     Background="Transparent"
                     CornerRadius="{StaticResource CueRadiusRow}"
+                    IsTabStop="True"
+                    KeyDown="TaskSurface_KeyDown"
                     Loaded="TaskSurface_Loaded"
                     Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
                     PointerEntered="TaskSurface_PointerEntered"
                     PointerExited="TaskSurface_PointerExited"
+                    RightTapped="TaskSurface_RightTapped"
                     Tapped="TaskSurface_Tapped"
                     Tag="{x:Bind Id}">
                     <Border.BackgroundTransition>
@@ -504,6 +510,25 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
+
+                        <!-- Destructive action lives at the very bottom, set apart by its critical
+                             color (DESIGN error token). Soft-delete via DeletedAt, with confirmation. -->
+                        <Button
+                            x:Name="DeleteTaskButton"
+                            Margin="4,2,8,4"
+                            Padding="10,9"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="Transparent"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            Click="DeleteTask_Click"
+                            CornerRadius="{StaticResource CueRadiusCard}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE74D;" />
+                                <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="할 일 삭제" />
+                            </StackPanel>
+                        </Button>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

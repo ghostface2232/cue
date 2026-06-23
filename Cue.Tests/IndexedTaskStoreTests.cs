@@ -165,13 +165,84 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         await store.DeleteAsync<Project>(project.Id);
 
-        // Deleting a group never deletes its work; the tasks reparent to the unclassified Cue home.
+        // Deleting a group never deletes its work; the tasks are ungrouped (ProjectId cleared).
         Assert.Null((await store.GetAsync<TaskItem>(open.Id))!.ProjectId);
         Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.ProjectId);
-        // Both tasks move to the Inbox; the completed one stays (dimmed) and sinks below the open one.
-        Assert.Equal(new[] { open.Id, done.Id }, (await store.GetInboxAsync()).Select(t => t.Id));
+        // Both stay in the home "모든 할 일" view; the completed one sinks (dimmed) below the open one.
+        Assert.Equal(new[] { open.Id, done.Id }, (await store.GetAllActiveAsync()).Select(t => t.Id));
         Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
         Assert.Empty(await store.GetProjectsAsync());
+    }
+
+    [Fact]
+    public async Task DeleteProject_DeleteTasksMode_SoftDeletesEveryContainedTask()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var project = new Project { Name = "통째로 삭제할 프로젝트" };
+        var open = new TaskItem { Title = "열린 일", ProjectId = project.Id };
+        var done = new TaskItem { Title = "완료한 일", ProjectId = project.Id, CompletedAt = Now };
+        var subtask = new TaskItem { Title = "하위 작업", ParentTaskId = open.Id, ProjectId = project.Id };
+        var other = new TaskItem { Title = "다른 곳의 일" };
+        await store.SaveAsync(project);
+        await store.SaveAsync(open);
+        await store.SaveAsync(done);
+        await store.SaveAsync(subtask);
+        await store.SaveAsync(other);
+
+        // Opt-in destructive deletion: the group and all its tasks (open, completed, subtasks) are tombstoned.
+        await store.DeleteProjectAsync(project.Id, ProjectDeletionMode.DeleteTasks);
+
+        Assert.NotNull((await store.GetAsync<TaskItem>(open.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<TaskItem>(done.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<TaskItem>(subtask.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
+        Assert.Empty(await store.GetByProjectAsync(project.Id));
+        // A task that was never in the group is untouched and stays in the home "모든 할 일" view.
+        Assert.Null((await store.GetAsync<TaskItem>(other.Id))!.DeletedAt);
+        Assert.Equal(other.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
+    }
+
+    [Fact]
+    public async Task DeleteProject_ReparentMode_MovesTasksToInbox()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var project = new Project { Name = "유지할 프로젝트" };
+        var task = new TaskItem { Title = "살려 둘 일", ProjectId = project.Id };
+        await store.SaveAsync(project);
+        await store.SaveAsync(task);
+
+        // Reparent mode matches the generic DeleteAsync<Project> default: tasks survive, group goes.
+        await store.DeleteProjectAsync(project.Id, ProjectDeletionMode.Reparent);
+
+        Assert.Null((await store.GetAsync<TaskItem>(task.Id))!.ProjectId);
+        Assert.Null((await store.GetAsync<TaskItem>(task.Id))!.DeletedAt);
+        Assert.Equal(task.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
+        Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
+    }
+
+    [Fact]
+    public async Task DeleteTask_CascadesSoftDeleteToItsSubtaskSubtree()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var parent = new TaskItem { Title = "부모" };
+        var child = new TaskItem { Title = "자식", ParentTaskId = parent.Id };
+        var grandchild = new TaskItem { Title = "손주", ParentTaskId = child.Id };
+        var unrelated = new TaskItem { Title = "남" };
+        foreach (var t in new[] { parent, child, grandchild, unrelated })
+            await store.SaveAsync(t);
+
+        // Deleting a task tombstones its whole subtree — no orphaned, unreachable children remain.
+        await store.DeleteAsync<TaskItem>(parent.Id);
+
+        Assert.NotNull((await store.GetAsync<TaskItem>(parent.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<TaskItem>(child.Id))!.DeletedAt);
+        Assert.NotNull((await store.GetAsync<TaskItem>(grandchild.Id))!.DeletedAt);
+        Assert.Empty(await store.GetSubtasksAsync(parent.Id));
+        // An unrelated task is left alone.
+        Assert.Null((await store.GetAsync<TaskItem>(unrelated.Id))!.DeletedAt);
     }
 
     [Fact]
@@ -352,8 +423,10 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         foreach (var t in new[] { inbox, anytimeFiled, todayTask, future, done })
             await store.SaveAsync(t);
 
-        // Inbox is exclusively the project-less task.
-        Assert.Equal(new[] { inbox.Id }, (await store.GetInboxAsync()).Select(t => t.Id));
+        // The home "모든 할 일" (All) spans every group: it returns every non-deleted task, grouped or not.
+        Assert.Equal(
+            new[] { inbox.Id, anytimeFiled.Id, todayTask.Id, future.Id, done.Id }.OrderBy(g => g),
+            (await store.GetAllActiveAsync()).Select(t => t.Id).OrderBy(g => g));
 
         // Anytime ("언젠가") = non-deleted tasks with no When date, regardless of project.
         Assert.Equal(
@@ -521,7 +594,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         await store.SaveAsync(project);
         await store.SaveAsync(label);
         await store.SaveAsync(task);
-        Assert.Equal(task.Id, Assert.Single(await store.GetInboxAsync()).Id);
+        Assert.Equal(task.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
 
         task.Title = "편집 후";
         task.Priority = Priority.P1;
@@ -530,7 +603,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         task.When = OnDay(Today.AddDays(3));
         await store.SaveAsync(task);
 
-        Assert.Empty(await store.GetInboxAsync());
+        // Filing it under a group does not remove it from the home "모든 할 일" (All) view.
+        Assert.Equal(task.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
         Assert.Equal(task.Id, Assert.Single(await store.GetByProjectAsync(project.Id)).Id);
         Assert.Equal(task.Id, Assert.Single(await store.GetByLabelAsync(label.Id)).Id);
         var indexed = Assert.Single(await store.GetUpcomingAsync(), item => item.Id == task.Id);

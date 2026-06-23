@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using Cue.Pages;
+using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.ViewModels;
 using Cue.Services;
@@ -146,8 +147,8 @@ public sealed partial class MainWindow : Window
             LabelsGroup.MenuItems.Add(CreateLabelItem(label));
     }
 
-    // The fixed lists the user can show/hide from the sidebar context menu. "Cue" (Inbox) is omitted —
-    // it is the home list and is always present.
+    // The fixed lists the user can show/hide from the sidebar context menu. "모든 할 일" (All) is
+    // omitted — it is the home list and is always present.
     private static readonly (string Key, string Glyph, string Name)[] ToggleableNav =
     {
         ("today", "", "오늘 할 일"),
@@ -472,12 +473,35 @@ public sealed partial class MainWindow : Window
         await RunSafelyAsync(async () =>
         {
             if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
-            if (!await ConfirmDeleteAsync("그룹을 삭제할까요?", "그룹 안의 할 일은 지우지 않고 Cue로 옮깁니다.")) return;
+            var mode = await AskProjectDeletionAsync(project.Name);
+            if (mode is null) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
-            await ViewModel.DeleteProjectCommand.ExecuteAsync(project.Id);
+            await ViewModel.DeleteProjectAsync(project.Id, mode.Value);
             RebuildLiveNavigation();
             if (isCurrent) NavigateHome();
         });
+    }
+
+    /// <summary>Deleting a group asks what to do with its tasks: move them to the Cue home (the
+    /// least-destructive default) or delete them along with the group. Null = the user cancelled.</summary>
+    private async Task<ProjectDeletionMode?> AskProjectDeletionAsync(string name)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = NavView.XamlRoot,
+            Title = $"'{name}' 그룹을 삭제할까요?",
+            Content = "그룹 안의 할 일을 어떻게 할지 선택하세요. '그룹만 제거'하면 할 일은 그대로 남아 '모든 할 일'에서 볼 수 있습니다.",
+            PrimaryButtonText = "그룹만 제거",
+            SecondaryButtonText = "할 일까지 삭제",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        return await _dialogs.ShowAsync(dialog) switch
+        {
+            ContentDialogResult.Primary => ProjectDeletionMode.Reparent,
+            ContentDialogResult.Secondary => ProjectDeletionMode.DeleteTasks,
+            _ => null,
+        };
     }
 
     private async void DeleteLabel_Click(object sender, RoutedEventArgs e)
@@ -507,7 +531,7 @@ public sealed partial class MainWindow : Window
             NavView.SelectedItem = CueItem;
         else
         {
-            NavFrame.Navigate(typeof(TaskListPage), "inbox");
+            NavFrame.Navigate(typeof(TaskListPage), "all");
             NavFrame.BackStack.Clear();
         }
     }

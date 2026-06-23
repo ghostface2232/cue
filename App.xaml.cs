@@ -69,6 +69,7 @@ public partial class App : Application
         // and the query side (ITaskIndex).
         services.AddSingleton<ITaskStore>(store);
         services.AddSingleton<ITaskIndex>(store);
+        services.AddSingleton<IContainerDeletionStore>(store);
 
         // The rank service owns LexoRank assignment and persists reorders through the store.
         services.AddSingleton<IReorderService, ReorderService>();

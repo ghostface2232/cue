@@ -209,7 +209,7 @@ public sealed class ViewModelRegressionTests
         vm.QuickAddText = "다음주 금요일 회의";
         await vm.AddCommand.ExecuteAsync(null);
 
-        var withDate = Assert.Single(await store.GetInboxAsync(), t => t.Title == "회의");
+        var withDate = Assert.Single(await store.GetAllActiveAsync(), t => t.Title == "회의");
         Assert.Equal(WhenKind.OnDate, withDate.WhenKind);
         Assert.NotNull(withDate.WhenDate);
 
@@ -217,7 +217,7 @@ public sealed class ViewModelRegressionTests
         vm.QuickAddText = "장보기";
         await vm.AddCommand.ExecuteAsync(null);
 
-        var dateless = Assert.Single(await store.GetInboxAsync(), t => t.Title == "장보기");
+        var dateless = Assert.Single(await store.GetAllActiveAsync(), t => t.Title == "장보기");
         Assert.Equal(WhenKind.Unscheduled, dateless.WhenKind);
         Assert.Null(dateless.WhenDate);
         Assert.Contains(await store.GetAnytimeAsync(), t => t.Id == dateless.Id);
@@ -325,7 +325,7 @@ public sealed class ViewModelRegressionTests
     [InlineData(TaskListMode.Today, WhenKind.OnDate)]          // only Today pins an actual day
     [InlineData(TaskListMode.Upcoming, WhenKind.Unscheduled)]  // names no specific date → Unscheduled
     [InlineData(TaskListMode.Anytime, WhenKind.Unscheduled)]
-    [InlineData(TaskListMode.Inbox, WhenKind.Unscheduled)]
+    [InlineData(TaskListMode.All, WhenKind.Unscheduled)]
     public void QuickAddContextPinsTodayOnly_ElseLeavesUnscheduled(TaskListMode mode, WhenKind kind)
     {
         var now = new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero);

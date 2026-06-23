@@ -6,7 +6,7 @@ namespace Cue.Services;
 /// <summary>
 /// Persists which of the fixed sidebar lists (Today / Upcoming / Anytime / Logbook) the
 /// user has chosen to show. This is a pure UI preference, so it lives in app-local settings rather
-/// than the files-are-truth task store. "Cue" (Inbox) is always shown and is not toggleable.
+/// than the files-are-truth task store. "모든 할 일" (All) is always shown and is not toggleable.
 /// Falls back to an in-memory store when there is no package identity (unpackaged runs).
 /// </summary>
 public static class NavPreferences
