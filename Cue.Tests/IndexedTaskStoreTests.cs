@@ -355,7 +355,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         // Inbox is exclusively the project-less task.
         Assert.Equal(new[] { inbox.Id }, (await store.GetInboxAsync()).Select(t => t.Id));
 
-        // Anytime ("언젠가") = open tasks with no When date, regardless of project.
+        // Anytime ("언젠가") = non-deleted tasks with no When date, regardless of project.
         Assert.Equal(
             new[] { inbox.Id, anytimeFiled.Id }.OrderBy(g => g),
             (await store.GetAnytimeAsync()).Select(t => t.Id).OrderBy(g => g));

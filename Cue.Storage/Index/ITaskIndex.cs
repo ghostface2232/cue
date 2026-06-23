@@ -11,8 +11,8 @@ namespace Cue.Storage.Index;
 /// Queries fall on two axes:
 /// <list type="bullet">
 /// <item><b>Classification</b> — by container: a project, a label, or the unclassified Cue home
-/// (tasks with no project). These return the actionable (open, non-deleted) tasks in that
-/// container.</item>
+/// (tasks with no project). These return non-deleted task rows in that container; completed rows are
+/// kept visible and dimmed in active lists, while badge counts below stay open-only.</item>
 /// <item><b>Time</b> — Today / Upcoming / Anytime / Logbook, all computed from the single When date.
 /// These are <i>never stored</i>: each is computed by comparing the task's When date against the
 /// current day at query time, which is exactly what lets an item scheduled for a past date roll
@@ -42,13 +42,13 @@ public interface ITaskIndex
 
     // ---- Classification axis -------------------------------------------------
 
-    /// <summary>Open tasks with no owning project — the unclassified Cue home list.</summary>
+    /// <summary>Non-deleted tasks with no owning project — the unclassified Cue home list.</summary>
     Task<IReadOnlyList<TaskListItem>> GetInboxAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Open tasks belonging to the given project.</summary>
+    /// <summary>Non-deleted tasks belonging to the given project.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
 
-    /// <summary>Open tasks carrying the given label.</summary>
+    /// <summary>Non-deleted tasks carrying the given label.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -61,15 +61,21 @@ public interface ITaskIndex
     // ---- Time axis (computed against the current day) ------------------------
 
     /// <summary>
-    /// Open tasks that are actionable today: a When date on today <i>or earlier</i>. Past dates roll
-    /// forward into Today rather than being missed.
+    /// Non-deleted tasks actionable today: a When date on today <i>or earlier</i>. Past dates roll
+    /// forward into Today rather than being missed; completed rows remain visible and dimmed.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Open tasks with a When date on a future day. Excludes anything already due (those are in Today).</summary>
+    /// <summary>
+    /// Non-deleted tasks with a When date on a future day. Excludes anything already due (those are
+    /// in Today); completed rows remain visible and dimmed.
+    /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Open tasks with no When date (Unscheduled) — the "언젠가" (Anytime) bucket.</summary>
+    /// <summary>
+    /// Non-deleted tasks with no When date (Unscheduled) — the "언젠가" (Anytime) bucket. Completed
+    /// rows remain visible and dimmed.
+    /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Completed tasks, most-recently-completed first — the Logbook.</summary>

@@ -72,6 +72,9 @@ public sealed class KoreanDateParser : IDateParser
             if (!result.WhenAssigned)
                 work = LibraryFallback(work, context, result);
 
+            if (!result.WhenAssigned && result.Recurrence is { } recurrence)
+                result.TrySetWhen(ScheduledWhen.On(recurrence.Anchor));
+
             var title = CollapseWhitespace(work);
             if (title.Length == 0)
                 title = input.Trim();
@@ -79,7 +82,10 @@ public sealed class KoreanDateParser : IDateParser
             return new ParsedQuickAdd(
                 title,
                 result.WhenAssigned ? result.When : ScheduledWhen.Unscheduled,
-                result.Recurrence);
+                result.Recurrence)
+            {
+                WhenAssigned = result.WhenAssigned,
+            };
         }
         catch
         {

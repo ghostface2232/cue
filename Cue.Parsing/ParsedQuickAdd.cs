@@ -18,6 +18,12 @@ public sealed record ParsedQuickAdd(
     ScheduledWhen When,
     RecurrenceRule? Recurrence)
 {
+    /// <summary>
+    /// True when the parser recognized an explicit placement signal for <see cref="When"/>,
+    /// including an explicit Unscheduled marker such as "언젠가" or a recurrence anchor.
+    /// </summary>
+    public bool WhenAssigned { get; init; }
+
     /// <summary>A result that carries only a title — nothing was scheduled.</summary>
     public static ParsedQuickAdd TitleOnly(string title)
         => new(title, ScheduledWhen.Unscheduled, null);

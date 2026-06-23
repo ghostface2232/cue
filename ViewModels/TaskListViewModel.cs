@@ -13,16 +13,16 @@ namespace Cue.ViewModels;
 /// <summary>Which index-backed list this view shows.</summary>
 public enum TaskListMode
 {
-    /// <summary>Home / Cue — project-less (unclassified) open tasks.</summary>
+    /// <summary>Home / Cue — project-less (unclassified) active tasks, with completed rows dimmed.</summary>
     Inbox,
 
-    /// <summary>Today — open tasks with a When date today or earlier.</summary>
+    /// <summary>Today — active tasks with a When date today or earlier, with completed rows dimmed.</summary>
     Today,
 
-    /// <summary>Open tasks with a When date on a future day.</summary>
+    /// <summary>Active tasks with a When date on a future day, with completed rows dimmed.</summary>
     Upcoming,
 
-    /// <summary>Open tasks without a When date — the "언젠가" bucket.</summary>
+    /// <summary>Active tasks without a When date — the "언젠가" bucket, with completed rows dimmed.</summary>
     Anytime,
 
     /// <summary>Completed tasks.</summary>
@@ -31,10 +31,10 @@ public enum TaskListMode
     /// <summary>Prioritized tasks (P1–P4), grouped by priority.</summary>
     Priority,
 
-    /// <summary>Open tasks belonging to one project.</summary>
+    /// <summary>Active tasks belonging to one project, with completed rows dimmed.</summary>
     Project,
 
-    /// <summary>Open tasks carrying one label.</summary>
+    /// <summary>Active tasks carrying one label, with completed rows dimmed.</summary>
     Label,
 }
 
@@ -170,13 +170,10 @@ public partial class TaskListViewModel : ObservableObject
 
         var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId);
 
-        // The parser's When is used as-is — a task has a single date. When the user typed no date,
-        // QuickAddContext pins today only on the Today list; on every other list the task stays
-        // Unscheduled and lands in "언젠가". A recurring task keeps its parsed When as the recurrence
-        // anchor, so it is never re-parked.
-        var when = parsed.Recurrence is null
-            ? QuickAddContext.Apply(parsed.When, _mode, _clock.GetUtcNow(), _timeZone)
-            : parsed.When;
+        // The parser's When is used as-is when it recognized any placement, including explicit
+        // Unscheduled markers ("언젠가") and recurrence anchors. Only a genuinely dateless line gets
+        // list placement; Today pins it to today and other lists leave it Unscheduled.
+        var when = QuickAddContext.Apply(parsed.When, parsed.WhenAssigned, _mode, _clock.GetUtcNow(), _timeZone);
 
         var task = new TaskItem
         {

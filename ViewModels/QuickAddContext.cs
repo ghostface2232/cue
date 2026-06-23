@@ -7,12 +7,14 @@ public static class QuickAddContext
 {
     public static ScheduledWhen Apply(
         ScheduledWhen parsedWhen,
+        bool whenAssigned,
         TaskListMode mode,
         DateTimeOffset utcNow,
         TimeZoneInfo zone)
     {
-        // A typed date wins outright.
-        if (parsedWhen.Kind != WhenKind.Unscheduled)
+        // A typed placement wins outright, including an explicit "언젠가" marker that resolves to
+        // Unscheduled.
+        if (whenAssigned)
             return parsedWhen;
 
         // With no typed date, only the Today list pins an actual day. Every other list (Upcoming
@@ -24,6 +26,13 @@ public static class QuickAddContext
         var localToday = TimeZoneInfo.ConvertTime(utcNow, zone).Date;
         return ScheduledWhen.On(PinDay(localToday, zone));
     }
+
+    public static ScheduledWhen Apply(
+        ScheduledWhen parsedWhen,
+        TaskListMode mode,
+        DateTimeOffset utcNow,
+        TimeZoneInfo zone)
+        => Apply(parsedWhen, parsedWhen.Kind != WhenKind.Unscheduled, mode, utcNow, zone);
 
     private static ZonedDateTime PinDay(DateTime localDay, TimeZoneInfo zone)
         => ZonedDateTime.FromLocal(localDay.Date.AddHours(12), zone.Id);

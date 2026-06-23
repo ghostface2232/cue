@@ -12,9 +12,8 @@ namespace Cue.ViewModels;
 /// </summary>
 /// <remarks>
 /// The toggle is wired to a callback the parent list owns, so flipping the checkbox sets/clears
-/// <see cref="TaskItem.CompletedAt"/> and refreshes the list. Because the active views exclude
-/// completed tasks, completing a row dims it in place for acknowledgement; the next navigation or
-/// explicit refresh naturally removes it from open-task views.
+/// <see cref="TaskItem.CompletedAt"/> and refreshes the list. Active views keep completed rows
+/// visible and dimmed, so finishing an item remains acknowledged and reversible after reload.
 /// </remarks>
 public partial class TaskRowViewModel : ObservableObject
 {

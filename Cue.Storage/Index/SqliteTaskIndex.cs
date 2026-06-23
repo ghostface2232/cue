@@ -122,7 +122,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE INDEX IF NOT EXISTS ix_labels_label  ON task_labels(label_id);
             CREATE INDEX IF NOT EXISTS ix_projects_active ON projects(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_navigation_labels_active ON labels(deleted_at);
-            PRAGMA user_version = 2;
+            PRAGMA user_version = 3;
             """;
         cmd.ExecuteNonQuery();
     }

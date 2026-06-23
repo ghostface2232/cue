@@ -221,6 +221,49 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task QuickAddWithExplicitSomeday_OnTodayListStaysUnscheduled()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
+
+        vm.QuickAddText = "언젠가 제주도 한 달 살기";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var task = Assert.Single(await store.GetAnytimeAsync(), t => t.Title == "제주도 한 달 살기");
+        Assert.Equal(WhenKind.Unscheduled, task.WhenKind);
+        Assert.Null(task.WhenDate);
+        Assert.DoesNotContain(await store.GetTodayAsync(), t => t.Id == task.Id);
+    }
+
+    [Fact]
+    public async Task QuickAddWithRecurrence_UsesAnchorAsFirstWhen()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+
+        vm.QuickAddText = "매주 금요일 주간 회고";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var task = Assert.Single(await store.GetUpcomingAsync(), t => t.Title == "주간 회고");
+        Assert.Equal(WhenKind.OnDate, task.WhenKind);
+        Assert.Equal(new DateOnly(2026, 6, 26), task.WhenDate);
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved!.Recurrence);
+        Assert.Equal(saved.Recurrence.Anchor, saved.When.Date);
+    }
+
+    [Fact]
     public async Task DetailClearWhen_SavesAsUnscheduled()
     {
         using var temp = new TempDirectory();
@@ -283,7 +326,7 @@ public sealed class ViewModelRegressionTests
     public void QuickAddContextPinsTodayOnly_ElseLeavesUnscheduled(TaskListMode mode, WhenKind kind)
     {
         var now = new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero);
-        var result = QuickAddContext.Apply(ScheduledWhen.Unscheduled, mode, now, TimeZoneInfo.Utc);
+        var result = QuickAddContext.Apply(ScheduledWhen.Unscheduled, whenAssigned: false, mode, now, TimeZoneInfo.Utc);
 
         Assert.Equal(kind, result.Kind);
         if (kind == WhenKind.OnDate)
@@ -303,6 +346,19 @@ public sealed class ViewModelRegressionTests
             TimeZoneInfo.Utc);
 
         Assert.Equal(explicitWhen, result);
+    }
+
+    [Fact]
+    public void QuickAddContextDoesNotPinExplicitUnscheduledOnToday()
+    {
+        var result = QuickAddContext.Apply(
+            ScheduledWhen.Unscheduled,
+            whenAssigned: true,
+            TaskListMode.Today,
+            new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero),
+            TimeZoneInfo.Utc);
+
+        Assert.Equal(WhenKind.Unscheduled, result.Kind);
     }
 
     [Fact]

@@ -341,7 +341,9 @@ public sealed class KoreanDateParserTests
         Assert.NotNull(r.Recurrence);
         Assert.Equal(rrule, r.Recurrence!.Rule);
         Assert.False(string.IsNullOrEmpty(r.Recurrence.Anchor.TimeZoneId));
-        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.True(r.WhenAssigned);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(ZonedDate(r.Recurrence.Anchor), WhenDate(r.When));
     }
 
     // ---- 7/8. Unscheduled & "언젠가" markers ---------------------------------
@@ -355,6 +357,7 @@ public sealed class KoreanDateParserTests
         var r = Parse(input);
         Assert.Equal(input, r.Title);
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.False(r.WhenAssigned);
         Assert.Null(r.Recurrence);
     }
 
@@ -375,6 +378,7 @@ public sealed class KoreanDateParserTests
         var r = Parse(input);
         Assert.Equal(title, r.Title);
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.True(r.WhenAssigned);
         Assert.False(r.When.HasDate);
     }
 
