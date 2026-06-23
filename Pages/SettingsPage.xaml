@@ -155,7 +155,7 @@
                 Grid.Column="1"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-                <Grid MaxWidth="560" HorizontalAlignment="Left">
+                <Grid MaxWidth="680" HorizontalAlignment="Left">
                     <StackPanel
                         x:Name="TimeSection"
                         Spacing="12"
