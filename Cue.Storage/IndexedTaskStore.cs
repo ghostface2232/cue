@@ -67,9 +67,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var tasks = await _files.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
-        var projects = await _files.GetAllAsync<Project>(cancellationToken).ConfigureAwait(false);
-        var labels = await _files.GetAllAsync<Label>(cancellationToken).ConfigureAwait(false);
-        await _index.RebuildAsync(tasks, projects, labels, cancellationToken).ConfigureAwait(false);
+        var taskGroups = await _files.GetAllAsync<TaskGroup>(cancellationToken).ConfigureAwait(false);
+        var tags = await _files.GetAllAsync<Tag>(cancellationToken).ConfigureAwait(false);
+        await _index.RebuildAsync(tasks, taskGroups, tags, cancellationToken).ConfigureAwait(false);
     }
 
     // ---- Write path: file first, then index (always both) --------------------
@@ -96,22 +96,22 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     private async Task NormalizeTaskReferencesAsync(TaskItem task, CancellationToken cancellationToken)
     {
-        if (task.ProjectId is { } projectId)
+        if (task.TaskGroupId is { } taskGroupId)
         {
-            var project = await _files.GetAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
-            if (project?.IsDeleted == true)
-                task.ProjectId = null;
+            var taskGroup = await _files.GetAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
+            if (taskGroup?.IsDeleted == true)
+                task.TaskGroupId = null;
         }
 
-        if (task.LabelIds.Count > 0)
+        if (task.TagIds.Count > 0)
         {
-            var retainedLabels = new List<Guid>(task.LabelIds.Count);
-            foreach (var labelId in task.LabelIds.Distinct())
+            var retainedTags = new List<Guid>(task.TagIds.Count);
+            foreach (var tagId in task.TagIds.Distinct())
             {
-                var label = await _files.GetAsync<Label>(labelId, cancellationToken).ConfigureAwait(false);
-                if (label?.IsDeleted != true) retainedLabels.Add(labelId);
+                var tag = await _files.GetAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
+                if (tag?.IsDeleted != true) retainedTags.Add(tagId);
             }
-            task.LabelIds = retainedLabels;
+            task.TagIds = retainedTags;
         }
     }
 
@@ -120,8 +120,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (typeof(T) == typeof(Project)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Project, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
-            else if (typeof(T) == typeof(Label)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Label, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
+            if (typeof(T) == typeof(TaskGroup)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.TaskGroup, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
+            else if (typeof(T) == typeof(Tag)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Tag, id, cascadeTasks: false, cancellationToken).ConfigureAwait(false);
             else if (typeof(T) == typeof(TaskItem)) await DeleteTaskSubtreeAsync(id, cancellationToken).ConfigureAwait(false);
             else await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
         }
@@ -129,15 +129,15 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     }
 
     /// <summary>
-    /// Deletes a group with an explicit task disposition. <see cref="ProjectDeletionMode.Reparent"/>
+    /// Deletes a group with an explicit task disposition. <see cref="TaskGroupDeletionMode.Reparent"/>
     /// matches the generic <see cref="DeleteAsync{T}"/> default (move tasks to the Cue home);
-    /// <see cref="ProjectDeletionMode.DeleteTasks"/> soft-deletes the group's tasks alongside it. Both
+    /// <see cref="TaskGroupDeletionMode.DeleteTasks"/> soft-deletes the group's tasks alongside it. Both
     /// run through the durable deletion journal.
     /// </summary>
-    public async Task DeleteProjectAsync(Guid projectId, ProjectDeletionMode mode, CancellationToken cancellationToken = default)
+    public async Task DeleteTaskGroupAsync(Guid taskGroupId, TaskGroupDeletionMode mode, CancellationToken cancellationToken = default)
     {
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try { await RunContainerDeletionCoreAsync(ContainerDeletionKind.Project, projectId, mode == ProjectDeletionMode.DeleteTasks, cancellationToken).ConfigureAwait(false); }
+        try { await RunContainerDeletionCoreAsync(ContainerDeletionKind.TaskGroup, taskGroupId, mode == TaskGroupDeletionMode.DeleteTasks, cancellationToken).ConfigureAwait(false); }
         finally { _mutationGate.Release(); }
     }
 
@@ -176,9 +176,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     private Task ApplyContainerDeletionAsync(ContainerDeletionOperation operation, CancellationToken cancellationToken)
         => operation.Kind switch
         {
-            ContainerDeletionKind.Project when operation.CascadeTasks => DeleteProjectCascadingTasksAsync(operation.TargetId, cancellationToken),
-            ContainerDeletionKind.Project => ReparentProjectTasksAndDeleteAsync(operation.TargetId, cancellationToken),
-            ContainerDeletionKind.Label => DeleteLabelAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.TaskGroup when operation.CascadeTasks => DeleteTaskGroupCascadingTasksAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.TaskGroup => ReparentTaskGroupTasksAndDeleteAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.Tag => DeleteTagAsync(operation.TargetId, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(operation.Kind)),
         };
 
@@ -187,8 +187,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         switch (record)
         {
             case TaskItem task: await _index.ReflectAsync(task, cancellationToken).ConfigureAwait(false); break;
-            case Project project: await _index.ReflectAsync(project, cancellationToken).ConfigureAwait(false); break;
-            case Label label: await _index.ReflectAsync(label, cancellationToken).ConfigureAwait(false); break;
+            case TaskGroup taskGroup: await _index.ReflectAsync(taskGroup, cancellationToken).ConfigureAwait(false); break;
+            case Tag tag: await _index.ReflectAsync(tag, cancellationToken).ConfigureAwait(false); break;
             default: throw new NotSupportedException($"Index reflection is not defined for {record.GetType().Name}.");
         }
     }
@@ -201,45 +201,45 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             await ReflectAsync(tombstone, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task ReparentProjectTasksAndDeleteAsync(Guid projectId, CancellationToken cancellationToken)
+    private async Task ReparentTaskGroupTasksAndDeleteAsync(Guid taskGroupId, CancellationToken cancellationToken)
     {
         // Least-destructive default ("그룹만 제거"): preserve user work by ungrouping every live task
-        // (clear ProjectId) rather than cascading task tombstones. The task stays visible in the home
-        // "모든 할 일" (All) list. With sections gone the reparent is a single step.
-        foreach (var taskId in await _index.GetTaskIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
+        // (clear TaskGroupId) rather than cascading task tombstones. The task stays visible in the home
+        // "모든 할 일" (AllTasks) list. With sections gone the reparent is a single step.
+        foreach (var taskId in await _index.GetTaskIdsByTaskGroupAsync(taskGroupId, cancellationToken).ConfigureAwait(false))
         {
             var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
-            if (task is null || task.ProjectId != projectId) continue;
-            task.ProjectId = null;
+            if (task is null || task.TaskGroupId != taskGroupId) continue;
+            task.TaskGroupId = null;
             await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
 
-        await SoftDeleteAndReflectAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
+        await SoftDeleteAndReflectAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task DeleteProjectCascadingTasksAsync(Guid projectId, CancellationToken cancellationToken)
+    private async Task DeleteTaskGroupCascadingTasksAsync(Guid taskGroupId, CancellationToken cancellationToken)
     {
         // Opt-in destructive deletion: tombstone every task filed under the group (open and completed,
-        // including their subtask subtrees, which share the project) before the group itself. Idempotent
+        // including their subtask subtrees, which share the group) before the group itself. Idempotent
         // — already-tombstoned tasks are excluded by the index query, so a resumed crash re-runs cleanly.
-        foreach (var taskId in await _index.GetTaskIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
+        foreach (var taskId in await _index.GetTaskIdsByTaskGroupAsync(taskGroupId, cancellationToken).ConfigureAwait(false))
             await SoftDeleteAndReflectAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
 
-        await SoftDeleteAndReflectAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
+        await SoftDeleteAndReflectAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task DeleteLabelAsync(Guid labelId, CancellationToken cancellationToken)
+    private async Task DeleteTagAsync(Guid tagId, CancellationToken cancellationToken)
     {
-        // Labels are cross-cutting metadata. Delete only the label record and remove its references;
-        // never delete or relocate a task merely because one of its labels was removed.
-        foreach (var taskId in await _index.GetTaskIdsByLabelAsync(labelId, cancellationToken).ConfigureAwait(false))
+        // Tags are cross-cutting metadata. Delete only the tag record and remove its references;
+        // never delete or relocate a task merely because one of its tags was removed.
+        foreach (var taskId in await _index.GetTaskIdsByTagAsync(tagId, cancellationToken).ConfigureAwait(false))
         {
             var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
-            if (task is null || task.LabelIds.RemoveAll(id => id == labelId) == 0) continue;
+            if (task is null || task.TagIds.RemoveAll(id => id == tagId) == 0) continue;
             await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
 
-        await SoftDeleteAndReflectAsync<Label>(labelId, cancellationToken).ConfigureAwait(false);
+        await SoftDeleteAndReflectAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
     }
 
     // ---- By-id / full reads come from the files (source of truth) ------------
@@ -252,38 +252,38 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     // ---- List reads come from the index --------------------------------------
 
-    public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default)
-        => _index.GetProjectsAsync(cancellationToken);
+    public Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default)
+        => _index.GetTaskGroupsAsync(cancellationToken);
 
-    public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default)
-        => _index.GetLabelsAsync(cancellationToken);
+    public Task<IReadOnlyList<TagListItem>> GetTagsAsync(CancellationToken cancellationToken = default)
+        => _index.GetTagsAsync(cancellationToken);
 
-    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByProjectAsync(CancellationToken cancellationToken = default)
-        => _index.GetOpenTaskCountsByProjectAsync(cancellationToken);
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTaskGroupAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountsByTaskGroupAsync(cancellationToken);
 
-    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default)
-        => _index.GetOpenTaskCountsByLabelAsync(cancellationToken);
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTagAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountsByTagAsync(cancellationToken);
 
-    public Task<int> GetOpenTaskCountWithoutProjectAsync(CancellationToken cancellationToken = default)
-        => _index.GetOpenTaskCountWithoutProjectAsync(cancellationToken);
+    public Task<int> GetOpenTaskCountWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountWithoutTaskGroupAsync(cancellationToken);
 
-    public Task<int> GetOpenTaskCountWithoutLabelAsync(CancellationToken cancellationToken = default)
-        => _index.GetOpenTaskCountWithoutLabelAsync(cancellationToken);
+    public Task<int> GetOpenTaskCountWithoutTagAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountWithoutTagAsync(cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         => _index.GetAllActiveAsync(cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
-        => _index.GetByProjectAsync(projectId, cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+        => _index.GetByTaskGroupAsync(taskGroupId, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
-        => _index.GetByLabelAsync(labelId, cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
+        => _index.GetByTagAsync(tagId, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetWithoutProjectAsync(CancellationToken cancellationToken = default)
-        => _index.GetWithoutProjectAsync(cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
+        => _index.GetWithoutTaskGroupAsync(cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetWithoutLabelAsync(CancellationToken cancellationToken = default)
-        => _index.GetWithoutLabelAsync(cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default)
+        => _index.GetWithoutTagAsync(cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
         => _index.GetSubtasksAsync(parentTaskId, cancellationToken);

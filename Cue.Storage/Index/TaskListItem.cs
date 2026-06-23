@@ -22,7 +22,7 @@ namespace Cue.Storage.Index;
 public sealed record TaskListItem(
     Guid Id,
     string Title,
-    Guid? ProjectId,
+    Guid? TaskGroupId,
     Guid? ParentTaskId,
     WhenKind WhenKind,
     DateOnly? WhenDate,

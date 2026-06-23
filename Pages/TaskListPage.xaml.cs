@@ -60,7 +60,7 @@ public sealed partial class TaskListPage : Page
             {
                 var mode = Enum.TryParse<TaskListMode>(e.Parameter as string, ignoreCase: true, out var parsed)
                     ? parsed
-                    : TaskListMode.All;
+                    : TaskListMode.AllTasks;
                 navigation = new TaskListNavigation(mode);
             }
             ViewModel.SetNavigation(navigation);
@@ -119,44 +119,44 @@ public sealed partial class TaskListPage : Page
     private async Task<MenuFlyout> BuildTaskContextMenuAsync(Guid id)
     {
         var task = await ViewModel.GetTaskAsync(id);
-        var projects = await ViewModel.GetProjectsAsync();
-        var labels = await ViewModel.GetLabelsAsync();
+        var taskGroups = await ViewModel.GetTaskGroupsAsync();
+        var tags = await ViewModel.GetTagsAsync();
         var menu = new MenuFlyout();
 
         // 그룹으로 이동 — every group, plus a "no group" entry that returns the task to the Cue home.
         var moveGroup = new MenuFlyoutSubItem { Text = "그룹으로 이동" };
         var clearGroup = new MenuFlyoutItem { Text = "그룹에서 빼기" };
-        if (task?.ProjectId is null) clearGroup.Icon = CheckIcon();
-        clearGroup.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToProjectAsync(id, null));
+        if (task?.TaskGroupId is null) clearGroup.Icon = CheckIcon();
+        clearGroup.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToTaskGroupAsync(id, null));
         moveGroup.Items.Add(clearGroup);
-        if (projects.Count > 0) moveGroup.Items.Add(new MenuFlyoutSeparator());
-        foreach (var project in projects)
+        if (taskGroups.Count > 0) moveGroup.Items.Add(new MenuFlyoutSeparator());
+        foreach (var taskGroup in taskGroups)
         {
-            var projectId = project.Id;
-            var item = new MenuFlyoutItem { Text = project.Name };
-            if (task?.ProjectId == projectId) item.Icon = CheckIcon();
-            item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToProjectAsync(id, projectId));
+            var taskGroupId = taskGroup.Id;
+            var item = new MenuFlyoutItem { Text = taskGroup.Name };
+            if (task?.TaskGroupId == taskGroupId) item.Icon = CheckIcon();
+            item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToTaskGroupAsync(id, taskGroupId));
             moveGroup.Items.Add(item);
         }
         menu.Items.Add(moveGroup);
 
         // 태그 — a checkable list; each click toggles one tag on the task.
         var tagGroup = new MenuFlyoutSubItem { Text = "태그" };
-        if (labels.Count == 0)
+        if (tags.Count == 0)
         {
             tagGroup.Items.Add(new MenuFlyoutItem { Text = "태그 없음", IsEnabled = false });
         }
         else
         {
-            foreach (var label in labels)
+            foreach (var tag in tags)
             {
-                var labelId = label.Id;
+                var tagId = tag.Id;
                 var item = new ToggleMenuFlyoutItem
                 {
-                    Text = label.Name,
-                    IsChecked = task?.LabelIds.Contains(labelId) == true,
+                    Text = tag.Name,
+                    IsChecked = task?.TagIds.Contains(tagId) == true,
                 };
-                item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ToggleTaskLabelAsync(id, labelId));
+                item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ToggleTaskTagAsync(id, tagId));
                 tagGroup.Items.Add(item);
             }
         }
@@ -365,7 +365,7 @@ public sealed partial class TaskListPage : Page
     {
         var width = DetailPanel.ActualWidth > 0 ? DetailPanel.ActualWidth : DetailPanel.Width;
         var compact = width < DetailCompactBreakpoint;
-        SetResponsivePair(DetailMetaGrid, DetailProjectField, compact, new GridLength(1, GridUnitType.Star));
+        SetResponsivePair(DetailMetaGrid, DetailGroupField, compact, new GridLength(1, GridUnitType.Star));
         SetResponsivePair(WhenDateTimeGrid, WhenTimePanel, compact, GridLength.Auto);
     }
 
@@ -432,7 +432,7 @@ public sealed partial class TaskListPage : Page
     /// <summary>
     /// Attaches the drag-to-reorder surface to a task <see cref="ItemsRepeater"/> the first time it
     /// loads. The surface is layout-agnostic, so the same wiring serves the standard list and each
-    /// project section's repeater.
+    /// group section's repeater.
     /// </summary>
     private void ReorderRepeater_Loaded(object sender, RoutedEventArgs e)
     {
@@ -600,7 +600,7 @@ public sealed partial class TaskListPage : Page
     {
         if (VisualTreeHelper.GetParent(text) is not DependencyObject parent)
             return;
-        var fade = FindDescendant<Microsoft.UI.Xaml.Shapes.Rectangle>(parent, "LabelNameFade");
+        var fade = FindDescendant<Microsoft.UI.Xaml.Shapes.Rectangle>(parent, "TagNameFade");
         if (fade is null)
             return;
 
@@ -649,19 +649,19 @@ public sealed partial class TaskListPage : Page
     private async void AddSubtask_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null));
 
-    private void LabelRow_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    private void TagRow_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: LabelEditorOption option })
-            ViewModel.Detail.ToggleLabel(option.Id);
+        if (sender is FrameworkElement { DataContext: TagEditorOption option })
+            ViewModel.Detail.ToggleTag(option.Id);
     }
 
-    private async void AddLabel_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    private async void AddTag_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         await RunSafelyAsync(async () =>
         {
             var name = await PromptNameAsync("새 태그", "태그 이름");
             if (name is not null)
-                await ViewModel.Detail.AddLabelCommand.ExecuteAsync(name);
+                await ViewModel.Detail.AddTagCommand.ExecuteAsync(name);
         });
     }
 

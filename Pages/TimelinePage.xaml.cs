@@ -273,7 +273,7 @@ public sealed partial class TimelinePage : Page
     {
         if (VisualTreeHelper.GetParent(text) is not DependencyObject parent)
             return;
-        var fadeName = text.Name == "TimelineTitleText" ? "TimelineTitleFade" : "LabelNameFade";
+        var fadeName = text.Name == "TimelineTitleText" ? "TimelineTitleFade" : "TagNameFade";
         if (FindDescendant<Rectangle>(parent, fadeName) is not { } fade)
             return;
 
@@ -426,7 +426,7 @@ public sealed partial class TimelinePage : Page
     {
         var width = DetailPanel.ActualWidth > 0 ? DetailPanel.ActualWidth : DetailPanel.Width;
         var compact = width < DetailCompactBreakpoint;
-        SetResponsivePair(DetailMetaGrid, DetailProjectField, compact, new GridLength(1, GridUnitType.Star));
+        SetResponsivePair(DetailMetaGrid, DetailGroupField, compact, new GridLength(1, GridUnitType.Star));
         SetResponsivePair(WhenDateTimeGrid, WhenTimePanel, compact, GridLength.Auto);
     }
 
@@ -531,19 +531,19 @@ public sealed partial class TimelinePage : Page
     private async void AddSubtask_Click(object sender, RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null));
 
-    private void LabelRow_Click(object sender, RoutedEventArgs e)
+    private void TagRow_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: LabelEditorOption option })
-            ViewModel.Detail.ToggleLabel(option.Id);
+        if (sender is FrameworkElement { DataContext: TagEditorOption option })
+            ViewModel.Detail.ToggleTag(option.Id);
     }
 
-    private async void AddLabel_Click(object sender, RoutedEventArgs e)
+    private async void AddTag_Click(object sender, RoutedEventArgs e)
     {
         await RunSafelyAsync(async () =>
         {
             var name = await PromptNameAsync("새 태그", "태그 이름");
             if (name is not null)
-                await ViewModel.Detail.AddLabelCommand.ExecuteAsync(name);
+                await ViewModel.Detail.AddTagCommand.ExecuteAsync(name);
         });
     }
 

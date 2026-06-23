@@ -1,10 +1,10 @@
 namespace Cue.ViewModels;
 
 /// <summary>
-/// The fixed label color palette. Labels store a hex string (<c>Label.Color</c>); new labels get the
+/// The fixed tag color palette. Tags store a hex string (<c>Tag.Color</c>); new tags get the
 /// next palette color so they are never colorless, and the user can re-pick from this set.
 /// </summary>
-public static class LabelColors
+public static class TagColors
 {
     /// <summary>The palette as (hex, Korean name) pairs — used to build color pickers.</summary>
     public static readonly IReadOnlyList<(string Hex, string Name)> Swatches = new[]
@@ -21,7 +21,7 @@ public static class LabelColors
 
     public static readonly IReadOnlyList<string> Palette = Swatches.Select(s => s.Hex).ToArray();
 
-    /// <summary>A default color for a newly created label, cycling through the palette by count.</summary>
-    public static string ForNewLabel(int existingCount)
+    /// <summary>A default color for a newly created tag, cycling through the palette by count.</summary>
+    public static string ForNewTag(int existingCount)
         => Palette[((existingCount % Palette.Count) + Palette.Count) % Palette.Count];
 }

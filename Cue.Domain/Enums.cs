@@ -13,8 +13,8 @@ public enum Priority
     P4 = 4,
 }
 
-/// <summary>How a project's tasks are presented.</summary>
-public enum ProjectView
+/// <summary>How a task group's tasks are presented.</summary>
+public enum TaskGroupView
 {
     List,
     Board,

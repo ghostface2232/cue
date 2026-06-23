@@ -17,11 +17,11 @@ public class DomainModelTests
         Assert.Equal(WhenKind.Unscheduled, task.When.Kind);
         Assert.False(task.When.HasDate);
         Assert.Equal(Priority.None, task.Priority);
-        Assert.Null(task.ProjectId);
+        Assert.Null(task.TaskGroupId);
         Assert.Null(task.ParentTaskId);
         Assert.Null(task.Recurrence);
-        Assert.NotNull(task.LabelIds);
-        Assert.Empty(task.LabelIds);
+        Assert.NotNull(task.TagIds);
+        Assert.Empty(task.TagIds);
         Assert.Equal(string.Empty, task.SortOrder);
         Assert.Equal(RecordBase.CurrentSchemaVersion, task.SchemaVersion);
     }
@@ -42,7 +42,7 @@ public class DomainModelTests
     [Fact]
     public void EveryRecordType_CarriesTheCommonAuditFields()
     {
-        RecordBase[] records = { new TaskItem(), new Project(), new Label() };
+        RecordBase[] records = { new TaskItem(), new TaskGroup(), new Tag() };
 
         foreach (var record in records)
         {
@@ -83,8 +83,8 @@ public class DomainModelTests
         Assert.Equal(2, distinct.Count);
 
         // A different record type with the same Guid is not equal.
-        var project = new Project { Id = id };
-        Assert.False(a.Equals(project));
+        var taskGroup = new TaskGroup { Id = id };
+        Assert.False(a.Equals(taskGroup));
     }
 
     [Fact]
@@ -123,10 +123,10 @@ public class DomainModelTests
     }
 
     [Fact]
-    public void Project_Defaults_AreListView()
+    public void TaskGroup_Defaults_AreListView()
     {
-        var project = new Project();
+        var taskGroup = new TaskGroup();
 
-        Assert.Equal(ProjectView.List, project.View);
+        Assert.Equal(TaskGroupView.List, taskGroup.View);
     }
 }

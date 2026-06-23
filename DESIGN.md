@@ -294,7 +294,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 ### List page — `TaskListPage.xaml`
 - Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `28,20` (`page-x` × `page-y`).
 - Two-column body: left list (flexible) + right detail panel (resizable, default 460px). When the detail closes, the list reclaims the width.
-- The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **grouped list** (`ListView`, group header + rows). The grouped form is used only by the Priority (P1–P4) view (`IsGroupedList`); every other list, Project included, is flat.
+- The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **grouped list** (`ListView`, group header + rows). The grouped form is used only by the Priority (P1–P4) view (`IsGroupedList`); every other list, the TaskGroup list included, is flat.
 
 ### Timeline page — `TimelinePage.xaml`
 - A horizontally-scrolling month view. One framed canvas (`{rounded.lg}`, 1px card stroke) holds a row of day-column headers above the task cards.
@@ -387,17 +387,17 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### Sidebar / navigation
 - Stock `NavigationView` + thin override. Selected text is flattened to `TextFillColorPrimary` (calm, not accent); selection reads from the fill + the stock left accent pill.
-- Fixed items: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · **타임라인 (Timeline)** · 언젠가 할 일 (Anytime) · 완료한 일 (Logbook) · 중요도 (Priority). Below them: **그룹 (Groups / Projects)** and **태그 (Tags / Labels)** sections.
+- Fixed items: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · **타임라인 (Timeline)** · 언젠가 할 일 (Anytime) · 완료한 일 (Logbook) · 중요도 (Priority). Below them: **그룹 (TaskGroup)** and **태그 (Tag)** sections.
 - Group/Tag headers are 12 SemiBold `TextFillColorTertiary` (quiet hierarchy).
 - An `InfoBadge` with the open-task count sits at the end of each item (restrained).
-- **Glyph click = instant picker.** Clicking a project glyph opens the icon picker; clicking a tag glyph opens the color picker — directly, no depth (right-click context menu is the fallback).
+- **Glyph click = instant picker.** Clicking a group glyph opens the icon picker; clicking a tag glyph opens the color picker — directly, no depth (right-click context menu is the fallback).
 - **Sidebar right-click = show/hide menu.** A checkable list toggles the fixed views (오늘 / 앞으로 / 타임라인 / 언젠가 / 완료 / 중요도) on and off (name left, accent check right). Saved to app-local settings. "모든 할 일" is always shown.
 
 ### Selection popup (icon / color)
 - Icon/color only, no names; a 4-column grid flyout anchored to the nav item.
 - **The current selection is ringed** (accent ring for icons, high-contrast ring for colors).
 - Color swatches only **brighten slightly** on hover (white-blend) rather than being covered by a theme fill; the ring persists through hover/press.
-- Project icons are chosen not to clash with the fixed sidebar glyphs; the star uses an outline glyph (tonally matched to the other outline icons).
+- Group icons are chosen not to clash with the fixed sidebar glyphs; the star uses an outline glyph (tonally matched to the other outline icons).
 
 ### Timeline
 - **Day-column header** (`timeline-day-header`, 58px tall): day number over weekday label, secondary text; the cell carries a right + bottom 1px divider. Today's number sits in a 28px accent circle (`today-marker`, radius 14) with on-accent text.
@@ -439,7 +439,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## UX Writing
 
 - **Korean-first.** Write natural Korean where intent lands immediately.
-- **Domain term mapping:** Project → **그룹 (Group)**, Label → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), Subtask → **체크리스트 (Checklist)**, the task's single date → **날짜 (Date)**, Parent task → **할 일 (Task)**. (There is no separate deadline; a task has one date.)
+- **Domain term mapping:** TaskGroup → **그룹 (Group)**, Tag → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), Subtask → **체크리스트 (Checklist)**, the task's single date → **날짜 (Date)**, Parent task → **할 일 (Task)**. (There is no separate deadline; a task has one date.)
 - **Time views:** 오늘 할 일 (Today) / 앞으로 할 일 (Upcoming) / 언젠가 할 일 (Anytime) / 완료한 일 (Logbook).
 - Drop redundant labels (e.g. omit self-evident card titles).
 

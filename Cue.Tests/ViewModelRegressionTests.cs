@@ -325,7 +325,7 @@ public sealed class ViewModelRegressionTests
     [InlineData(TaskListMode.Today, WhenKind.OnDate)]          // only Today pins an actual day
     [InlineData(TaskListMode.Upcoming, WhenKind.Unscheduled)]  // names no specific date → Unscheduled
     [InlineData(TaskListMode.Anytime, WhenKind.Unscheduled)]
-    [InlineData(TaskListMode.All, WhenKind.Unscheduled)]
+    [InlineData(TaskListMode.AllTasks, WhenKind.Unscheduled)]
     public void QuickAddContextPinsTodayOnly_ElseLeavesUnscheduled(TaskListMode mode, WhenKind kind)
     {
         var now = new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero);
@@ -365,13 +365,13 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task StartupResumesPartiallyAppliedProjectDeletionJournal()
+    public async Task StartupResumesPartiallyAppliedTaskGroupDeletionJournal()
     {
         using var temp = new TempDirectory();
         var options = new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") };
-        var project = new Project { Name = "project" };
-        var first = new TaskItem { Title = "first", ProjectId = project.Id };
-        var second = new TaskItem { Title = "second", ProjectId = project.Id };
+        var project = new TaskGroup { Name = "project" };
+        var first = new TaskItem { Title = "first", TaskGroupId = project.Id };
+        var second = new TaskItem { Title = "second", TaskGroupId = project.Id };
 
         await using (var store = await IndexedTaskStore.OpenAsync(options, timeZone: TimeZoneInfo.Utc))
         {
@@ -380,7 +380,7 @@ public sealed class ViewModelRegressionTests
             await store.SaveAsync(second);
 
             // Simulate a crash after the durable intent and the first child rewrite.
-            first.ProjectId = null;
+            first.TaskGroupId = null;
             await store.SaveAsync(first);
         }
 
@@ -393,10 +393,10 @@ public sealed class ViewModelRegressionTests
 
         await using var recovered = await IndexedTaskStore.OpenAsync(options, timeZone: TimeZoneInfo.Utc);
 
-        Assert.Null((await recovered.GetAsync<TaskItem>(first.Id))!.ProjectId);
-        Assert.Null((await recovered.GetAsync<TaskItem>(second.Id))!.ProjectId);
-        Assert.True((await recovered.GetAsync<Project>(project.Id))!.IsDeleted);
-        Assert.Empty(await recovered.GetByProjectAsync(project.Id));
+        Assert.Null((await recovered.GetAsync<TaskItem>(first.Id))!.TaskGroupId);
+        Assert.Null((await recovered.GetAsync<TaskItem>(second.Id))!.TaskGroupId);
+        Assert.True((await recovered.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+        Assert.Empty(await recovered.GetByTaskGroupAsync(project.Id));
         var journal = await File.ReadAllTextAsync(Path.Combine(operationDirectory, operationId + ".json"));
         Assert.Contains("\"isCompleted\": true", journal);
     }
@@ -407,22 +407,22 @@ public sealed class ViewModelRegressionTests
         using var temp = new TempDirectory();
         var options = new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") };
         await using var store = await IndexedTaskStore.OpenAsync(options, timeZone: TimeZoneInfo.Utc);
-        var project = new Project { Name = "project" };
-        var task = new TaskItem { Title = "task", ProjectId = project.Id };
+        var project = new TaskGroup { Name = "project" };
+        var task = new TaskItem { Title = "task", TaskGroupId = project.Id };
         await store.SaveAsync(project);
         await store.SaveAsync(task);
 
-        var staleProject = await store.GetAsync<Project>(project.Id);
+        var staleGroup = await store.GetAsync<TaskGroup>(project.Id);
         var staleTask = await store.GetAsync<TaskItem>(task.Id);
-        await store.DeleteAsync<Project>(project.Id);
+        await store.DeleteAsync<TaskGroup>(project.Id);
 
         staleTask!.Title = "queued stale edit";
         await store.SaveAsync(staleTask);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => store.SaveAsync(staleProject!));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.SaveAsync(staleGroup!));
 
         var savedTask = await store.GetAsync<TaskItem>(task.Id);
-        Assert.Null(savedTask!.ProjectId);
-        Assert.True((await store.GetAsync<Project>(project.Id))!.IsDeleted);
+        Assert.Null(savedTask!.TaskGroupId);
+        Assert.True((await store.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
     }
 
     [Fact]
@@ -491,7 +491,7 @@ public sealed class ViewModelRegressionTests
         {
             Title = "untouched",
             Priority = Priority.P2,
-            ProjectId = null,
+            TaskGroupId = null,
             When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 9, 0, 0), "Korea Standard Time")),
         };
         await store.SaveAsync(task);
@@ -654,7 +654,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task ProjectView_MovingTaskOut_RemovesOnlyThatRow_PreservingOthers()
+    public async Task TaskGroupList_MovingTaskOut_RemovesOnlyThatRow_PreservingOthers()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -662,19 +662,19 @@ public sealed class ViewModelRegressionTests
             new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
             clock,
             TimeZoneInfo.Utc);
-        var project = new Project { Name = "P" };
+        var project = new TaskGroup { Name = "P" };
         await store.SaveAsync(project);
-        var stay = new TaskItem { Title = "stay", ProjectId = project.Id, SortOrder = "a" };
-        var leave = new TaskItem { Title = "leave", ProjectId = project.Id, SortOrder = "b" };
+        var stay = new TaskItem { Title = "stay", TaskGroupId = project.Id, SortOrder = "a" };
+        var leave = new TaskItem { Title = "leave", TaskGroupId = project.Id, SortOrder = "b" };
         await store.SaveAsync(stay);
         await store.SaveAsync(leave);
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
-        vm.SetNavigation(new TaskListNavigation(TaskListMode.Project, project.Id));
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.TaskGroup, project.Id));
         await vm.LoadAsync();
         var stayRow = vm.Tasks.Single(row => row.Id == stay.Id);
 
-        await vm.MoveTaskToProjectAsync(leave.Id, null); // moves out of the project, reconciling the list
+        await vm.MoveTaskToTaskGroupAsync(leave.Id, null); // moves out of the project, reconciling the list
 
         var remaining = Assert.Single(vm.Tasks);
         Assert.Same(stayRow, remaining);  // the surviving row keeps its instance

@@ -31,7 +31,7 @@ public static class StoreSerialization
             },
         };
 
-        // Enums as strings (Priority -> "P1", ProjectView -> "List").
+        // Enums as strings (Priority -> "P1", TaskGroupView -> "List").
         options.Converters.Add(new JsonStringEnumConverter());
         // Value types that construct through factories/validating ctors need explicit converters.
         options.Converters.Add(new ZonedDateTimeJsonConverter());

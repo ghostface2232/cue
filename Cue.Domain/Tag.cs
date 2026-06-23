@@ -1,10 +1,10 @@
 namespace Cue.Domain;
 
 /// <summary>
-/// A cross-cutting tag. Unlike the Project → Task containment hierarchy, a label can be
-/// applied to tasks anywhere via <see cref="TaskItem.LabelIds"/>.
+/// A cross-cutting tag. Unlike the TaskGroup → Task containment hierarchy, a tag can be
+/// applied to tasks anywhere via <see cref="TaskItem.TagIds"/>.
 /// </summary>
-public sealed class Label : RecordBase, ISortable
+public sealed class Tag : RecordBase, ISortable
 {
     /// <summary>Display name.</summary>
     public string Name { get; set; } = string.Empty;
@@ -13,7 +13,7 @@ public sealed class Label : RecordBase, ISortable
     public string? Color { get; set; }
 
     /// <summary>
-    /// Manual ordering rank in the label list — a LexoRank-style fractional string (see
+    /// Manual ordering rank in the tag list — a LexoRank-style fractional string (see
     /// <see cref="TaskItem.SortOrder"/>). Assigned by the store; the domain only holds it.
     /// </summary>
     public string SortOrder { get; set; } = string.Empty;

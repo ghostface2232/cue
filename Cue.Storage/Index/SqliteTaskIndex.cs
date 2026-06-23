@@ -24,7 +24,7 @@ namespace Cue.Storage.Index;
 public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 {
     private const string Columns =
-        "id, title, project_id, parent_task_id, when_kind, when_date, " +
+        "id, title, group_id, parent_task_id, when_kind, when_date, " +
         "completed_at, priority, sort_order";
 
     private readonly SqliteConnection _connection;
@@ -63,7 +63,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 3;
+    private const long SchemaVersion = 4;
 
     private void EnsureSchema()
     {
@@ -75,9 +75,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             {
                 using var drop = _connection.CreateCommand();
                 drop.CommandText =
-                    "DROP TABLE IF EXISTS task_labels; DROP TABLE IF EXISTS tasks; " +
-                    "DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS sections; DROP TABLE IF EXISTS labels;";
-                // (sections is dropped only to clear any stale table from before the model change.)
+                    "DROP TABLE IF EXISTS task_tags; DROP TABLE IF EXISTS tasks; " +
+                    "DROP TABLE IF EXISTS task_groups; DROP TABLE IF EXISTS sections; DROP TABLE IF EXISTS tags; " +
+                    "DROP TABLE IF EXISTS task_labels; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS labels;";
+                // (sections and the old projects/labels/task_labels tables are dropped only to clear any
+                // stale table from before the model rename.)
                 drop.ExecuteNonQuery();
             }
         }
@@ -88,7 +90,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE TABLE IF NOT EXISTS tasks (
                 id              TEXT PRIMARY KEY,
                 title           TEXT NOT NULL,
-                project_id      TEXT NULL,
+                group_id        TEXT NULL,
                 parent_task_id  TEXT NULL,
                 when_kind       TEXT NOT NULL,
                 when_date       TEXT NULL,
@@ -97,32 +99,32 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 priority        INTEGER NOT NULL DEFAULT 0,
                 sort_order      TEXT NOT NULL DEFAULT ''
             );
-            CREATE TABLE IF NOT EXISTS task_labels (
-                task_id  TEXT NOT NULL,
-                label_id TEXT NOT NULL,
-                PRIMARY KEY (task_id, label_id)
+            CREATE TABLE IF NOT EXISTS task_tags (
+                task_id TEXT NOT NULL,
+                tag_id  TEXT NOT NULL,
+                PRIMARY KEY (task_id, tag_id)
             );
-            CREATE TABLE IF NOT EXISTS projects (
+            CREATE TABLE IF NOT EXISTS task_groups (
                 id            TEXT PRIMARY KEY,
                 name          TEXT NOT NULL,
                 icon          TEXT NULL,
                 deleted_at    TEXT NULL,
                 sort_order    TEXT NOT NULL DEFAULT ''
             );
-            CREATE TABLE IF NOT EXISTS labels (
+            CREATE TABLE IF NOT EXISTS tags (
                 id         TEXT PRIMARY KEY,
                 name       TEXT NOT NULL,
                 color      TEXT NULL,
                 deleted_at TEXT NULL,
                 sort_order TEXT NOT NULL DEFAULT ''
             );
-            CREATE INDEX IF NOT EXISTS ix_tasks_project ON tasks(project_id);
-            CREATE INDEX IF NOT EXISTS ix_tasks_when    ON tasks(when_kind, when_date);
-            CREATE INDEX IF NOT EXISTS ix_tasks_active  ON tasks(deleted_at, completed_at);
-            CREATE INDEX IF NOT EXISTS ix_labels_label  ON task_labels(label_id);
-            CREATE INDEX IF NOT EXISTS ix_projects_active ON projects(deleted_at);
-            CREATE INDEX IF NOT EXISTS ix_navigation_labels_active ON labels(deleted_at);
-            PRAGMA user_version = 3;
+            CREATE INDEX IF NOT EXISTS ix_tasks_group  ON tasks(group_id);
+            CREATE INDEX IF NOT EXISTS ix_tasks_when   ON tasks(when_kind, when_date);
+            CREATE INDEX IF NOT EXISTS ix_tasks_active ON tasks(deleted_at, completed_at);
+            CREATE INDEX IF NOT EXISTS ix_task_tags_tag ON task_tags(tag_id);
+            CREATE INDEX IF NOT EXISTS ix_task_groups_active ON task_groups(deleted_at);
+            CREATE INDEX IF NOT EXISTS ix_tags_active ON tags(deleted_at);
+            PRAGMA user_version = 4;
             """;
         cmd.ExecuteNonQuery();
     }
@@ -134,13 +136,13 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     /// </summary>
     public async Task RebuildAsync(
         IEnumerable<TaskItem> tasks,
-        IEnumerable<Project> projects,
-        IEnumerable<Label> labels,
+        IEnumerable<TaskGroup> taskGroups,
+        IEnumerable<Tag> tags,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(tasks);
-        ArgumentNullException.ThrowIfNull(projects);
-        ArgumentNullException.ThrowIfNull(labels);
+        ArgumentNullException.ThrowIfNull(taskGroups);
+        ArgumentNullException.ThrowIfNull(tags);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -151,7 +153,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             {
                 clear.Transaction = tx;
                 clear.CommandText =
-                    "DELETE FROM task_labels; DELETE FROM tasks; DELETE FROM projects; DELETE FROM labels;";
+                    "DELETE FROM task_tags; DELETE FROM tasks; DELETE FROM task_groups; DELETE FROM tags;";
                 await clear.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -161,10 +163,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 await UpsertCoreAsync(task, tx, cancellationToken).ConfigureAwait(false);
             }
 
-            foreach (var project in projects)
-                await UpsertProjectCoreAsync(project, tx, cancellationToken).ConfigureAwait(false);
-            foreach (var label in labels)
-                await UpsertLabelCoreAsync(label, tx, cancellationToken).ConfigureAwait(false);
+            foreach (var taskGroup in taskGroups)
+                await UpsertTaskGroupCoreAsync(taskGroup, tx, cancellationToken).ConfigureAwait(false);
+            foreach (var tag in tags)
+                await UpsertTagCoreAsync(tag, tx, cancellationToken).ConfigureAwait(false);
 
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -196,11 +198,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         }
     }
 
-    public Task ReflectAsync(Project project, CancellationToken cancellationToken = default)
-        => ReflectRecordAsync(project, UpsertProjectCoreAsync, cancellationToken);
+    public Task ReflectAsync(TaskGroup taskGroup, CancellationToken cancellationToken = default)
+        => ReflectRecordAsync(taskGroup, UpsertTaskGroupCoreAsync, cancellationToken);
 
-    public Task ReflectAsync(Label label, CancellationToken cancellationToken = default)
-        => ReflectRecordAsync(label, UpsertLabelCoreAsync, cancellationToken);
+    public Task ReflectAsync(Tag tag, CancellationToken cancellationToken = default)
+        => ReflectRecordAsync(tag, UpsertTagCoreAsync, cancellationToken);
 
     private async Task ReflectRecordAsync<T>(
         T record,
@@ -229,14 +231,14 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             cmd.CommandText =
                 """
                 INSERT INTO tasks
-                    (id, title, project_id, parent_task_id, when_kind, when_date,
+                    (id, title, group_id, parent_task_id, when_kind, when_date,
                      completed_at, deleted_at, priority, sort_order)
                 VALUES
-                    ($id, $title, $project, $parent, $whenKind, $whenDate,
+                    ($id, $title, $group, $parent, $whenKind, $whenDate,
                      $completed, $deleted, $priority, $sort)
                 ON CONFLICT(id) DO UPDATE SET
                     title           = excluded.title,
-                    project_id      = excluded.project_id,
+                    group_id        = excluded.group_id,
                     parent_task_id  = excluded.parent_task_id,
                     when_kind       = excluded.when_kind,
                     when_date       = excluded.when_date,
@@ -247,7 +249,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 """;
             Bind(cmd, "$id", task.Id.ToString());
             Bind(cmd, "$title", task.Title);
-            Bind(cmd, "$project", task.ProjectId?.ToString());
+            Bind(cmd, "$group", task.TaskGroupId?.ToString());
             Bind(cmd, "$parent", task.ParentTaskId?.ToString());
             Bind(cmd, "$whenKind", task.When.Kind.ToString());
             Bind(cmd, "$whenDate", task.When.Kind == WhenKind.OnDate ? LocalDate(task.When.Date) : null);
@@ -258,128 +260,128 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // Replace the label set for this task wholesale — cheap and keeps it exactly mirroring the file.
+        // Replace the tag set for this task wholesale — cheap and keeps it exactly mirroring the file.
         await using (var del = _connection.CreateCommand())
         {
             del.Transaction = tx;
-            del.CommandText = "DELETE FROM task_labels WHERE task_id = $id;";
+            del.CommandText = "DELETE FROM task_tags WHERE task_id = $id;";
             Bind(del, "$id", task.Id.ToString());
             await del.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var labelId in task.LabelIds.Distinct())
+        foreach (var tagId in task.TagIds.Distinct())
         {
             await using var ins = _connection.CreateCommand();
             ins.Transaction = tx;
-            ins.CommandText = "INSERT OR IGNORE INTO task_labels (task_id, label_id) VALUES ($task, $label);";
+            ins.CommandText = "INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES ($task, $tag);";
             Bind(ins, "$task", task.Id.ToString());
-            Bind(ins, "$label", labelId.ToString());
+            Bind(ins, "$tag", tagId.ToString());
             await ins.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task UpsertProjectCoreAsync(Project project, SqliteTransaction tx, CancellationToken cancellationToken)
+    private async Task UpsertTaskGroupCoreAsync(TaskGroup taskGroup, SqliteTransaction tx, CancellationToken cancellationToken)
     {
         await using var cmd = _connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText =
             """
-            INSERT INTO projects (id, name, icon, deleted_at, sort_order)
+            INSERT INTO task_groups (id, name, icon, deleted_at, sort_order)
             VALUES ($id, $name, $icon, $deleted, $sort)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name, icon = excluded.icon,
                 deleted_at = excluded.deleted_at, sort_order = excluded.sort_order;
             """;
-        Bind(cmd, "$id", project.Id.ToString());
-        Bind(cmd, "$name", project.Name);
-        Bind(cmd, "$icon", project.Icon);
-        Bind(cmd, "$deleted", Instant(project.DeletedAt));
-        Bind(cmd, "$sort", project.SortOrder);
+        Bind(cmd, "$id", taskGroup.Id.ToString());
+        Bind(cmd, "$name", taskGroup.Name);
+        Bind(cmd, "$icon", taskGroup.Icon);
+        Bind(cmd, "$deleted", Instant(taskGroup.DeletedAt));
+        Bind(cmd, "$sort", taskGroup.SortOrder);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task UpsertLabelCoreAsync(Label label, SqliteTransaction tx, CancellationToken cancellationToken)
+    private async Task UpsertTagCoreAsync(Tag tag, SqliteTransaction tx, CancellationToken cancellationToken)
     {
         await using var cmd = _connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText =
             """
-            INSERT INTO labels (id, name, color, deleted_at, sort_order)
+            INSERT INTO tags (id, name, color, deleted_at, sort_order)
             VALUES ($id, $name, $color, $deleted, $sort)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name, color = excluded.color,
                 deleted_at = excluded.deleted_at, sort_order = excluded.sort_order;
             """;
-        Bind(cmd, "$id", label.Id.ToString());
-        Bind(cmd, "$name", label.Name);
-        Bind(cmd, "$color", label.Color);
-        Bind(cmd, "$deleted", Instant(label.DeletedAt));
-        Bind(cmd, "$sort", label.SortOrder);
+        Bind(cmd, "$id", tag.Id.ToString());
+        Bind(cmd, "$name", tag.Name);
+        Bind(cmd, "$color", tag.Color);
+        Bind(cmd, "$deleted", Instant(tag.DeletedAt));
+        Bind(cmd, "$sort", tag.SortOrder);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // ---- Live navigation records --------------------------------------------
 
-    public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default)
         => QueryRecordsAsync(
-            "SELECT id, name, icon, sort_order FROM projects " +
+            "SELECT id, name, icon, sort_order FROM task_groups " +
             "WHERE deleted_at IS NULL ORDER BY sort_order, name;",
             _ => { },
-            r => new ProjectListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3)),
+            r => new TaskGroupListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3)),
             cancellationToken);
 
-    public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TagListItem>> GetTagsAsync(CancellationToken cancellationToken = default)
         => QueryRecordsAsync(
-            "SELECT id, name, color, sort_order FROM labels WHERE deleted_at IS NULL ORDER BY sort_order, name;",
+            "SELECT id, name, color, sort_order FROM tags WHERE deleted_at IS NULL ORDER BY sort_order, name;",
             _ => { },
-            r => new LabelListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3)),
+            r => new TagListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3)),
             cancellationToken);
 
-    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByProjectAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTaskGroupAsync(CancellationToken cancellationToken = default)
         => QueryCountsAsync(
-            "SELECT project_id, COUNT(*) FROM tasks " +
-            "WHERE deleted_at IS NULL AND completed_at IS NULL AND project_id IS NOT NULL " +
-            "GROUP BY project_id;",
+            "SELECT group_id, COUNT(*) FROM tasks " +
+            "WHERE deleted_at IS NULL AND completed_at IS NULL AND group_id IS NOT NULL " +
+            "GROUP BY group_id;",
             cancellationToken);
 
-    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTagAsync(CancellationToken cancellationToken = default)
         => QueryCountsAsync(
-            "SELECT tl.label_id, COUNT(*) FROM task_labels tl " +
-            "INNER JOIN tasks t ON t.id = tl.task_id " +
+            "SELECT tt.tag_id, COUNT(*) FROM task_tags tt " +
+            "INNER JOIN tasks t ON t.id = tt.task_id " +
             "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
-            "GROUP BY tl.label_id;",
+            "GROUP BY tt.tag_id;",
             cancellationToken);
 
-    public Task<int> GetOpenTaskCountWithoutProjectAsync(CancellationToken cancellationToken = default)
+    public Task<int> GetOpenTaskCountWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
         => QueryScalarAsync(
             "SELECT COUNT(*) FROM tasks " +
-            "WHERE deleted_at IS NULL AND completed_at IS NULL AND project_id IS NULL;",
+            "WHERE deleted_at IS NULL AND completed_at IS NULL AND group_id IS NULL;",
             cancellationToken);
 
-    public Task<int> GetOpenTaskCountWithoutLabelAsync(CancellationToken cancellationToken = default)
+    public Task<int> GetOpenTaskCountWithoutTagAsync(CancellationToken cancellationToken = default)
         => QueryScalarAsync(
             "SELECT COUNT(*) FROM tasks " +
             "WHERE deleted_at IS NULL AND completed_at IS NULL " +
-            "AND id NOT IN (SELECT task_id FROM task_labels);",
+            "AND id NOT IN (SELECT task_id FROM task_tags);",
             cancellationToken);
 
-    internal Task<IReadOnlyList<Guid>> GetTaskIdsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+    internal Task<IReadOnlyList<Guid>> GetTaskIdsByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
         => QueryIdsAsync(
-            "SELECT id FROM tasks WHERE project_id = $id AND deleted_at IS NULL;",
-            cmd => Bind(cmd, "$id", projectId.ToString()), cancellationToken);
+            "SELECT id FROM tasks WHERE group_id = $id AND deleted_at IS NULL;",
+            cmd => Bind(cmd, "$id", taskGroupId.ToString()), cancellationToken);
 
-    internal Task<IReadOnlyList<Guid>> GetTaskIdsByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
+    internal Task<IReadOnlyList<Guid>> GetTaskIdsByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
         => QueryIdsAsync(
-            "SELECT t.id FROM tasks t INNER JOIN task_labels tl ON tl.task_id = t.id " +
-            "WHERE tl.label_id = $id AND t.deleted_at IS NULL;",
-            cmd => Bind(cmd, "$id", labelId.ToString()), cancellationToken);
+            "SELECT t.id FROM tasks t INNER JOIN task_tags tt ON tt.task_id = t.id " +
+            "WHERE tt.tag_id = $id AND t.deleted_at IS NULL;",
+            cmd => Bind(cmd, "$id", tagId.ToString()), cancellationToken);
 
     // ---- Classification axis -------------------------------------------------
 
     // Active lists keep completed tasks (shown dimmed) rather than dropping them on the next load, so
     // finishing an item doesn't make it vanish; they sink below the open rows via the completed-last
     // ordering. Open-task counts (badges) still exclude completed — see GetOpenTaskCounts*.
-    // The home "모든 할 일" (All) list spans every group — no project filter — so a task in a group
+    // The home "모든 할 일" (AllTasks) list spans every group — no group filter — so a task in a group
     // still surfaces here. Subtasks are included; the view nests them under their parents.
     public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
@@ -387,33 +389,33 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND project_id = $project ORDER BY completed_at IS NOT NULL, sort_order;",
-            cmd => Bind(cmd, "$project", projectId.ToString()), cancellationToken);
+            "AND group_id = $group ORDER BY completed_at IS NOT NULL, sort_order;",
+            cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Prefixed("t")} FROM tasks t " +
-            "INNER JOIN task_labels tl ON tl.task_id = t.id " +
-            "WHERE tl.label_id = $label AND t.deleted_at IS NULL " +
+            "INNER JOIN task_tags tt ON tt.task_id = t.id " +
+            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL " +
             "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
-            cmd => Bind(cmd, "$label", labelId.ToString()), cancellationToken);
+            cmd => Bind(cmd, "$tag", tagId.ToString()), cancellationToken);
 
     // The 그룹 없음 / 태그 없음 lists re-create the quick-capture inbox: the home list spans every group,
     // so unfiled captures get lost among already-sorted work — these narrow it to just what still needs
-    // filing. project_id IS NULL is the unfiled-group test; the NOT IN sub-select is the no-label test.
-    public Task<IReadOnlyList<TaskListItem>> GetWithoutProjectAsync(CancellationToken cancellationToken = default)
+    // filing. group_id IS NULL is the unfiled-group test; the NOT IN sub-select is the no-tag test.
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND project_id IS NULL " +
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND group_id IS NULL " +
             "ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetWithoutLabelAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND id NOT IN (SELECT task_id FROM task_labels) " +
+            "AND id NOT IN (SELECT task_id FROM task_tags) " +
             "ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
@@ -579,7 +581,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     private static TaskListItem Map(SqliteDataReader r) => new(
         Id: Guid.Parse(r.GetString(0)),
         Title: r.GetString(1),
-        ProjectId: GuidOrNull(r, 2),
+        TaskGroupId: GuidOrNull(r, 2),
         ParentTaskId: GuidOrNull(r, 3),
         WhenKind: Enum.Parse<WhenKind>(r.GetString(4)),
         WhenDate: DateOrNull(r, 5),
@@ -609,7 +611,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     private static void Bind(SqliteCommand cmd, string name, object? value)
         => cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
 
-    /// <summary>Column list qualified with a table alias, for the label join query.</summary>
+    /// <summary>Column list qualified with a table alias, for the tag join query.</summary>
     private static string Prefixed(string alias)
         => string.Join(", ", Columns.Split(',', StringSplitOptions.TrimEntries).Select(c => $"{alias}.{c}"));
 

@@ -97,14 +97,14 @@ public sealed partial class MainWindow : Window
         if (args.SelectedItem is not NavigationViewItem item)
             return;
 
-        if (item.Tag is string action && action is "create-project" or "create-label")
+        if (item.Tag is string action && action is "create-group" or "create-tag")
         {
-            var isProject = action == "create-project";
-            var name = await PromptNameAsync(isProject ? "새 그룹" : "새 태그", isProject ? "그룹 이름" : "태그 이름");
+            var isGroup = action == "create-group";
+            var name = await PromptNameAsync(isGroup ? "새 그룹" : "새 태그", isGroup ? "그룹 이름" : "태그 이름");
             if (name is not null)
             {
-                if (isProject) await ViewModel.CreateProjectCommand.ExecuteAsync(name);
-                else await ViewModel.CreateLabelCommand.ExecuteAsync(name);
+                if (isGroup) await ViewModel.CreateTaskGroupCommand.ExecuteAsync(name);
+                else await ViewModel.CreateTagCommand.ExecuteAsync(name);
             }
             // Recreate the action row even after cancel so it does not remain selected/dead.
             RebuildLiveNavigation();
@@ -136,19 +136,19 @@ public sealed partial class MainWindow : Window
 
     private void RebuildLiveNavigation()
     {
-        ProjectsGroup.MenuItems.Clear();
-        ProjectsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 그룹", Tag = "create-project" });
-        ProjectsGroup.MenuItems.Add(CreateUnfiledItem(
-            "그룹 없음", TaskListMode.NoProject, ViewModel.NoProjectTaskCount));
-        foreach (var project in ViewModel.Projects)
-            ProjectsGroup.MenuItems.Add(CreateProjectItem(project));
+        GroupsSection.MenuItems.Clear();
+        GroupsSection.MenuItems.Add(new NavigationViewItem { Content = "+ 새 그룹", Tag = "create-group" });
+        GroupsSection.MenuItems.Add(CreateUnfiledItem(
+            "그룹 없음", TaskListMode.NoTaskGroup, ViewModel.NoTaskGroupTaskCount));
+        foreach (var taskGroup in ViewModel.TaskGroups)
+            GroupsSection.MenuItems.Add(CreateTaskGroupItem(taskGroup));
 
-        LabelsGroup.MenuItems.Clear();
-        LabelsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 태그", Tag = "create-label" });
-        LabelsGroup.MenuItems.Add(CreateUnfiledItem(
-            "태그 없음", TaskListMode.NoLabel, ViewModel.NoLabelTaskCount));
-        foreach (var label in ViewModel.Labels)
-            LabelsGroup.MenuItems.Add(CreateLabelItem(label));
+        TagsSection.MenuItems.Clear();
+        TagsSection.MenuItems.Add(new NavigationViewItem { Content = "+ 새 태그", Tag = "create-tag" });
+        TagsSection.MenuItems.Add(CreateUnfiledItem(
+            "태그 없음", TaskListMode.NoTag, ViewModel.NoTagTaskCount));
+        foreach (var tag in ViewModel.Tags)
+            TagsSection.MenuItems.Add(CreateTagItem(tag));
     }
 
     /// <summary>The 그룹 없음 / 태그 없음 collection points: a fixed entry per section that re-gathers
@@ -273,40 +273,40 @@ public sealed partial class MainWindow : Window
         catch { return null; }
     }
 
-    private NavigationViewItem CreateProjectItem(ProjectListItem project)
+    private NavigationViewItem CreateTaskGroupItem(TaskGroupListItem taskGroup)
     {
-        var icon = new FontIcon { Glyph = string.IsNullOrEmpty(project.Icon) ? "\uE8B7" : project.Icon };
+        var icon = new FontIcon { Glyph = string.IsNullOrEmpty(taskGroup.Icon) ? "\uE8B7" : taskGroup.Icon };
         var item = new NavigationViewItem
         {
-            Content = project.Name,
-            Tag = new TaskListNavigation(TaskListMode.Project, project.Id, project.Name),
+            Content = taskGroup.Name,
+            Tag = new TaskListNavigation(TaskListMode.TaskGroup, taskGroup.Id, taskGroup.Name),
             Icon = icon,
         };
         // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
-        // tap from also navigating into the project.
-        icon.Tapped += (sender, e) => { e.Handled = true; ShowProjectIconPicker((FrameworkElement)sender, project.Id, project.Icon); };
-        if (ViewModel.ProjectTaskCounts.TryGetValue(project.Id, out var count) && count > 0)
+        // tap from also navigating into the group.
+        icon.Tapped += (sender, e) => { e.Handled = true; ShowTaskGroupIconPicker((FrameworkElement)sender, taskGroup.Id, taskGroup.Icon); };
+        if (ViewModel.TaskGroupTaskCounts.TryGetValue(taskGroup.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
-        item.ContextFlyout = CreateRecordMenu(project, isProject: true, item);
+        item.ContextFlyout = CreateRecordMenu(taskGroup, isGroup: true, item);
         return item;
     }
 
-    private NavigationViewItem CreateLabelItem(LabelListItem label)
+    private NavigationViewItem CreateTagItem(TagListItem tag)
     {
         var icon = new FontIcon { Glyph = "\uE8EC" };
-        if (new HexToBrushConverter().Convert(label.Color ?? string.Empty, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!) is Microsoft.UI.Xaml.Media.Brush brush)
+        if (new HexToBrushConverter().Convert(tag.Color ?? string.Empty, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!) is Microsoft.UI.Xaml.Media.Brush brush)
             icon.Foreground = brush;
         var item = new NavigationViewItem
         {
-            Content = label.Name,
-            Tag = new TaskListNavigation(TaskListMode.Label, label.Id, label.Name),
+            Content = tag.Name,
+            Tag = new TaskListNavigation(TaskListMode.Tag, tag.Id, tag.Name),
             Icon = icon,
         };
         // Tapping the glyph opens the color picker directly (no right-click depth).
-        icon.Tapped += (sender, e) => { e.Handled = true; ShowLabelColorPicker((FrameworkElement)sender, label.Id, label.Color); };
-        if (ViewModel.LabelTaskCounts.TryGetValue(label.Id, out var count) && count > 0)
+        icon.Tapped += (sender, e) => { e.Handled = true; ShowTagColorPicker((FrameworkElement)sender, tag.Id, tag.Color); };
+        if (ViewModel.TagTaskCounts.TryGetValue(tag.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
-        item.ContextFlyout = CreateRecordMenu(label, isProject: false, item);
+        item.ContextFlyout = CreateRecordMenu(tag, isGroup: false, item);
         return item;
     }
 
@@ -326,24 +326,24 @@ public sealed partial class MainWindow : Window
         catch { return null; }
     }
 
-    private MenuFlyout CreateRecordMenu(object record, bool isProject, NavigationViewItem owner)
+    private MenuFlyout CreateRecordMenu(object record, bool isGroup, NavigationViewItem owner)
     {
         var rename = new MenuFlyoutItem { Text = "이름 변경", Tag = record };
         var delete = new MenuFlyoutItem { Text = "삭제", Tag = record };
-        rename.Click += isProject ? RenameProject_Click : RenameLabel_Click;
-        delete.Click += isProject ? DeleteProject_Click : DeleteLabel_Click;
+        rename.Click += isGroup ? RenameTaskGroup_Click : RenameTag_Click;
+        delete.Click += isGroup ? DeleteTaskGroup_Click : DeleteTag_Click;
         var menu = new MenuFlyout();
         menu.Items.Add(rename);
-        if (isProject && record is ProjectListItem project)
+        if (isGroup && record is TaskGroupListItem taskGroup)
         {
             var pick = new MenuFlyoutItem { Text = "아이콘 변경" };
-            pick.Click += (_, _) => ShowProjectIconPicker(owner, project.Id, project.Icon);
+            pick.Click += (_, _) => ShowTaskGroupIconPicker(owner, taskGroup.Id, taskGroup.Icon);
             menu.Items.Add(pick);
         }
-        if (!isProject && record is LabelListItem label)
+        if (!isGroup && record is TagListItem tag)
         {
             var pick = new MenuFlyoutItem { Text = "색 변경" };
-            pick.Click += (_, _) => ShowLabelColorPicker(owner, label.Id, label.Color);
+            pick.Click += (_, _) => ShowTagColorPicker(owner, tag.Id, tag.Color);
             menu.Items.Add(pick);
         }
         menu.Items.Add(delete);
@@ -369,13 +369,13 @@ public sealed partial class MainWindow : Window
         return new Flyout { Content = grid };
     }
 
-    private void ShowProjectIconPicker(FrameworkElement anchor, Guid projectId, string? currentGlyph)
+    private void ShowTaskGroupIconPicker(FrameworkElement anchor, Guid taskGroupId, string? currentGlyph)
     {
         var accent = AccentBrush();
         Flyout? flyout = null;
-        flyout = BuildSwatchGridFlyout(ProjectIcons.Length, 4, i =>
+        flyout = BuildSwatchGridFlyout(TaskGroupIcons.Length, 4, i =>
         {
-            var glyph = ProjectIcons[i].Glyph;
+            var glyph = TaskGroupIcons[i].Glyph;
             var button = new Button
             {
                 Width = 40,
@@ -389,19 +389,19 @@ public sealed partial class MainWindow : Window
                 button.BorderThickness = new Thickness(2);
                 button.BorderBrush = accent;
             }
-            button.Click += (_, _) => { flyout!.Hide(); PickProjectIcon(projectId, glyph); };
+            button.Click += (_, _) => { flyout!.Hide(); PickTaskGroupIcon(taskGroupId, glyph); };
             return button;
         });
         flyout.ShowAt(anchor);
     }
 
-    private void ShowLabelColorPicker(FrameworkElement anchor, Guid labelId, string? currentColor)
+    private void ShowTagColorPicker(FrameworkElement anchor, Guid tagId, string? currentColor)
     {
         var ring = ThemeBrush("TextFillColorPrimaryBrush");
         Flyout? flyout = null;
-        flyout = BuildSwatchGridFlyout(LabelColors.Palette.Count, 4, i =>
+        flyout = BuildSwatchGridFlyout(TagColors.Palette.Count, 4, i =>
         {
-            var hex = LabelColors.Palette[i];
+            var hex = TagColors.Palette[i];
             var baseColor = ((Microsoft.UI.Xaml.Media.SolidColorBrush)new HexToBrushConverter()
                 .Convert(hex, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!)).Color;
             var button = new Button
@@ -424,7 +424,7 @@ public sealed partial class MainWindow : Window
                 button.Resources["ButtonBorderBrushPointerOver"] = ring;
                 button.Resources["ButtonBorderBrushPressed"] = ring;
             }
-            button.Click += (_, _) => { flyout!.Hide(); PickLabelColor(labelId, hex); };
+            button.Click += (_, _) => { flyout!.Hide(); PickTagColor(tagId, hex); };
             return button;
         });
         flyout.ShowAt(anchor);
@@ -436,23 +436,23 @@ public sealed partial class MainWindow : Window
         return Windows.UI.Color.FromArgb(color.A, Mix(color.R), Mix(color.G), Mix(color.B));
     }
 
-    private async void PickProjectIcon(Guid projectId, string glyph)
+    private async void PickTaskGroupIcon(Guid taskGroupId, string glyph)
         => await RunSafelyAsync(async () =>
         {
-            await ViewModel.SetProjectIconAsync(projectId, glyph);
+            await ViewModel.SetTaskGroupIconAsync(taskGroupId, glyph);
             RebuildLiveNavigation();
         });
 
-    private async void PickLabelColor(Guid labelId, string hex)
+    private async void PickTagColor(Guid tagId, string hex)
         => await RunSafelyAsync(async () =>
         {
-            await ViewModel.SetLabelColorAsync(labelId, hex);
+            await ViewModel.SetTagColorAsync(tagId, hex);
             RebuildLiveNavigation();
         });
 
-    // Common to-do project glyphs (Segoe Fluent). Deliberately avoids the fixed sidebar glyphs
-    // (E80F/E8BF/E823/E8FD/E8F1/E73E/E8B7/E8EC) so projects stay visually distinct from them.
-    private static readonly (string Glyph, string Name)[] ProjectIcons =
+    // Common to-do group glyphs (Segoe Fluent). Deliberately avoids the fixed sidebar glyphs
+    // (E80F/E8BF/E823/E8FD/E8F1/E73E/E8B7/E8EC) so groups stay visually distinct from them.
+    private static readonly (string Glyph, string Name)[] TaskGroupIcons =
     {
         ("", "장보기"), ("", "업무"), ("", "독서"), ("", "수리"),
         ("", "별"), ("", "가족"), ("", "사람"), ("", "건강"),
@@ -460,43 +460,43 @@ public sealed partial class MainWindow : Window
         ("", "고정"), ("", "미디어"), ("", "웹"), ("", "잠금"),
     };
 
-    private async void RenameProject_Click(object sender, RoutedEventArgs e)
+    private async void RenameTaskGroup_Click(object sender, RoutedEventArgs e)
     {
         await RunSafelyAsync(async () =>
         {
-            if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
-            var name = await PromptNameAsync("그룹 이름 변경", "그룹 이름", project.Name);
+            if (sender is not MenuFlyoutItem { Tag: TaskGroupListItem taskGroup }) return;
+            var name = await PromptNameAsync("그룹 이름 변경", "그룹 이름", taskGroup.Name);
             if (name is null) return;
-            var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
-            await ViewModel.RenameProjectCommand.ExecuteAsync(new RenameRecordRequest(project.Id, name));
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.TaskGroup && _currentNavigation.FilterId == taskGroup.Id;
+            await ViewModel.RenameTaskGroupCommand.ExecuteAsync(new RenameRecordRequest(taskGroup.Id, name));
             RebuildLiveNavigation();
-            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Project, project.Id, name));
+            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.TaskGroup, taskGroup.Id, name));
         });
     }
 
-    private async void RenameLabel_Click(object sender, RoutedEventArgs e)
+    private async void RenameTag_Click(object sender, RoutedEventArgs e)
     {
         await RunSafelyAsync(async () =>
         {
-            if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
-            var name = await PromptNameAsync("태그 이름 변경", "태그 이름", label.Name);
+            if (sender is not MenuFlyoutItem { Tag: TagListItem tag }) return;
+            var name = await PromptNameAsync("태그 이름 변경", "태그 이름", tag.Name);
             if (name is null) return;
-            var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
-            await ViewModel.RenameLabelCommand.ExecuteAsync(new RenameRecordRequest(label.Id, name));
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.Tag && _currentNavigation.FilterId == tag.Id;
+            await ViewModel.RenameTagCommand.ExecuteAsync(new RenameRecordRequest(tag.Id, name));
             RebuildLiveNavigation();
-            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Label, label.Id, name));
+            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Tag, tag.Id, name));
         });
     }
 
-    private async void DeleteProject_Click(object sender, RoutedEventArgs e)
+    private async void DeleteTaskGroup_Click(object sender, RoutedEventArgs e)
     {
         await RunSafelyAsync(async () =>
         {
-            if (sender is not MenuFlyoutItem { Tag: ProjectListItem project }) return;
-            var mode = await AskProjectDeletionAsync(project.Name);
+            if (sender is not MenuFlyoutItem { Tag: TaskGroupListItem taskGroup }) return;
+            var mode = await AskTaskGroupDeletionAsync(taskGroup.Name);
             if (mode is null) return;
-            var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
-            await ViewModel.DeleteProjectAsync(project.Id, mode.Value);
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.TaskGroup && _currentNavigation.FilterId == taskGroup.Id;
+            await ViewModel.DeleteTaskGroupAsync(taskGroup.Id, mode.Value);
             RebuildLiveNavigation();
             if (isCurrent) NavigateHome();
         });
@@ -504,7 +504,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>Deleting a group asks what to do with its tasks: move them to the Cue home (the
     /// least-destructive default) or delete them along with the group. Null = the user cancelled.</summary>
-    private async Task<ProjectDeletionMode?> AskProjectDeletionAsync(string name)
+    private async Task<TaskGroupDeletionMode?> AskTaskGroupDeletionAsync(string name)
     {
         var dialog = new ContentDialog
         {
@@ -518,20 +518,20 @@ public sealed partial class MainWindow : Window
         };
         return await _dialogs.ShowAsync(dialog) switch
         {
-            ContentDialogResult.Primary => ProjectDeletionMode.Reparent,
-            ContentDialogResult.Secondary => ProjectDeletionMode.DeleteTasks,
+            ContentDialogResult.Primary => TaskGroupDeletionMode.Reparent,
+            ContentDialogResult.Secondary => TaskGroupDeletionMode.DeleteTasks,
             _ => null,
         };
     }
 
-    private async void DeleteLabel_Click(object sender, RoutedEventArgs e)
+    private async void DeleteTag_Click(object sender, RoutedEventArgs e)
     {
         await RunSafelyAsync(async () =>
         {
-            if (sender is not MenuFlyoutItem { Tag: LabelListItem label }) return;
+            if (sender is not MenuFlyoutItem { Tag: TagListItem tag }) return;
             if (!await ConfirmDeleteAsync("태그를 삭제할까요?", "할 일은 그대로 두고 이 태그만 떼어냅니다.")) return;
-            var isCurrent = _currentNavigation?.Mode == TaskListMode.Label && _currentNavigation.FilterId == label.Id;
-            await ViewModel.DeleteLabelCommand.ExecuteAsync(label.Id);
+            var isCurrent = _currentNavigation?.Mode == TaskListMode.Tag && _currentNavigation.FilterId == tag.Id;
+            await ViewModel.DeleteTagCommand.ExecuteAsync(tag.Id);
             RebuildLiveNavigation();
             if (isCurrent) NavigateHome();
         });
@@ -551,7 +551,7 @@ public sealed partial class MainWindow : Window
             NavView.SelectedItem = CueItem;
         else
         {
-            NavFrame.Navigate(typeof(TaskListPage), "all");
+            NavFrame.Navigate(typeof(TaskListPage), "alltasks");
             NavFrame.BackStack.Clear();
         }
     }
