@@ -6,7 +6,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI.Xaml.Shapes;
 using Windows.System;
 using Windows.UI.ViewManagement;
 using Cue.ViewModels;
@@ -211,6 +213,7 @@ public sealed partial class TimelinePage : Page
     {
         if (sender is not Border border) return;
         border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TimelineRowHoverBrush"];
+        SetTitleFadeBrush(border, "TimelineRowHoverBrush");
         if (!_animationsEnabled) return;
         var visual = ElementCompositionPreview.GetElementVisual(border);
         visual.Scale = new Vector3(1.0025f, 1.0025f, 1f);
@@ -220,7 +223,41 @@ public sealed partial class TimelinePage : Page
     {
         if (sender is not Border border) return;
         border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TimelineBarBrush"];
+        SetTitleFadeBrush(border, "TimelineBarBrush");
         ElementCompositionPreview.GetElementVisual(border).Scale = Vector3.One;
+    }
+
+    private void SetTitleFadeBrush(DependencyObject root, string brushKey)
+    {
+        if (FindDescendant<Rectangle>(root, "TimelineTitleFade") is not { } fade)
+            return;
+        if (Resources[brushKey] is not SolidColorBrush brush)
+            return;
+
+        fade.Fill = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint = new Windows.Foundation.Point(1, 0),
+            GradientStops =
+            {
+                new GradientStop { Offset = 0, Color = Microsoft.UI.Colors.Transparent },
+                new GradientStop { Offset = 1, Color = brush.Color },
+            },
+        };
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T element && element.Name == name)
+                return element;
+            if (FindDescendant<T>(child, name) is { } match)
+                return match;
+        }
+        return null;
     }
 
     private void TimelineRows_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)

@@ -82,13 +82,25 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel VerticalAlignment="Center" Spacing="1">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        FontSize="{StaticResource CueFontRow}"
-                                        MaxLines="2"
-                                        Text="{x:Bind Title}"
-                                        TextTrimming="WordEllipsis"
-                                        TextWrapping="Wrap" />
+                                    <Grid MaxWidth="142" VerticalAlignment="Center">
+                                        <TextBlock
+                                            FontSize="{StaticResource CueFontRow}"
+                                            MaxLines="1"
+                                            Text="{x:Bind Title}"
+                                            TextTrimming="Clip" />
+                                        <Rectangle
+                                            x:Name="TimelineTitleFade"
+                                            Width="28"
+                                            HorizontalAlignment="Right"
+                                            IsHitTestVisible="False">
+                                            <Rectangle.Fill>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                    <GradientStop Offset="0" Color="Transparent" />
+                                                    <GradientStop Offset="1" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+                                                </LinearGradientBrush>
+                                            </Rectangle.Fill>
+                                        </Rectangle>
+                                    </Grid>
                                     <Border
                                         Padding="7,1"
                                         VerticalAlignment="Center"
@@ -236,8 +248,9 @@
                 CornerRadius="{StaticResource CueRadiusPanel}"
                 Loaded="DetailPanel_Loaded"
                 Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="2,0,16,0" Spacing="13">
+                <Grid>
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="2,0,16,0" Spacing="13">
                         <Button
                             HorizontalAlignment="Left"
                             Padding="2,0"
@@ -399,7 +412,20 @@
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
                                                     <FontIcon VerticalAlignment="Center" FontSize="15" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
-                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{x:Bind Name}" TextTrimming="Clip" />
+                                                        <Rectangle
+                                                            Width="24"
+                                                            HorizontalAlignment="Right"
+                                                            IsHitTestVisible="False">
+                                                            <Rectangle.Fill>
+                                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                    <GradientStop Offset="0" Color="Transparent" />
+                                                                    <GradientStop Offset="1" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+                                                                </LinearGradientBrush>
+                                                            </Rectangle.Fill>
+                                                        </Rectangle>
+                                                    </Grid>
                                                     <FontIcon Grid.Column="2" VerticalAlignment="Center" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE73E;" Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                                 </Grid>
                                             </Button>
@@ -431,8 +457,20 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
-                    </StackPanel>
-                </ScrollViewer>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Rectangle
+                        Height="26"
+                        VerticalAlignment="Bottom"
+                        IsHitTestVisible="False">
+                        <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Offset="0" Color="Transparent" />
+                                <GradientStop Offset="1" Color="{ThemeResource LayerFillColorDefault}" />
+                            </LinearGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+                </Grid>
             </Border>
         </Grid>
     </Grid>
