@@ -431,7 +431,7 @@ public sealed partial class MainWindow : Window
     private static Thickness NavSubItemInset()
     {
         try { return (Thickness)Application.Current.Resources["CueNavSubItemInset"]; }
-        catch { return new Thickness(10, 0, 0, 0); }
+        catch { return new Thickness(36, 0, 0, 0); }
     }
 
     private MenuFlyout CreateRecordMenu(object record, bool isGroup, NavigationViewItem owner)

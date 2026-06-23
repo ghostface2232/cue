@@ -84,7 +84,7 @@
 
     <!-- Sidebar group/tag rows sit inset from the pane's left edge so their hover/selection fill
          leaves a small left gap (matching their nested indent) instead of bleeding to the edge. -->
-    <Thickness x:Key="CueNavSubItemInset">10,0,0,0</Thickness>
+    <Thickness x:Key="CueNavSubItemInset">36,0,0,0</Thickness>
 
     <!-- ===== Shared hover language. Main list rows, timeline bars, subtle buttons, and local panel
          controls all use the same fill so light mode does not drift between surfaces. ===== -->
