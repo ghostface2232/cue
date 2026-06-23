@@ -8,6 +8,9 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Cue.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Cue.Domain\Cue.Domain.csproj" />
     <ProjectReference Include="..\Cue.Storage\Cue.Storage.csproj" />
     <ProjectReference Include="..\Cue.Parsing\Cue.Parsing.csproj" />

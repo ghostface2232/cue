@@ -302,7 +302,6 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBox
                                 Padding="2,2,4,3"
@@ -311,28 +310,12 @@
                                 BorderThickness="0"
                                 FontFamily="{StaticResource CueFontFamilySemiBold}"
                                 FontSize="27"
+                                LostFocus="DetailText_LostFocus"
                                 PlaceholderText="할 일 제목"
                                 Text="{x:Bind ViewModel.Detail.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 TextWrapping="Wrap" />
                             <HyperlinkButton
                                 Grid.Column="1"
-                                Style="{StaticResource CueIconButtonStyle}"
-                                Click="SaveDetail_Click"
-                                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-                                PointerEntered="IconAction_PointerEntered"
-                                PointerExited="IconAction_PointerExited"
-                                ToolTipService.ToolTip="저장"
-                                AutomationProperties.Name="저장">
-                                <HyperlinkButton.Resources>
-                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{ThemeResource SystemFillColorSuccess}" />
-                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Opacity="0.6" Color="{ThemeResource SystemFillColorSuccess}" />
-                                    <SolidColorBrush x:Key="HyperlinkButtonBackgroundPointerOver" Color="Transparent" />
-                                    <SolidColorBrush x:Key="HyperlinkButtonBackgroundPressed" Color="Transparent" />
-                                </HyperlinkButton.Resources>
-                                <FontIcon FontSize="18" Glyph="&#xE73E;" />
-                            </HyperlinkButton>
-                            <HyperlinkButton
-                                Grid.Column="2"
                                 Style="{StaticResource CueIconButtonStyle}"
                                 Click="CloseDetail_Click"
                                 Foreground="{ThemeResource SystemFillColorCriticalBrush}"
@@ -352,7 +335,7 @@
 
                         <Border Margin="4,2,8,7" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
-                                <TextBox AcceptsReturn="True" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+                                <TextBox AcceptsReturn="True" LostFocus="DetailText_LostFocus" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
                                 <Grid x:Name="DetailMetaGrid" ColumnSpacing="12" RowSpacing="10">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                     <StackPanel Spacing="5">

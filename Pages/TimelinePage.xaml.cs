@@ -509,6 +509,10 @@ public sealed partial class TimelinePage : Page
 
     private async Task CloseDetailWithAnimationAsync()
     {
+        // The panel autosaves as fields change, but a title/notes edit whose LostFocus hasn't fired yet
+        // needs a final flush so closing never drops an in-progress text edit.
+        await ViewModel.Detail.FlushAsync();
+
         if (!_animationsEnabled || _detailPanelVisual is null)
         {
             ViewModel.Detail.Close();
@@ -519,8 +523,10 @@ public sealed partial class TimelinePage : Page
         await Task.Delay(170);
         ViewModel.Detail.Close();
     }
-    private async void SaveDetail_Click(object sender, RoutedEventArgs e)
-        => await RunSafelyAsync(() => ViewModel.Detail.SaveCommand.ExecuteAsync(null));
+
+    // Title and notes are continuous-typing fields: they autosave on focus-out rather than per keystroke.
+    private async void DetailText_LostFocus(object sender, RoutedEventArgs e)
+        => await ViewModel.Detail.FlushAsync();
 
     private async void AddSubtask_Click(object sender, RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null));

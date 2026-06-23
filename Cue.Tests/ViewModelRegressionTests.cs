@@ -27,7 +27,7 @@ public sealed class ViewModelRegressionTests
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
-        await vm.Detail.SaveCommand.ExecuteAsync(null);
+        await vm.Detail.FlushAsync();
 
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.NotNull(saved);
@@ -52,7 +52,7 @@ public sealed class ViewModelRegressionTests
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
-        await vm.Detail.SaveCommand.ExecuteAsync(null);
+        await vm.Detail.FlushAsync();
 
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.NotNull(saved);
@@ -76,7 +76,7 @@ public sealed class ViewModelRegressionTests
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
         vm.Detail.Title = "title only";
-        await vm.Detail.SaveCommand.ExecuteAsync(null);
+        await vm.Detail.FlushAsync();
 
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.NotNull(saved);
@@ -157,7 +157,7 @@ public sealed class ViewModelRegressionTests
         await vm.Detail.OpenAsync(task.Id);
         vm.Detail.SelectedWhenHour = vm.Detail.Hours[13];
         vm.Detail.SelectedWhenMinute = vm.Detail.Minutes[5];
-        await vm.Detail.SaveCommand.ExecuteAsync(null);
+        await vm.Detail.DrainPendingSaveAsync();
 
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.Equal(new TimeSpan(13, 5, 0), saved!.When.Date!.Value.ToLocal().TimeOfDay);
@@ -189,6 +189,9 @@ public sealed class ViewModelRegressionTests
         vm.Detail.ClearWhen();
         Assert.True(vm.Detail.CanAddWhen);
         Assert.False(vm.Detail.IsWhenEditorVisible);
+
+        // Enabling/clearing the When editor autosaves; let it finish before the temp folder is torn down.
+        await vm.Detail.DrainPendingSaveAsync();
     }
 
     [Fact]
@@ -287,7 +290,7 @@ public sealed class ViewModelRegressionTests
         Assert.True(vm.Detail.CanAddWhen);
         Assert.False(vm.Detail.IsWhenEditorVisible);
 
-        await vm.Detail.SaveCommand.ExecuteAsync(null);
+        await vm.Detail.DrainPendingSaveAsync();
 
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.Equal(WhenKind.Unscheduled, saved!.When.Kind);
@@ -422,9 +425,124 @@ public sealed class ViewModelRegressionTests
         Assert.True((await store.GetAsync<Project>(project.Id))!.IsDeleted);
     }
 
+    [Fact]
+    public async Task DetailPriorityChange_PersistsImmediatelyWithoutAnExplicitSave()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "no priority yet", Priority = Priority.None };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Changing the priority is a single selection — it autosaves on the spot, no Save button.
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);
+    }
+
+    [Fact]
+    public async Task DetailTitle_PersistsOnFocusOutNotPerKeystroke()
+    {
+        using var temp = new TempDirectory();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "old title" };
+        await store.SaveAsync(task);
+        var savedAt = (await store.GetAsync<TaskItem>(task.Id))!.UpdatedAt;
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Typing updates the bound property but does not save — no per-keystroke write.
+        clock.Now = new DateTimeOffset(2026, 6, 23, 2, 0, 0, TimeSpan.Zero);
+        vm.Detail.Title = "edited title";
+        await vm.Detail.DrainPendingSaveAsync();
+        var midEdit = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal("old title", midEdit!.Title);
+        Assert.Equal(savedAt, midEdit.UpdatedAt);
+
+        // Focus-out flushes the text edit.
+        await vm.Detail.FlushAsync();
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal("edited title", saved!.Title);
+    }
+
+    [Fact]
+    public async Task OpeningTask_DoesNotSaveWhenNothingChanged()
+    {
+        using var temp = new TempDirectory();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem
+        {
+            Title = "untouched",
+            Priority = Priority.P2,
+            ProjectId = null,
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 9, 0, 0), "Korea Standard Time")),
+        };
+        await store.SaveAsync(task);
+        var before = (await store.GetAsync<TaskItem>(task.Id))!.UpdatedAt;
+
+        // If opening saved, the store would re-stamp UpdatedAt with the advanced clock.
+        clock.Now = new DateTimeOffset(2026, 6, 23, 5, 0, 0, TimeSpan.Zero);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.Detail.OpenAsync(task.Id);
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var after = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(before, after!.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task UntouchedDateAutoSave_PreservesOriginalWhenInstantAndZone()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var originalWhen = ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 15, 30, 0), "Korea Standard Time");
+        var task = new TaskItem { Title = "zoned", When = ScheduledWhen.On(originalWhen) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.Detail.OpenAsync(task.Id);
+
+        // An immediate-save change that never touches the date must leave the When untouched, including
+        // its exact instant and original time zone (the dirty-check returns the original When).
+        vm.Detail.SelectedPriority = Priority.P3;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P3, saved!.Priority);
+        Assert.Equal(originalWhen, saved.When.Date);
+        Assert.Equal(originalWhen.TimeZoneId, saved.When.Date!.Value.TimeZoneId);
+    }
+
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 
     private sealed class TempDirectory : IDisposable

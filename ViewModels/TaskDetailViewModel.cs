@@ -100,6 +100,16 @@ public partial class TaskDetailViewModel : ObservableObject
     private bool _loadedIsWhenAllDay;
     private bool _isLoading;
 
+    // Serializes autosaves so a fast run of edits can't interleave or reorder their writes — the same
+    // pattern the list uses for completion toggles. Distinct from <see cref="_isLoading"/> (which
+    // suppresses saves while OpenAsync fills the panel) and <see cref="_suppressAutoSave"/> (which
+    // coalesces a single user action that touches several properties into one save).
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
+    private bool _suppressAutoSave;
+
+    // Tracks the most recently requested autosave so it can be awaited deterministically (tests).
+    private Task _pendingAutoSave = Task.CompletedTask;
+
     public IReadOnlyList<Priority> Priorities { get; } = Enum.GetValues<Priority>();
     public IReadOnlyList<TimeOption> Hours { get; } = Enumerable.Range(0, 24).Select(value => new TimeOption(value, value.ToString("00"))).ToArray();
     public IReadOnlyList<TimeOption> Minutes { get; } = Enumerable.Range(0, 60).Select(value => new TimeOption(value, value.ToString("00"))).ToArray();
@@ -192,6 +202,7 @@ public partial class TaskDetailViewModel : ObservableObject
 
     partial void OnSelectedWhenOptionChanged(WhenEditorOption value)
     {
+        var resume = SuppressAutoSave();
         if (value.Mode == WhenEditorMode.SpecificDate && WhenDate is null)
             WhenDate = LocalNow();
         if (value.Mode is WhenEditorMode.Today or WhenEditorMode.SpecificDate && WhenTime is null)
@@ -201,21 +212,25 @@ public partial class TaskDetailViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowWhenTime));
         OnPropertyChanged(nameof(IsWhenEditorVisible));
         OnPropertyChanged(nameof(CanAddWhen));
+        resume();
     }
 
     partial void OnIsWhenAllDayChanged(bool value)
     {
+        var resume = SuppressAutoSave();
         if (!value && WhenTime == AllDayTime)
         {
             WhenTime = TimeSpan.FromHours(12); // leaving all-day → restore a sensible editable time
             SetWhenTimeEditors(WhenTime);
         }
         OnPropertyChanged(nameof(ShowWhenTime));
+        resume();
     }
 
     partial void OnWhenDateChanged(DateTimeOffset? value)
     {
         if (_isLoading) return;
+        var resume = SuppressAutoSave();
         if (value is not null)
         {
             SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
@@ -226,7 +241,12 @@ public partial class TaskDetailViewModel : ObservableObject
         {
             SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
         }
+        resume();
     }
+
+    partial void OnWhenTimeChanged(TimeSpan? value) => RequestAutoSave();
+    partial void OnSelectedPriorityChanged(Priority value) => RequestAutoSave();
+    partial void OnSelectedProjectChanged(ProjectEditorOption? value) => RequestAutoSave();
 
     partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
     partial void OnSelectedWhenMinuteChanged(TimeOption? value) => SyncWhenTimeFromParts();
@@ -259,12 +279,14 @@ public partial class TaskDetailViewModel : ObservableObject
         _loadedWhenDate = WhenDate;
         _loadedWhenTime = WhenTime;
         _loadedIsWhenAllDay = IsWhenAllDay;
-        _isLoading = false;
 
+        // Stay in the loading guard until the panel is fully populated — setting SelectedProject and the
+        // label rows below must not trip autosave (no save should fire just from opening a task).
         await LoadProjectsAsync(task.ProjectId);
         await LoadLabelsAsync(task.LabelIds);
         await LoadSubtasksAsync(task.Id);
         IsOpen = true;
+        _isLoading = false;
     }
 
     public void Close()
@@ -275,46 +297,110 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public void SetWhenTime(TimeSpan time)
     {
+        var resume = SuppressAutoSave();
         WhenTime = time;
         SetWhenTimeEditors(time);
+        resume();
     }
 
     public void EnableWhenEditor()
     {
+        var resume = SuppressAutoSave();
         WhenDate = LocalNow();
         WhenTime ??= TimeSpan.FromHours(12);
         SetWhenTimeEditors(WhenTime);
         SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
         IsWhenAllDay = true; // new dates start as 종일; uncheck to set a time
+        resume();
     }
 
     public void ClearWhen()
     {
+        var resume = SuppressAutoSave();
         IsWhenAllDay = false;
         WhenDate = null;
         WhenTime = null;
         SelectedWhenHour = null;
         SelectedWhenMinute = null;
         SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
+        resume();
     }
 
-    [RelayCommand]
-    private async Task SaveAsync()
+    /// <summary>
+    /// Persists the panel's current edits straight to the file source of truth, flushing any text that
+    /// hasn't been committed by a focus-out yet. The detail panel autosaves on every change, so the
+    /// close button calls this only to catch a title/notes edit whose <c>LostFocus</c> hasn't fired.
+    /// </summary>
+    public Task FlushAsync() => AutoSaveAsync();
+
+    /// <summary>
+    /// Fire-and-forget autosave for single-selection changes (priority, When, project, label toggles).
+    /// A no-op while OpenAsync is filling the panel (<see cref="_isLoading"/>) or while a multi-property
+    /// action is coalescing its writes (<see cref="_suppressAutoSave"/>); the actual save is serialized
+    /// through <see cref="_saveGate"/> so overlapping edits can't reorder their writes.
+    /// </summary>
+    private void RequestAutoSave()
     {
-        if (_taskId is not { } id) return;
-        var task = await _store.GetAsync<TaskItem>(id);
-        if (task is null || task.IsDeleted) return;
+        if (_isLoading || _suppressAutoSave) return;
+        _pendingAutoSave = AutoSaveAsync();
+    }
 
-        task.Title = Title.Trim();
-        task.Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes;
-        task.Priority = SelectedPriority;
-        task.When = BuildWhen();
-        task.ProjectId = SelectedProject?.Id;
-        task.LabelIds = Labels.Where(label => label.IsSelected && label.Id != Guid.Empty).Select(label => label.Id).ToList();
+    /// <summary>Awaits the most recently requested autosave. A test/diagnostic seam: production code
+    /// fires autosaves and forgets them (the gate keeps them ordered); only callers that need to
+    /// observe the persisted result deterministically await this.</summary>
+    internal Task DrainPendingSaveAsync() => _pendingAutoSave;
 
-        await _store.SaveAsync(task);
-        await _refreshOwner();
-        await OpenAsync(id);
+    /// <summary>
+    /// Suppresses per-property autosave for the duration of one user action that touches several
+    /// properties (e.g. picking a date sets the option, date, and time), so it persists once. The
+    /// returned callback restores the prior state and fires the single coalesced save; nesting is safe.
+    /// </summary>
+    private Action SuppressAutoSave()
+    {
+        var previous = _suppressAutoSave;
+        _suppressAutoSave = true;
+        return () =>
+        {
+            _suppressAutoSave = previous;
+            RequestAutoSave();
+        };
+    }
+
+    /// <summary>
+    /// The single autosave path, reused by every trigger and by the close flush. Reads the live record,
+    /// applies the panel's fields, and saves through <see cref="ITaskStore"/> (which stamps UpdatedAt).
+    /// The dirty-check in <see cref="BuildWhen"/> means a save that never touched the date preserves the
+    /// original When's exact instant and time zone. A failed save is logged, not swallowed silently, and
+    /// left for the next change or the close flush to retry.
+    /// </summary>
+    private async Task AutoSaveAsync()
+    {
+        if (_isLoading || !IsOpen || _taskId is not { } id) return;
+
+        await _saveGate.WaitAsync();
+        try
+        {
+            var task = await _store.GetAsync<TaskItem>(id);
+            if (task is null || task.IsDeleted) return;
+
+            task.Title = Title.Trim();
+            task.Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes;
+            task.Priority = SelectedPriority;
+            task.When = BuildWhen();
+            task.ProjectId = SelectedProject?.Id;
+            task.LabelIds = Labels.Where(label => label.IsSelected && label.Id != Guid.Empty).Select(label => label.Id).ToList();
+
+            await _store.SaveAsync(task);
+            await _refreshOwner();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Cue] Detail autosave failed: {ex.Message}");
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     [RelayCommand]
@@ -352,6 +438,8 @@ public partial class TaskDetailViewModel : ObservableObject
         await _store.SaveAsync(label);
         var selected = Labels.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).Append(label.Id);
         await LoadLabelsAsync(selected);
+        // A newly created tag is selected on the spot — persist the task's tag assignment too.
+        await AutoSaveAsync();
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]
@@ -495,11 +583,13 @@ public partial class TaskDetailViewModel : ObservableObject
         if (id == Guid.Empty)
         {
             foreach (var label in Labels) label.IsSelected = label.Id == Guid.Empty;
-            return;
         }
-
-        target.IsSelected = !target.IsSelected;
-        SyncNoLabelOption();
+        else
+        {
+            target.IsSelected = !target.IsSelected;
+            SyncNoLabelOption();
+        }
+        RequestAutoSave();
     }
 
     private void SyncNoLabelOption()
