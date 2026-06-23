@@ -22,12 +22,13 @@ public static class NavPreferences
         }
     }
 
-    /// <summary>Whether a fixed list is shown. Lists default to visible.</summary>
-    public static bool IsVisible(string key)
+    /// <summary>Whether a fixed list is shown. Until the user sets a preference, the list falls back to
+    /// <paramref name="defaultVisible"/> (some lists — 앞으로 할 일 / 언젠가 할 일 — start hidden).</summary>
+    public static bool IsVisible(string key, bool defaultVisible = true)
     {
         if (Store is { } store && store.TryGetValue($"nav.{key}", out var value) && value is bool persisted)
             return persisted;
-        return Memory.TryGetValue(key, out var remembered) ? remembered : true;
+        return Memory.TryGetValue(key, out var remembered) ? remembered : defaultVisible;
     }
 
     public static void SetVisible(string key, bool visible)

@@ -120,9 +120,22 @@ public partial class TaskRowViewModel : ObservableObject
     private static string FormatTitle(string title)
         => string.IsNullOrWhiteSpace(title) ? "(제목 없음)" : title;
 
-    private static string BuildSchedule(TaskListItem item)
-        => item.WhenDate is { } when ? Day(when) : string.Empty;
+    // All-day (종일) tasks are pinned to 23:59; that is a marker, not a real time, so the row shows the
+    // date alone. Any other time is a deliberate schedule and is shown next to the date.
+    private static readonly TimeOnly AllDayTime = new(23, 59);
 
-    private static string Day(DateOnly d)
-        => d.ToString("M월 d일 (ddd)", CultureInfo.GetCultureInfo("ko-KR"));
+    private static string BuildSchedule(TaskListItem item)
+    {
+        if (item.WhenDate is not { } when)
+            return string.Empty;
+        return item.WhenTime is { } time && time != AllDayTime
+            ? $"{Day(when)} {Time(time)}"
+            : Day(when);
+    }
+
+    private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
+
+    private static string Day(DateOnly d) => d.ToString("M월 d일 (ddd)", Korean);
+
+    private static string Time(TimeOnly t) => t.ToString("tt h:mm", Korean);
 }

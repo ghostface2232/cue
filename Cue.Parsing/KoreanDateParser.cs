@@ -86,6 +86,7 @@ public sealed class KoreanDateParser : IDateParser
                 result.Recurrence)
             {
                 WhenAssigned = result.WhenAssigned,
+                WhenHasTime = result.WhenHasTime,
             };
         }
         catch
@@ -147,10 +148,11 @@ public sealed class KoreanDateParser : IDateParser
                         continue;
 
                     var date = DateOnly.FromDateTime(dt);
-                    var when = r.TypeName.EndsWith("datetime", StringComparison.Ordinal)
+                    var hasTime = r.TypeName.EndsWith("datetime", StringComparison.Ordinal);
+                    var when = hasTime
                         ? ScheduledWhen.On(context.Zoned(date, dt.Hour, dt.Minute))
                         : ScheduledWhen.On(context.Zoned(date));
-                    if (result.TrySetWhen(when) && !string.IsNullOrEmpty(r.Text))
+                    if (result.TrySetWhen(when, hasTime) && !string.IsNullOrEmpty(r.Text))
                     {
                         var at = work.IndexOf(r.Text, StringComparison.Ordinal);
                         if (at >= 0)

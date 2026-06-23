@@ -46,6 +46,15 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
+                    <!-- Selected row gets a persistent fill (the hover tone) in addition to the accent
+                         bar, so the open task reads as selected even while the pointer is elsewhere. -->
+                    <Rectangle
+                        Grid.ColumnSpan="3"
+                        Margin="-12,-6"
+                        Fill="{StaticResource TaskHoverBrush}"
+                        RadiusX="4"
+                        RadiusY="4"
+                        Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                     <Rectangle
                         VerticalAlignment="Stretch"
                         Fill="{ThemeResource AccentFillColorDefaultBrush}"
@@ -112,6 +121,15 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+                        <!-- Selected row gets a persistent fill (the hover tone) in addition to the accent
+                             bar, so the open task reads as selected even while the pointer is elsewhere. -->
+                        <Rectangle
+                            Grid.ColumnSpan="3"
+                            Margin="-12,-8"
+                            Fill="{StaticResource TaskHoverBrush}"
+                            RadiusX="8"
+                            RadiusY="8"
+                            Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                         <Rectangle
                             VerticalAlignment="Stretch"
                             Fill="{ThemeResource AccentFillColorDefaultBrush}"
@@ -407,13 +425,13 @@
                                 <Button
                                     HorizontalAlignment="Left"
                                     Click="EnableWhen_Click"
-                                    Content="+ 날짜 추가"
+                                    Content="+ 일시 추가"
                                     Style="{StaticResource CueSubtleTextButtonStyle}"
                                     Visibility="{x:Bind ViewModel.Detail.CanAddWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
                                 <StackPanel Spacing="11" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <Grid>
-                                        <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="날짜" />
+                                        <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="일시" />
                                         <Button HorizontalAlignment="Right" Padding="8,3" Background="Transparent" BorderThickness="0" Click="ClearWhen_Click" Content="제거" />
                                     </Grid>
                                     <Grid x:Name="WhenDateTimeGrid" ColumnSpacing="8" RowSpacing="8" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -422,17 +440,25 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.WhenDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
-                                        <StackPanel
+                                        <!-- Time picker. In the wide (2-column) layout the dropdowns sit at a
+                                             fixed width beside the date; when the panel narrows to one column
+                                             (see UpdateDetailResponsiveLayout) the columns go star and the
+                                             dropdowns stretch to fill the card, matching the date picker. -->
+                                        <Grid
                                             x:Name="WhenTimePanel"
                                             Grid.Column="1"
                                             VerticalAlignment="Center"
-                                            Orientation="Horizontal"
-                                            Spacing="7"
+                                            ColumnSpacing="7"
                                             Visibility="{x:Bind ViewModel.Detail.ShowWhenTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                            <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenHour, Mode=TwoWay}" />
-                                            <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
-                                            <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
-                                        </StackPanel>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition x:Name="WhenHourCol" Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition x:Name="WhenMinuteCol" Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox x:Name="WhenHourCombo" Width="72" HorizontalAlignment="Stretch" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenHour, Mode=TwoWay}" />
+                                            <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="18" Text=":" />
+                                            <ComboBox x:Name="WhenMinuteCombo" Grid.Column="2" Width="72" HorizontalAlignment="Stretch" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
+                                        </Grid>
                                     </Grid>
                                     <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>

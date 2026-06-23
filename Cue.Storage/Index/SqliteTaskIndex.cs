@@ -24,7 +24,7 @@ namespace Cue.Storage.Index;
 public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 {
     private const string Columns =
-        "id, title, group_id, parent_task_id, when_kind, when_date, " +
+        "id, title, group_id, parent_task_id, when_kind, when_date, when_time, " +
         "completed_at, priority, sort_order";
 
     private readonly SqliteConnection _connection;
@@ -63,7 +63,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 4;
+    private const long SchemaVersion = 5;
 
     private void EnsureSchema()
     {
@@ -94,6 +94,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 parent_task_id  TEXT NULL,
                 when_kind       TEXT NOT NULL,
                 when_date       TEXT NULL,
+                when_time       TEXT NULL,
                 completed_at    TEXT NULL,
                 deleted_at      TEXT NULL,
                 priority        INTEGER NOT NULL DEFAULT 0,
@@ -124,7 +125,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE INDEX IF NOT EXISTS ix_task_tags_tag ON task_tags(tag_id);
             CREATE INDEX IF NOT EXISTS ix_task_groups_active ON task_groups(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_tags_active ON tags(deleted_at);
-            PRAGMA user_version = 4;
+            PRAGMA user_version = 5;
             """;
         cmd.ExecuteNonQuery();
     }
@@ -231,10 +232,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             cmd.CommandText =
                 """
                 INSERT INTO tasks
-                    (id, title, group_id, parent_task_id, when_kind, when_date,
+                    (id, title, group_id, parent_task_id, when_kind, when_date, when_time,
                      completed_at, deleted_at, priority, sort_order)
                 VALUES
-                    ($id, $title, $group, $parent, $whenKind, $whenDate,
+                    ($id, $title, $group, $parent, $whenKind, $whenDate, $whenTime,
                      $completed, $deleted, $priority, $sort)
                 ON CONFLICT(id) DO UPDATE SET
                     title           = excluded.title,
@@ -242,6 +243,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                     parent_task_id  = excluded.parent_task_id,
                     when_kind       = excluded.when_kind,
                     when_date       = excluded.when_date,
+                    when_time       = excluded.when_time,
                     completed_at    = excluded.completed_at,
                     deleted_at      = excluded.deleted_at,
                     priority        = excluded.priority,
@@ -253,6 +255,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             Bind(cmd, "$parent", task.ParentTaskId?.ToString());
             Bind(cmd, "$whenKind", task.When.Kind.ToString());
             Bind(cmd, "$whenDate", task.When.Kind == WhenKind.OnDate ? LocalDate(task.When.Date) : null);
+            Bind(cmd, "$whenTime", task.When.Kind == WhenKind.OnDate ? LocalTime(task.When.Date) : null);
             Bind(cmd, "$completed", Instant(task.CompletedAt));
             Bind(cmd, "$deleted", Instant(task.DeletedAt));
             Bind(cmd, "$priority", (int)task.Priority);
@@ -585,9 +588,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         ParentTaskId: GuidOrNull(r, 3),
         WhenKind: Enum.Parse<WhenKind>(r.GetString(4)),
         WhenDate: DateOrNull(r, 5),
-        IsCompleted: !r.IsDBNull(6),
-        Priority: (Priority)r.GetInt64(7),
-        SortOrder: r.GetString(8));
+        WhenTime: TimeOrNull(r, 6),
+        IsCompleted: !r.IsDBNull(7),
+        Priority: (Priority)r.GetInt64(8),
+        SortOrder: r.GetString(9));
 
     /// <summary>The current calendar day in the configured zone — computed, never stored.</summary>
     private string Today()
@@ -599,6 +603,13 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             ? null
             : DateOnly.FromDateTime(zoned.Value.ToLocal().DateTime).ToString("yyyy-MM-dd");
 
+    /// <summary>The pinned wall-clock time-of-day, in the task's own zone, as <c>HH:mm</c> — so a list
+    /// row can show the time. An all-day item is pinned to 23:59 (the end-of-day marker the UI reads).</summary>
+    private static string? LocalTime(ZonedDateTime? zoned)
+        => zoned is null
+            ? null
+            : TimeOnly.FromDateTime(zoned.Value.ToLocal().DateTime).ToString("HH\\:mm");
+
     private static string? Instant(DateTimeOffset? value)
         => value?.ToUniversalTime().ToString("O");
 
@@ -607,6 +618,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     private static DateOnly? DateOrNull(SqliteDataReader r, int i)
         => r.IsDBNull(i) ? null : DateOnly.ParseExact(r.GetString(i), "yyyy-MM-dd");
+
+    private static TimeOnly? TimeOrNull(SqliteDataReader r, int i)
+        => r.IsDBNull(i) ? null : TimeOnly.ParseExact(r.GetString(i), "HH\\:mm");
 
     private static void Bind(SqliteCommand cmd, string name, object? value)
         => cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
