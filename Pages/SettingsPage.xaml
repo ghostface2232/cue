@@ -12,10 +12,14 @@
 
     <Page.Resources>
         <Style x:Key="SettingsNavItemStyle" TargetType="ListViewItem">
-            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Margin" Value="0,1" />
             <Setter Property="Padding" Value="10,0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
+            <Setter Property="FocusVisualMargin" Value="2" />
+            <Setter Property="FocusVisualPrimaryThickness" Value="1" />
+            <Setter Property="FocusVisualSecondaryThickness" Value="0" />
         </Style>
 
         <Style x:Key="SettingsNavTextStyle" TargetType="TextBlock">
@@ -51,6 +55,12 @@
             <Setter Property="BackgroundSizing" Value="InnerBorderEdge" />
         </Style>
 
+        <Style x:Key="SettingsDividerStyle" TargetType="Border">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            <Setter Property="Margin" Value="0,2" />
+        </Style>
+
         <Style x:Key="SettingsSectionTitleStyle" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
             <Setter Property="FontSize" Value="{StaticResource CueFontSection}" />
@@ -81,6 +91,14 @@
                 SelectionChanged="SectionNav_SelectionChanged"
                 SelectionMode="Single"
                 SelectedIndex="0">
+                <ListView.Resources>
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="{ThemeResource SubtleFillColorSecondary}" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="{ThemeResource SubtleFillColorTertiary}" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="{ThemeResource TextFillColorPrimary}" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
+                </ListView.Resources>
                 <ListViewItem Tag="Time">
                     <Grid ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
@@ -136,7 +154,6 @@
 
                         <Border Style="{StaticResource SettingsCardStyle}">
                             <StackPanel Spacing="16">
-                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="날짜 기준" />
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -153,12 +170,9 @@
                                         VerticalAlignment="Center"
                                         SelectionChanged="FirstDayCombo_SelectionChanged" />
                                 </Grid>
-                            </StackPanel>
-                        </Border>
 
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="16">
-                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="시간대" />
+                                <Border Style="{StaticResource SettingsDividerStyle}" />
+
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -187,7 +201,6 @@
 
                         <Border Style="{StaticResource SettingsCardStyle}">
                             <StackPanel Spacing="16">
-                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="시간 해석" />
                                 <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -311,7 +324,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Spacing="5" VerticalAlignment="Center">
-                                    <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="알림" />
+                                    <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="리마인더" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="리마인더 구현 단계에서 활성화" />
                                 </StackPanel>
                                 <ToggleSwitch
