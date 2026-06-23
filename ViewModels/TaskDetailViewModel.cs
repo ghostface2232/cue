@@ -446,9 +446,6 @@ public partial class TaskDetailViewModel : ObservableObject
         await LoadSubtasksAsync(parentId);
     }
 
-    /// <summary>The label color palette offered in the per-label color picker.</summary>
-    public IReadOnlyList<string> LabelColorPalette { get; } = LabelColors.Palette;
-
     [RelayCommand]
     private async Task AddLabelAsync(string name)
     {
@@ -462,17 +459,6 @@ public partial class TaskDetailViewModel : ObservableObject
         };
         await _store.SaveAsync(label);
         var selected = Labels.Where(item => item.IsSelected).Select(item => item.Id).Append(label.Id);
-        await LoadLabelsAsync(selected);
-    }
-
-    /// <summary>Recolors a label and refreshes the chips. The selection set is preserved.</summary>
-    public async Task SetLabelColorAsync(Guid labelId, string color)
-    {
-        var label = await _store.GetAsync<Label>(labelId);
-        if (label is null || label.IsDeleted) return;
-        label.Color = color;
-        await _store.SaveAsync(label);
-        var selected = Labels.Where(item => item.IsSelected).Select(item => item.Id).ToList();
         await LoadLabelsAsync(selected);
     }
 

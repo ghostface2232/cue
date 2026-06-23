@@ -6,17 +6,20 @@ namespace Cue.ViewModels;
 /// </summary>
 public static class LabelColors
 {
-    public static readonly IReadOnlyList<string> Palette = new[]
+    /// <summary>The palette as (hex, Korean name) pairs — used to build color pickers.</summary>
+    public static readonly IReadOnlyList<(string Hex, string Name)> Swatches = new[]
     {
-        "#E74C3C", // red
-        "#E67E22", // orange
-        "#F1C40F", // amber
-        "#2ECC71", // green
-        "#1ABC9C", // teal
-        "#3498DB", // blue
-        "#9B59B6", // purple
-        "#7F8C8D", // gray
+        ("#E74C3C", "빨강"),
+        ("#E67E22", "주황"),
+        ("#F1C40F", "노랑"),
+        ("#2ECC71", "초록"),
+        ("#1ABC9C", "청록"),
+        ("#3498DB", "파랑"),
+        ("#9B59B6", "보라"),
+        ("#7F8C8D", "회색"),
     };
+
+    public static readonly IReadOnlyList<string> Palette = Swatches.Select(s => s.Hex).ToArray();
 
     /// <summary>A default color for a newly created label, cycling through the palette by count.</summary>
     public static string ForNewLabel(int existingCount)

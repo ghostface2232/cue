@@ -168,9 +168,45 @@ public sealed partial class MainWindow : Window
         delete.Click += isProject ? DeleteProject_Click : DeleteLabel_Click;
         var menu = new MenuFlyout();
         menu.Items.Add(rename);
+        if (!isProject && record is LabelListItem label)
+            menu.Items.Add(CreateLabelColorSubMenu(label.Id));
         menu.Items.Add(delete);
         return menu;
     }
+
+    private MenuFlyoutSubItem CreateLabelColorSubMenu(Guid labelId)
+    {
+        var submenu = new MenuFlyoutSubItem { Text = "색 변경" };
+        foreach (var (hex, name) in LabelColors.Swatches)
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = name,
+                Tag = new LabelColorChoice(labelId, hex),
+                Icon = new FontIcon
+                {
+                    Glyph = "",
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)new HexToBrushConverter()
+                        .Convert(hex, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!),
+                },
+            };
+            item.Click += LabelColor_Click;
+            submenu.Items.Add(item);
+        }
+        return submenu;
+    }
+
+    private async void LabelColor_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuFlyoutItem { Tag: LabelColorChoice choice }) return;
+        await RunSafelyAsync(async () =>
+        {
+            await ViewModel.SetLabelColorAsync(choice.LabelId, choice.Hex);
+            RebuildLiveNavigation();
+        });
+    }
+
+    private readonly record struct LabelColorChoice(Guid LabelId, string Hex);
 
     private async void RenameProject_Click(object sender, RoutedEventArgs e)
     {

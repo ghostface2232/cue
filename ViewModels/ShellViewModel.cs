@@ -130,6 +130,16 @@ public partial class ShellViewModel : ObservableObject
         await LoadAsync();
     }
 
+    /// <summary>Recolors a label from the navigation pane and reloads so the change shows at once.</summary>
+    public async Task SetLabelColorAsync(Guid id, string color)
+    {
+        var label = await _store.GetAsync<Label>(id);
+        if (label is null || label.IsDeleted) return;
+        label.Color = color;
+        await _store.SaveAsync(label);
+        await LoadAsync();
+    }
+
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> items)
     {
         target.Clear();

@@ -407,40 +407,29 @@
                             <StackPanel Spacing="10">
                                 <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
-                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:LabelEditorOption">
-                                            <Grid Margin="0,0,14,7" ColumnSpacing="2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <Button
-                                                    Padding="4"
-                                                    VerticalAlignment="Center"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    Click="LabelColorButton_Click"
-                                                    Tag="{x:Bind Id}"
-                                                    ToolTipService.ToolTip="색 변경">
-                                                    <FontIcon FontSize="15" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
-                                                    <Button.Flyout>
-                                                        <Flyout>
-                                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                                <Button Width="26" Height="26" Padding="0" Background="#E74C3C" Click="LabelSwatch_Click" CornerRadius="13" Tag="#E74C3C" />
-                                                                <Button Width="26" Height="26" Padding="0" Background="#E67E22" Click="LabelSwatch_Click" CornerRadius="13" Tag="#E67E22" />
-                                                                <Button Width="26" Height="26" Padding="0" Background="#F1C40F" Click="LabelSwatch_Click" CornerRadius="13" Tag="#F1C40F" />
-                                                                <Button Width="26" Height="26" Padding="0" Background="#2ECC71" Click="LabelSwatch_Click" CornerRadius="13" Tag="#2ECC71" />
-                                                                <Button Width="26" Height="26" Padding="0" Background="#1ABC9C" Click="LabelSwatch_Click" CornerRadius="13" Tag="#1ABC9C" />
-                                                                <Button Width="26" Height="26" Padding="0" Background="#3498DB" Click="LabelSwatch_Click" CornerRadius="13" Tag="#3498DB" />
-                                                                <Button Width="26" Height="26" Padding="0" Background="#9B59B6" Click="LabelSwatch_Click" CornerRadius="13" Tag="#9B59B6" />
-                                                                <Button Width="26" Height="26" Padding="0" Background="#7F8C8D" Click="LabelSwatch_Click" CornerRadius="13" Tag="#7F8C8D" />
-                                                            </StackPanel>
-                                                        </Flyout>
-                                                    </Button.Flyout>
-                                                </Button>
-                                                <CheckBox Grid.Column="1" MinWidth="0" Content="{x:Bind Name}" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
-                                            </Grid>
+                                            <Button
+                                                Margin="0,1"
+                                                Padding="8,7"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Stretch"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Click="LabelRow_Click"
+                                                CornerRadius="{StaticResource CueRadiusSmall}"
+                                                Tag="{x:Bind Id}">
+                                                <Grid ColumnSpacing="10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon VerticalAlignment="Center" FontSize="15" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
+                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                                    <FontIcon Grid.Column="2" VerticalAlignment="Center" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE73E;" Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                                </Grid>
+                                            </Button>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
