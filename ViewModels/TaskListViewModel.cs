@@ -111,6 +111,28 @@ public partial class TaskListViewModel : ObservableObject
         Title = "Cue";
         QuickAddText = string.Empty;
         Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync);
+        // Clear the row selection accent when the detail panel closes.
+        Detail.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TaskDetailViewModel.IsOpen) && !Detail.IsOpen)
+                ApplySelection(null);
+        };
+    }
+
+    /// <summary>Marks the row whose task is <paramref name="id"/> selected and clears the rest.</summary>
+    private void ApplySelection(Guid? id)
+    {
+        foreach (var row in AllRows())
+            row.IsSelected = row.Id == id;
+    }
+
+    /// <summary>Every realized row across all sections, including subtask rows.</summary>
+    private IEnumerable<TaskRowViewModel> AllRows()
+    {
+        foreach (var row in Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
+        foreach (var row in EveningTasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
+        foreach (var group in ProjectGroups)
+            foreach (var row in group.Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
     }
 
     /// <summary>Switches which index view this list reflects, and retitles accordingly.</summary>
@@ -239,6 +261,9 @@ public partial class TaskListViewModel : ObservableObject
         IsEmpty = IsProjectMode
             ? ProjectGroups.Count == 0
             : Tasks.Count == 0 && !HasEveningTasks;
+
+        // Re-apply the selection accent to the freshly rebuilt rows so it survives a reload.
+        ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
     }
 
     [RelayCommand]
@@ -345,6 +370,7 @@ public partial class TaskListViewModel : ObservableObject
         }
 
         await Detail.OpenAsync(id);
+        ApplySelection(id);
     }
 
     /// <summary>

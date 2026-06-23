@@ -45,6 +45,13 @@ public partial class TaskRowViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
 
+    /// <summary>
+    /// True while this row's task is the one open in the detail panel. Drives the row's selection
+    /// accent. Set by the list view model, not by the user toggling anything.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsSelected { get; set; }
+
     public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled)
     {
         _onUserToggled = onUserToggled;

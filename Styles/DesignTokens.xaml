@@ -48,6 +48,13 @@
     <!-- Interactive-state brushes (TaskHoverBrush / TaskPressedBrush / DetailCardBrush) are kept
          page-local in TaskListPage so the page code-behind can resolve them via this.Resources. -->
 
+    <!-- ===== Priority cue colors (Todoist-style row dot). Theme-aware via ThemeResource on Color;
+         resolved by PriorityToBrushConverter. ===== -->
+    <SolidColorBrush x:Key="CuePriorityP1Brush" Color="{ThemeResource SystemFillColorCritical}" />
+    <SolidColorBrush x:Key="CuePriorityP2Brush" Color="{ThemeResource SystemFillColorCaution}" />
+    <SolidColorBrush x:Key="CuePriorityP3Brush" Color="{ThemeResource SystemAccentColor}" />
+    <SolidColorBrush x:Key="CuePriorityP4Brush" Color="{ThemeResource TextFillColorTertiary}" />
+
     <!-- ===== NavigationView: flatten the selected-item text to primary (calmer, Things-3-like).
          Mirrors Files/Settings NavigationViewItemButtonStyle. Overrides the stock keys app-wide;
          theme-correct because the Color is itself a ThemeResource. ===== -->

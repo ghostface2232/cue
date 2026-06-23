@@ -39,18 +39,38 @@
                 </Border.BackgroundTransition>
                 <Grid ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
+                    <Rectangle
+                        VerticalAlignment="Stretch"
+                        Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                        RadiusX="1.5"
+                        RadiusY="1.5"
+                        Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                     <CheckBox
+                        Grid.Column="1"
                         VerticalAlignment="Center"
                         IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                         Style="{StaticResource CueCircleCheckBoxStyle}" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
-                        <TextBlock FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Ellipse
+                                Width="7"
+                                Height="7"
+                                Margin="0,0,7,0"
+                                VerticalAlignment="Center"
+                                Fill="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}"
+                                Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
+                            <TextBlock Grid.Column="1" FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                        </Grid>
                         <StackPanel Orientation="Horizontal" Spacing="10" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
-                            <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind PriorityCaption}" Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
                         </StackPanel>
                     </StackPanel>
                 </Grid>
@@ -80,18 +100,38 @@
                     </Border.Transitions>
                     <Grid ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+                        <Rectangle
+                            VerticalAlignment="Stretch"
+                            Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                            RadiusX="1.5"
+                            RadiusY="1.5"
+                            Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                         <CheckBox
+                            Grid.Column="1"
                             VerticalAlignment="Center"
                             IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                             Style="{StaticResource CueCircleCheckBoxStyle}" />
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                            <TextBlock FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse
+                                    Width="8"
+                                    Height="8"
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    Fill="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}"
+                                    Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Grid.Column="1" FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                            </Grid>
                             <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
-                                <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind PriorityCaption}" Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind SubtaskCaption}" Visibility="{x:Bind HasSubtasks, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </StackPanel>
@@ -326,15 +366,23 @@
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="마감" />
-                                <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
-                                <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                    <TextBlock Text="시각" />
-                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
+                                    <StackPanel
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal"
+                                        Spacing="7"
+                                        Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                         <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
                                         <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
                                         <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
                                     </StackPanel>
-                                </StackPanel>
+                                </Grid>
                             </StackPanel>
                         </Border>
 
