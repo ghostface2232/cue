@@ -132,7 +132,6 @@
                             </Grid>
                             <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
-                                <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind SubtaskCaption}" Visibility="{x:Bind HasSubtasks, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </StackPanel>
                     </Grid>
@@ -493,11 +492,11 @@
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Subtasks}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:SubtaskRowViewModel">
-                                            <Grid Margin="0,3" Padding="2,5" ColumnSpacing="10" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="10" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                                <CheckBox VerticalAlignment="Center" IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
-                                                <Button Grid.Column="1" Padding="8,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Click="OpenSubtask_Click" Content="{x:Bind Title}" Tag="{x:Bind Id}" />
-                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="서브태스크 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
+                                                <CheckBox VerticalAlignment="Center" IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
+                                                <Button Grid.Column="1" Padding="6,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Click="OpenSubtask_Click" Content="{x:Bind Title}" CornerRadius="{StaticResource CueRadiusSmall}" FontSize="{StaticResource CueFontRowSub}" Tag="{x:Bind Id}" />
+                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="서브태스크 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

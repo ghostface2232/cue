@@ -82,6 +82,7 @@ public sealed partial class MainWindow : Window
         {
             await ViewModel.LoadCommand.ExecuteAsync(null);
             RebuildLiveNavigation();
+            ApplyNavVisibility();
         });
     }
 
@@ -127,6 +128,108 @@ public sealed partial class MainWindow : Window
         LabelsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 라벨", Tag = "create-label" });
         foreach (var label in ViewModel.Labels)
             LabelsGroup.MenuItems.Add(CreateLabelItem(label));
+    }
+
+    // The fixed lists the user can show/hide from the sidebar context menu. "Cue" (Inbox) is omitted —
+    // it is the home list and is always present.
+    private static readonly (string Key, string Glyph, string Name)[] ToggleableNav =
+    {
+        ("today", "", "Today"),
+        ("upcoming", "", "Upcoming"),
+        ("anytime", "", "Anytime"),
+        ("someday", "", "Someday"),
+        ("logbook", "", "Logbook"),
+    };
+
+    private NavigationViewItem NavItemFor(string key) => key switch
+    {
+        "today" => TodayItem,
+        "upcoming" => UpcomingItem,
+        "anytime" => AnytimeItem,
+        "someday" => SomedayItem,
+        "logbook" => LogbookItem,
+        _ => throw new ArgumentOutOfRangeException(nameof(key)),
+    };
+
+    private void ApplyNavVisibility()
+    {
+        foreach (var (key, _, _) in ToggleableNav)
+            NavItemFor(key).Visibility = NavPreferences.IsVisible(key) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Right-click anywhere in the sidebar pane opens a checkable list of the fixed views to
+    /// show/hide. Gated to the pane so right-clicks on the content frame are left alone.</summary>
+    private void NavView_RightTapped(object sender, Microsoft.UI.Xaml.Input.RightTappedRoutedEventArgs e)
+    {
+        var position = e.GetPosition(NavView);
+        if (position.X > NavView.OpenPaneLength) return;
+        e.Handled = true;
+        ShowNavToggleFlyout(position);
+    }
+
+    private void ShowNavToggleFlyout(Windows.Foundation.Point position)
+    {
+        var panel = new StackPanel { Spacing = 1, MinWidth = 220 };
+        foreach (var (key, glyph, name) in ToggleableNav)
+            panel.Children.Add(BuildNavToggleRow(key, glyph, name));
+        new Flyout
+        {
+            Content = panel,
+            FlyoutPresenterStyle = null,
+        }.ShowAt(NavView, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions { Position = position });
+    }
+
+    /// <summary>One checkable row mirroring the detail label list: glyph + name on the left, an accent
+    /// check on the right when shown. Clicking toggles in place and keeps the flyout open.</summary>
+    private Button BuildNavToggleRow(string key, string glyph, string name)
+    {
+        var check = new FontIcon
+        {
+            Glyph = "",
+            FontSize = 14,
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = NavPreferences.IsVisible(key) ? Visibility.Visible : Visibility.Collapsed,
+        };
+        if (AccentBrush() is { } accent) check.Foreground = accent;
+
+        var grid = new Grid { ColumnSpacing = 10 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var icon = new FontIcon { Glyph = glyph, FontSize = 15, VerticalAlignment = VerticalAlignment.Center };
+        var label = new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(label, 1);
+        Grid.SetColumn(check, 2);
+        grid.Children.Add(icon);
+        grid.Children.Add(label);
+        grid.Children.Add(check);
+
+        var button = new Button
+        {
+            Content = grid,
+            MinWidth = 220,
+            Padding = new Thickness(10, 7, 10, 7),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+        };
+        button.Click += (_, _) =>
+        {
+            var visible = !NavPreferences.IsVisible(key);
+            NavPreferences.SetVisible(key, visible);
+            check.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            var item = NavItemFor(key);
+            item.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            if (!visible && ReferenceEquals(NavView.SelectedItem, item)) NavigateHome();
+        };
+        return button;
+    }
+
+    private static Microsoft.UI.Xaml.Media.Brush? AccentBrush()
+    {
+        try { return (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]; }
+        catch { return null; }
     }
 
     private NavigationViewItem CreateProjectItem(ProjectListItem project)

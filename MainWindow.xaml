@@ -37,6 +37,7 @@
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"
             IsSettingsVisible="False"
+            RightTapped="NavView_RightTapped"
             SelectionChanged="NavView_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem
@@ -48,27 +49,27 @@
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Today" Tag="today">
+                <NavigationViewItem x:Name="TodayItem" Content="Today" Tag="today">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8BF;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Upcoming" Tag="upcoming">
+                <NavigationViewItem x:Name="UpcomingItem" Content="Upcoming" Tag="upcoming">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE823;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Anytime" Tag="anytime">
+                <NavigationViewItem x:Name="AnytimeItem" Content="Anytime" Tag="anytime">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8FD;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Someday" Tag="someday">
+                <NavigationViewItem x:Name="SomedayItem" Content="Someday" Tag="someday">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8F1;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Logbook" Tag="logbook">
+                <NavigationViewItem x:Name="LogbookItem" Content="Logbook" Tag="logbook">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE73E;" />
                     </NavigationViewItem.Icon>

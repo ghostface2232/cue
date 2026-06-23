@@ -429,7 +429,7 @@ public partial class TaskDetailViewModel : ObservableObject
         var projectId = SelectedProject?.Id;
         if (task.ProjectId != projectId) task.SectionId = null;
         task.ProjectId = projectId;
-        task.LabelIds = Labels.Where(label => label.IsSelected).Select(label => label.Id).ToList();
+        task.LabelIds = Labels.Where(label => label.IsSelected && label.Id != Guid.Empty).Select(label => label.Id).ToList();
 
         await _store.SaveAsync(task);
         await _refreshOwner();
@@ -470,7 +470,7 @@ public partial class TaskDetailViewModel : ObservableObject
             SortOrder = _reorder.AppendRank(existing.Select(item => item.SortOrder)),
         };
         await _store.SaveAsync(label);
-        var selected = Labels.Where(item => item.IsSelected).Select(item => item.Id).Append(label.Id);
+        var selected = Labels.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).Append(label.Id);
         await LoadLabelsAsync(selected);
     }
 
@@ -620,10 +620,38 @@ public partial class TaskDetailViewModel : ObservableObject
 
     private async Task LoadLabelsAsync(IEnumerable<Guid> selectedIds)
     {
-        var selected = selectedIds.ToHashSet();
+        var selected = selectedIds.Where(id => id != Guid.Empty).ToHashSet();
         Labels.Clear();
+        // A synthetic "라벨 없음" row (Guid.Empty) makes the no-label state explicit and is checked by
+        // default; it stays mutually exclusive with the real labels via ToggleLabel/SyncNoLabelOption.
+        Labels.Add(new LabelEditorOption(Guid.Empty, "라벨 없음", selected.Count == 0));
         foreach (var label in await _index.GetLabelsAsync())
             Labels.Add(new LabelEditorOption(label.Id, label.Name, selected.Contains(label.Id), label.Color));
+    }
+
+    /// <summary>Toggles a label row. The "라벨 없음" entry (Guid.Empty) behaves like a reset: choosing it
+    /// clears every real label; choosing a real label clears it; and it re-checks on its own once no
+    /// real label remains selected.</summary>
+    public void ToggleLabel(Guid id)
+    {
+        var target = Labels.FirstOrDefault(label => label.Id == id);
+        if (target is null) return;
+
+        if (id == Guid.Empty)
+        {
+            foreach (var label in Labels) label.IsSelected = label.Id == Guid.Empty;
+            return;
+        }
+
+        target.IsSelected = !target.IsSelected;
+        SyncNoLabelOption();
+    }
+
+    private void SyncNoLabelOption()
+    {
+        var none = Labels.FirstOrDefault(label => label.Id == Guid.Empty);
+        if (none is not null)
+            none.IsSelected = Labels.All(label => label.Id == Guid.Empty || !label.IsSelected);
     }
 
     private async Task LoadSubtasksAsync(Guid parentId)

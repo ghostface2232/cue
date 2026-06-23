@@ -336,7 +336,7 @@ public sealed partial class TaskListPage : Page
     private void LabelRow_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: LabelEditorOption option })
-            option.IsSelected = !option.IsSelected;
+            ViewModel.Detail.ToggleLabel(option.Id);
     }
 
     private async void AddLabel_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)

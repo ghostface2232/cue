@@ -36,11 +36,12 @@ public partial class TaskRowViewModel : ObservableObject
     public Priority Priority { get; }
     public bool HasPriority => Priority != Priority.None;
     public string PriorityCaption => HasPriority ? Priority.ToString() : string.Empty;
-    public bool HasMetadata => HasSchedule || HasPriority || HasSubtasks;
+    // Subtasks are rendered as their own indented sub-list, so their presence is already obvious —
+    // they intentionally do not add a "하위 작업 N" caption to the parent row's metadata line.
+    public bool HasMetadata => HasSchedule || HasPriority;
     public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
     public ObservableCollection<TaskRowViewModel> Subtasks { get; } = new();
     public bool HasSubtasks => Subtasks.Count > 0;
-    public string SubtaskCaption => HasSubtasks ? $"하위 작업 {Subtasks.Count}" : string.Empty;
 
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
@@ -87,8 +88,6 @@ public partial class TaskRowViewModel : ObservableObject
     {
         Subtasks.Add(subtask);
         OnPropertyChanged(nameof(HasSubtasks));
-        OnPropertyChanged(nameof(HasMetadata));
-        OnPropertyChanged(nameof(SubtaskCaption));
     }
 
     private static string BuildSchedule(TaskListItem item)
