@@ -98,6 +98,50 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CompletingRecurring_IsIdempotent_WhenAdvanceCrashedAfterLogbookCopy()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+
+        var task = new TaskItem
+        {
+            Title = "매일 운동",
+            When = OnDay(Today),
+            Recurrence = Daily(Today),
+            SortOrder = "hhhh",
+        };
+        await store.SaveAsync(task);
+
+        // First completion crashes right after the Logbook copy is written (save #1) but before the
+        // advance (save #2) — the exact window the two-save path is non-atomic in.
+        var crashing = new CrashOnNthSaveStore(store, crashOnSave: 2);
+        var crashedService = new RecurringTaskService(crashing);
+        await Assert.ThrowsAsync<CrashOnNthSaveStore.SimulatedCrashException>(
+            () => crashedService.CompleteAsync(task.Id, Now));
+
+        // After the crash the orphaned copy is on disk while the original is still due today.
+        var afterCrash = await store.GetAllAsync<TaskItem>();
+        Assert.Equal(2, afterCrash.Count);
+        var stillOpen = await store.GetAsync<TaskItem>(task.Id);
+        Assert.False(stillOpen!.IsCompleted);
+        Assert.Equal(Today, DateOnly.FromDateTime(stillOpen.When.Date!.Value.Utc.UtcDateTime));
+
+        // Retrying the completion against a healthy store must overwrite the orphaned copy (its id is
+        // derived from the original id + this occurrence), not mint a second one, and advance once.
+        var service = new RecurringTaskService(store);
+        await service.CompleteAsync(task.Id, Now);
+
+        var all = await store.GetAllAsync<TaskItem>();
+        Assert.Equal(2, all.Count); // still exactly one copy + the original — no duplicate
+        var advanced = await store.GetAsync<TaskItem>(task.Id);
+        Assert.False(advanced!.IsCompleted);
+        Assert.Equal(Today.AddDays(1), DateOnly.FromDateTime(advanced.When.Date!.Value.Utc.UtcDateTime));
+
+        var logbook = await store.GetLogbookAsync();
+        Assert.Single(logbook);
+    }
+
+    [Fact]
     public async Task AdvancedOriginal_LeavesToday_AndSurfacesInUpcoming()
     {
         var root = NewRoot();
@@ -209,5 +253,42 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         private readonly DateTimeOffset _now;
         public FixedClock(DateTimeOffset now) => _now = now;
         public override DateTimeOffset GetUtcNow() => _now;
+    }
+
+    /// <summary>
+    /// An <see cref="ITaskStore"/> decorator that forwards every call to the real store but throws on
+    /// the Nth <see cref="SaveAsync"/>, simulating a crash partway through a multi-save operation.
+    /// Writes before the throw really land on disk, so the post-crash state is faithful.
+    /// </summary>
+    private sealed class CrashOnNthSaveStore : ITaskStore
+    {
+        public sealed class SimulatedCrashException : Exception;
+
+        private readonly ITaskStore _inner;
+        private readonly int _crashOnSave;
+        private int _saves;
+
+        public CrashOnNthSaveStore(ITaskStore inner, int crashOnSave)
+        {
+            _inner = inner;
+            _crashOnSave = crashOnSave;
+        }
+
+        public Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default)
+            where T : Cue.Domain.RecordBase => _inner.GetAllAsync<T>(cancellationToken);
+
+        public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default)
+            where T : Cue.Domain.RecordBase => _inner.GetAsync<T>(id, cancellationToken);
+
+        public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default)
+            where T : Cue.Domain.RecordBase
+        {
+            if (++_saves == _crashOnSave)
+                throw new SimulatedCrashException();
+            return _inner.SaveAsync(record, cancellationToken);
+        }
+
+        public Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default)
+            where T : Cue.Domain.RecordBase => _inner.DeleteAsync<T>(id, cancellationToken);
     }
 }
