@@ -387,6 +387,7 @@ public partial class TaskDetailViewModel : ObservableObject
         WhenTime ??= TimeSpan.FromHours(12);
         SetWhenTimeEditors(WhenTime);
         SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
+        IsWhenAllDay = true; // new schedules start as 종일; uncheck to set a time
     }
 
     public void ClearWhen()

@@ -184,17 +184,23 @@
         <Grid Grid.Row="2" Margin="4,2,4,14">
             <TextBox
                 MinHeight="48"
-                Padding="44,11,12,11"
+                Padding="46,11,12,11"
                 VerticalContentAlignment="Center"
-                Background="{ThemeResource ControlFillColorDefaultBrush}"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 CornerRadius="24"
                 FontSize="15"
                 IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
                 KeyDown="QuickAdd_KeyDown"
                 PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
-                Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                <TextBox.Resources>
+                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource CardBackgroundFillColorSecondary}" />
+                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{ThemeResource AccentFillColorDefault}" />
+                </TextBox.Resources>
+            </TextBox>
             <FontIcon
-                Margin="18,0,0,0"
+                Margin="20,0,0,0"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Center"
                 FontSize="16"
@@ -280,6 +286,26 @@
                 CornerRadius="{StaticResource CueRadiusPanel}"
                 Loaded="DetailPanel_Loaded"
                 Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                <Border.Resources>
+                    <!-- Slightly stronger hover/press inside the detail cards: the default subtle fills
+                         are hard to see on the card surface. Scoped to this panel; theme-aware. -->
+                    <ResourceDictionary>
+                        <ResourceDictionary.ThemeDictionaries>
+                            <ResourceDictionary x:Key="Light">
+                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#14000000" />
+                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#1F000000" />
+                                <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#14000000" />
+                                <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#1F000000" />
+                            </ResourceDictionary>
+                            <ResourceDictionary x:Key="Dark">
+                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#22FFFFFF" />
+                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#30FFFFFF" />
+                                <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#22FFFFFF" />
+                                <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#30FFFFFF" />
+                            </ResourceDictionary>
+                        </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
+                </Border.Resources>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="2,0,16,0" Spacing="13">
                         <Button
@@ -318,7 +344,9 @@
                                 AutomationProperties.Name="저장">
                                 <HyperlinkButton.Resources>
                                     <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{ThemeResource SystemFillColorSuccess}" />
-                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{ThemeResource SystemFillColorSuccess}" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Opacity="0.6" Color="{ThemeResource SystemFillColorSuccess}" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonBackgroundPointerOver" Color="Transparent" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonBackgroundPressed" Color="Transparent" />
                                 </HyperlinkButton.Resources>
                                 <FontIcon FontSize="18" Glyph="&#xE73E;" />
                             </HyperlinkButton>
@@ -333,7 +361,9 @@
                                 AutomationProperties.Name="닫기">
                                 <HyperlinkButton.Resources>
                                     <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{ThemeResource SystemFillColorCritical}" />
-                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{ThemeResource SystemFillColorCritical}" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Opacity="0.6" Color="{ThemeResource SystemFillColorCritical}" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonBackgroundPointerOver" Color="Transparent" />
+                                    <SolidColorBrush x:Key="HyperlinkButtonBackgroundPressed" Color="Transparent" />
                                 </HyperlinkButton.Resources>
                                 <FontIcon FontSize="17" Glyph="&#xE711;" />
                             </HyperlinkButton>
@@ -382,11 +412,7 @@
                                         <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
                                     </StackPanel>
                                 </Grid>
-                                <StackPanel Orientation="Horizontal" Spacing="18">
-                                    <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                                    <CheckBox Content="저녁" IsChecked="{x:Bind ViewModel.Detail.IsEvening, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                                    <CheckBox Content="언젠가" IsChecked="{x:Bind ViewModel.Detail.IsSomeday, Mode=TwoWay}" />
-                                </StackPanel>
+                                <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </Border>
 
