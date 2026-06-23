@@ -152,6 +152,51 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UnfiledLists_GatherTasksWithNoGroupOrNoLabel()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var project = new Project { Name = "그룹" };
+        var label = new Label { Name = "태그" };
+        await store.SaveAsync(project);
+        await store.SaveAsync(label);
+
+        // unfiled: no group, no label — the quick-capture leftover the 그룹 없음/태그 없음 tabs re-gather.
+        // Explicit sort orders keep the list order deterministic; the completed task sorts last despite
+        // its early rank, proving the completed-last ordering.
+        var unfiled = new TaskItem { Title = "미분류", SortOrder = "b" };
+        var grouped = new TaskItem { Title = "그룹에 든 일", ProjectId = project.Id, SortOrder = "c" };
+        var tagged = new TaskItem { Title = "태그 붙은 일", LabelIds = { label.Id }, SortOrder = "d" };
+        var doneUnfiled = new TaskItem { Title = "끝낸 미분류", CompletedAt = Now, SortOrder = "a" };
+        await store.SaveAsync(unfiled);
+        await store.SaveAsync(grouped);
+        await store.SaveAsync(tagged);
+        await store.SaveAsync(doneUnfiled);
+
+        // 그룹 없음: every task with no group (tagged-but-ungrouped included), completed kept but dimmed below.
+        Assert.Equal(
+            new[] { unfiled.Id, tagged.Id, doneUnfiled.Id },
+            (await store.GetWithoutProjectAsync()).Select(t => t.Id));
+        // 태그 없음: every task carrying no label (grouped-but-untagged included).
+        Assert.Equal(
+            new[] { unfiled.Id, grouped.Id, doneUnfiled.Id },
+            (await store.GetWithoutLabelAsync()).Select(t => t.Id));
+
+        // Badge counts are open-only — the completed unfiled task drops out of both.
+        Assert.Equal(2, await store.GetOpenTaskCountWithoutProjectAsync());
+        Assert.Equal(2, await store.GetOpenTaskCountWithoutLabelAsync());
+
+        // Filing the task away (give it a group and a tag) removes it from both unfiled lists.
+        unfiled.ProjectId = project.Id;
+        unfiled.LabelIds.Add(label.Id);
+        await store.SaveAsync(unfiled);
+        Assert.DoesNotContain(await store.GetWithoutProjectAsync(), t => t.Id == unfiled.Id);
+        Assert.DoesNotContain(await store.GetWithoutLabelAsync(), t => t.Id == unfiled.Id);
+        Assert.Equal(1, await store.GetOpenTaskCountWithoutProjectAsync());
+        Assert.Equal(1, await store.GetOpenTaskCountWithoutLabelAsync());
+    }
+
+    [Fact]
     public async Task DeleteProject_PreservesTasksByMovingThemToInbox()
     {
         var root = NewRoot();

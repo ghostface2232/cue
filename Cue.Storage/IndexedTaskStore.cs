@@ -264,6 +264,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default)
         => _index.GetOpenTaskCountsByLabelAsync(cancellationToken);
 
+    public Task<int> GetOpenTaskCountWithoutProjectAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountWithoutProjectAsync(cancellationToken);
+
+    public Task<int> GetOpenTaskCountWithoutLabelAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountWithoutLabelAsync(cancellationToken);
+
     public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         => _index.GetAllActiveAsync(cancellationToken);
 
@@ -272,6 +278,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     public Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
         => _index.GetByLabelAsync(labelId, cancellationToken);
+
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutProjectAsync(CancellationToken cancellationToken = default)
+        => _index.GetWithoutProjectAsync(cancellationToken);
+
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutLabelAsync(CancellationToken cancellationToken = default)
+        => _index.GetWithoutLabelAsync(cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
         => _index.GetSubtasksAsync(parentTaskId, cancellationToken);

@@ -36,6 +36,12 @@ public enum TaskListMode
 
     /// <summary>Active tasks carrying one label, with completed rows dimmed.</summary>
     Label,
+
+    /// <summary>Active tasks in no group at all — the 그룹 없음 collection point for unfiled captures.</summary>
+    NoProject,
+
+    /// <summary>Active tasks carrying no label — the 태그 없음 collection point for unfiled captures.</summary>
+    NoLabel,
 }
 
 /// <summary>
@@ -149,6 +155,8 @@ public partial class TaskListViewModel : ObservableObject
             TaskListMode.Priority => "중요도",
             TaskListMode.Project => "그룹",
             TaskListMode.Label => "태그",
+            TaskListMode.NoProject => "그룹 없음",
+            TaskListMode.NoLabel => "태그 없음",
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
         TitleCaption = string.Empty;
@@ -223,6 +231,12 @@ public partial class TaskListViewModel : ObservableObject
                 break;
             case TaskListMode.Label:
                 items = await _index.GetByLabelAsync(RequiredFilterId());
+                break;
+            case TaskListMode.NoProject:
+                items = await _index.GetWithoutProjectAsync();
+                break;
+            case TaskListMode.NoLabel:
+                items = await _index.GetWithoutLabelAsync();
                 break;
             default:
                 throw new ArgumentOutOfRangeException();

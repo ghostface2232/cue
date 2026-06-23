@@ -40,6 +40,12 @@ public interface ITaskIndex
     /// <summary>Open (non-deleted, non-completed) task count per label, keyed by label id.</summary>
     Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Open (non-deleted, non-completed) task count carrying no group — the 그룹 없음 badge.</summary>
+    Task<int> GetOpenTaskCountWithoutProjectAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Open (non-deleted, non-completed) task count carrying no label — the 태그 없음 badge.</summary>
+    Task<int> GetOpenTaskCountWithoutLabelAsync(CancellationToken cancellationToken = default);
+
     // ---- Classification axis -------------------------------------------------
 
     /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (All) list.
@@ -51,6 +57,14 @@ public interface ITaskIndex
 
     /// <summary>Non-deleted tasks carrying the given label.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default);
+
+    /// <summary>Non-deleted tasks in no group at all — the 그룹 없음 list that re-gathers unfiled captures.
+    /// Subtasks are returned too; the view nests them under their parents.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetWithoutProjectAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Non-deleted tasks carrying no label at all — the 태그 없음 list that re-gathers unfiled
+    /// captures. Subtasks are returned too; the view nests them under their parents.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetWithoutLabelAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Full task records projected as rows whose <see cref="TaskItem.ParentTaskId"/> matches the
