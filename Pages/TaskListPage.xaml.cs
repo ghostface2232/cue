@@ -26,6 +26,7 @@ public sealed partial class TaskListPage : Page
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private readonly ConditionalWeakTable<FrameworkElement, DropShadow> _iconGlows = new();
     private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
+    private Visual? _detailPanelVisual;
 
     // Set while a drag-reorder commits, so the row that moves in the bound collection does not also
     // play the list's entrance animation on top of the drop settle.
@@ -127,6 +128,7 @@ public sealed partial class TaskListPage : Page
         if (sender is not FrameworkElement panel) return;
         ElementCompositionPreview.SetIsTranslationEnabled(panel, true);
         var visual = ElementCompositionPreview.GetElementVisual(panel);
+        _detailPanelVisual = visual;
         visual.Opacity = panel.Visibility == Visibility.Visible ? 1f : 0f;
 
         panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
@@ -139,8 +141,8 @@ public sealed partial class TaskListPage : Page
             }
             if (shown)
                 AnimateDetailPanelIn(visual);
-            else
-                visual.Opacity = 0f;
+            else if (visual.Opacity > 0.05f)
+                AnimateDetailPanelOut(visual);
         });
     }
 
@@ -164,6 +166,28 @@ public sealed partial class TaskListPage : Page
         fade.InsertKeyFrame(0f, 0f);
         fade.InsertKeyFrame(1f, 1f, spline);
         fade.Duration = TimeSpan.FromMilliseconds(280);
+
+        visual.StartAnimation("Translation", slide);
+        visual.StartAnimation("Opacity", fade);
+    }
+
+    /// <summary>Slides the detail panel out with the matching reverse of the entry motion.</summary>
+    private static void AnimateDetailPanelOut(Visual visual)
+    {
+        var compositor = visual.Compositor;
+        var spline = compositor.CreateCubicBezierEasingFunction(new Vector2(0.4f, 0f), new Vector2(1f, 1f));
+
+        var slide = compositor.CreateVector3KeyFrameAnimation();
+        slide.Target = "Translation";
+        slide.InsertKeyFrame(0f, Vector3.Zero);
+        slide.InsertKeyFrame(1f, new Vector3(24f, 0f, 0f), spline);
+        slide.Duration = TimeSpan.FromMilliseconds(180);
+
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.Target = "Opacity";
+        fade.InsertKeyFrame(0f, visual.Opacity);
+        fade.InsertKeyFrame(1f, 0f, spline);
+        fade.Duration = TimeSpan.FromMilliseconds(160);
 
         visual.StartAnimation("Translation", slide);
         visual.StartAnimation("Opacity", fade);
@@ -324,8 +348,21 @@ public sealed partial class TaskListPage : Page
         return false;
     }
 
-    private void CloseDetail_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-        => ViewModel.Detail.Close();
+    private async void CloseDetail_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        => await CloseDetailWithAnimationAsync();
+
+    private async Task CloseDetailWithAnimationAsync()
+    {
+        if (!_animationsEnabled || _detailPanelVisual is null)
+        {
+            ViewModel.Detail.Close();
+            return;
+        }
+
+        AnimateDetailPanelOut(_detailPanelVisual);
+        await Task.Delay(170);
+        ViewModel.Detail.Close();
+    }
 
     private async void SaveDetail_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.SaveCommand.ExecuteAsync(null));

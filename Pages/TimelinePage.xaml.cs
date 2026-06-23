@@ -27,6 +27,7 @@ public sealed partial class TimelinePage : Page
     private double _panStartHorizontalOffset;
     private double _panStartVerticalOffset;
     private bool _panMoved;
+    private Visual? _detailPanelVisual;
 
     private readonly DialogService _dialogs;
     public TimelineViewModel ViewModel { get; }
@@ -253,6 +254,7 @@ public sealed partial class TimelinePage : Page
         if (sender is not FrameworkElement panel) return;
         ElementCompositionPreview.SetIsTranslationEnabled(panel, true);
         var visual = ElementCompositionPreview.GetElementVisual(panel);
+        _detailPanelVisual = visual;
         visual.Opacity = panel.Visibility == Visibility.Visible ? 1f : 0f;
 
         panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
@@ -265,8 +267,8 @@ public sealed partial class TimelinePage : Page
             }
             if (shown)
                 AnimateDetailPanelIn(visual);
-            else
-                visual.Opacity = 0f;
+            else if (visual.Opacity > 0.05f)
+                AnimateDetailPanelOut(visual);
         });
     }
 
@@ -291,6 +293,27 @@ public sealed partial class TimelinePage : Page
         visual.StartAnimation("Opacity", fade);
     }
 
+    private static void AnimateDetailPanelOut(Visual visual)
+    {
+        var compositor = visual.Compositor;
+        var spline = compositor.CreateCubicBezierEasingFunction(new Vector2(0.4f, 0f), new Vector2(1f, 1f));
+
+        var slide = compositor.CreateVector3KeyFrameAnimation();
+        slide.Target = "Translation";
+        slide.InsertKeyFrame(0f, Vector3.Zero);
+        slide.InsertKeyFrame(1f, new Vector3(24f, 0f, 0f), spline);
+        slide.Duration = TimeSpan.FromMilliseconds(180);
+
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.Target = "Opacity";
+        fade.InsertKeyFrame(0f, visual.Opacity);
+        fade.InsertKeyFrame(1f, 0f, spline);
+        fade.Duration = TimeSpan.FromMilliseconds(160);
+
+        visual.StartAnimation("Translation", slide);
+        visual.StartAnimation("Opacity", fade);
+    }
+
     private void IconAction_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not FrameworkElement element) return;
@@ -310,7 +333,21 @@ public sealed partial class TimelinePage : Page
 
     private void EnableWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.EnableWhenEditor();
     private void ClearWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.ClearWhen();
-    private void CloseDetail_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.Close();
+    private async void CloseDetail_Click(object sender, RoutedEventArgs e)
+        => await CloseDetailWithAnimationAsync();
+
+    private async Task CloseDetailWithAnimationAsync()
+    {
+        if (!_animationsEnabled || _detailPanelVisual is null)
+        {
+            ViewModel.Detail.Close();
+            return;
+        }
+
+        AnimateDetailPanelOut(_detailPanelVisual);
+        await Task.Delay(170);
+        ViewModel.Detail.Close();
+    }
     private async void SaveDetail_Click(object sender, RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.SaveCommand.ExecuteAsync(null));
 
