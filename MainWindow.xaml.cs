@@ -94,7 +94,22 @@ public sealed partial class MainWindow : Window
             await ViewModel.LoadCommand.ExecuteAsync(null);
             RebuildLiveNavigation();
             ApplyNavVisibility();
+            // WinUI realizes an expanded NavigationViewItem's children only once. Because the sections
+            // start expanded but are populated here (after that first realization), the freshly added
+            // group/tag rows don't appear until the user toggles the section. Force one re-expand now so
+            // they show on first launch. Later rebuilds hit an already-realized section and are fine.
+            RealizeExpandedSection(GroupsSection);
+            RealizeExpandedSection(TagsSection);
         });
+    }
+
+    /// <summary>Collapses then re-expands a section (on the next dispatcher tick) so its children, added
+    /// after the section's first realization, actually render. No-op when the section is collapsed.</summary>
+    private void RealizeExpandedSection(NavigationViewItem section)
+    {
+        if (!section.IsExpanded) return;
+        section.IsExpanded = false;
+        DispatcherQueue.TryEnqueue(() => section.IsExpanded = true);
     }
 
     private async void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
