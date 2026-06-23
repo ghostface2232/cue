@@ -61,8 +61,26 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         EnsureSchema();
     }
 
+    // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
+    // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
+    private const long SchemaVersion = 2;
+
     private void EnsureSchema()
     {
+        using (var version = _connection.CreateCommand())
+        {
+            version.CommandText = "PRAGMA user_version;";
+            var current = Convert.ToInt64(version.ExecuteScalar() ?? 0L);
+            if (current != SchemaVersion)
+            {
+                using var drop = _connection.CreateCommand();
+                drop.CommandText =
+                    "DROP TABLE IF EXISTS task_labels; DROP TABLE IF EXISTS tasks; " +
+                    "DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS sections; DROP TABLE IF EXISTS labels;";
+                drop.ExecuteNonQuery();
+            }
+        }
+
         using var cmd = _connection.CreateCommand();
         cmd.CommandText =
             """
@@ -89,6 +107,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE TABLE IF NOT EXISTS projects (
                 id            TEXT PRIMARY KEY,
                 name          TEXT NOT NULL,
+                icon          TEXT NULL,
                 deadline_date TEXT NULL,
                 is_archived   INTEGER NOT NULL DEFAULT 0,
                 completed_at  TEXT NULL,
@@ -120,6 +139,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE INDEX IF NOT EXISTS ix_projects_active ON projects(deleted_at, is_archived, completed_at);
             CREATE INDEX IF NOT EXISTS ix_sections_project ON sections(project_id, deleted_at, is_archived, completed_at);
             CREATE INDEX IF NOT EXISTS ix_navigation_labels_active ON labels(deleted_at);
+            PRAGMA user_version = 2;
             """;
         cmd.ExecuteNonQuery();
     }
@@ -295,15 +315,16 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         cmd.Transaction = tx;
         cmd.CommandText =
             """
-            INSERT INTO projects (id, name, deadline_date, is_archived, completed_at, deleted_at, sort_order)
-            VALUES ($id, $name, $deadline, $archived, $completed, $deleted, $sort)
+            INSERT INTO projects (id, name, icon, deadline_date, is_archived, completed_at, deleted_at, sort_order)
+            VALUES ($id, $name, $icon, $deadline, $archived, $completed, $deleted, $sort)
             ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name, deadline_date = excluded.deadline_date,
+                name = excluded.name, icon = excluded.icon, deadline_date = excluded.deadline_date,
                 is_archived = excluded.is_archived, completed_at = excluded.completed_at,
                 deleted_at = excluded.deleted_at, sort_order = excluded.sort_order;
             """;
         Bind(cmd, "$id", project.Id.ToString());
         Bind(cmd, "$name", project.Name);
+        Bind(cmd, "$icon", project.Icon);
         Bind(cmd, "$deadline", LocalDate(project.Deadline));
         Bind(cmd, "$archived", project.IsArchived ? 1 : 0);
         Bind(cmd, "$completed", Instant(project.CompletedAt));
@@ -362,11 +383,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default)
         => QueryRecordsAsync(
-            "SELECT id, name, deadline_date, sort_order FROM projects " +
+            "SELECT id, name, icon, deadline_date, sort_order FROM projects " +
             "WHERE deleted_at IS NULL AND is_archived = 0 AND completed_at IS NULL " +
             "ORDER BY sort_order, name;",
             _ => { },
-            r => new ProjectListItem(Guid.Parse(r.GetString(0)), r.GetString(1), DateOrNull(r, 2), r.GetString(3)),
+            r => new ProjectListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), DateOrNull(r, 3), r.GetString(4)),
             cancellationToken);
 
     public Task<IReadOnlyList<SectionListItem>> GetSectionsByProjectAsync(

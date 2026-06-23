@@ -135,7 +135,7 @@ public sealed partial class MainWindow : Window
         {
             Content = project.Name,
             Tag = new TaskListNavigation(TaskListMode.Project, project.Id, project.Name, project.DeadlineDate),
-            Icon = new FontIcon { Glyph = "\uE8B7" },
+            Icon = new FontIcon { Glyph = string.IsNullOrEmpty(project.Icon) ? "\uE8B7" : project.Icon },
         };
         if (ViewModel.ProjectTaskCounts.TryGetValue(project.Id, out var count) && count > 0)
             item.InfoBadge = new InfoBadge { Value = count };
@@ -168,11 +168,52 @@ public sealed partial class MainWindow : Window
         delete.Click += isProject ? DeleteProject_Click : DeleteLabel_Click;
         var menu = new MenuFlyout();
         menu.Items.Add(rename);
+        if (isProject && record is ProjectListItem project)
+            menu.Items.Add(CreateProjectIconSubMenu(project.Id));
         if (!isProject && record is LabelListItem label)
             menu.Items.Add(CreateLabelColorSubMenu(label.Id));
         menu.Items.Add(delete);
         return menu;
     }
+
+    // Common to-do project glyphs (Segoe Fluent). Deliberately avoids the fixed sidebar glyphs
+    // (E80F/E8BF/E823/E8FD/E8F1/E73E/E8B7/E8EC) so projects stay visually distinct from them.
+    private static readonly (string Glyph, string Name)[] ProjectIcons =
+    {
+        ("", "장보기"), ("", "업무"), ("", "독서"), ("", "수리"),
+        ("", "별"), ("", "가족"), ("", "사람"), ("", "건강"),
+        ("", "여행"), ("", "장소"), ("", "설정"), ("", "메일"),
+        ("", "고정"), ("", "미디어"), ("", "웹"), ("", "잠금"),
+    };
+
+    private MenuFlyoutSubItem CreateProjectIconSubMenu(Guid projectId)
+    {
+        var submenu = new MenuFlyoutSubItem { Text = "아이콘 변경" };
+        foreach (var (glyph, name) in ProjectIcons)
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = name,
+                Tag = new ProjectIconChoice(projectId, glyph),
+                Icon = new FontIcon { Glyph = glyph },
+            };
+            item.Click += ProjectIcon_Click;
+            submenu.Items.Add(item);
+        }
+        return submenu;
+    }
+
+    private async void ProjectIcon_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuFlyoutItem { Tag: ProjectIconChoice choice }) return;
+        await RunSafelyAsync(async () =>
+        {
+            await ViewModel.SetProjectIconAsync(choice.ProjectId, choice.Glyph);
+            RebuildLiveNavigation();
+        });
+    }
+
+    private readonly record struct ProjectIconChoice(Guid ProjectId, string Glyph);
 
     private MenuFlyoutSubItem CreateLabelColorSubMenu(Guid labelId)
     {

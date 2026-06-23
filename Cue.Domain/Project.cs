@@ -15,6 +15,9 @@ public sealed class Project : RecordBase, ISortable
     /// <summary>Accent color as a hex string (e.g. "#4F8CC9"). <c>null</c> uses the default.</summary>
     public string? Color { get; set; }
 
+    /// <summary>Sidebar icon as a Segoe Fluent glyph string (e.g. ""). <c>null</c> uses the default.</summary>
+    public string? Icon { get; set; }
+
     /// <summary>Optional deadline for the project as a whole. Stores UTC plus the original zone.</summary>
     public ZonedDateTime? Deadline { get; set; }
 

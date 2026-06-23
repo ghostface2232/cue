@@ -4,6 +4,7 @@ namespace Cue.Storage.Index;
 public sealed record ProjectListItem(
     Guid Id,
     string Name,
+    string? Icon,
     DateOnly? DeadlineDate,
     string SortOrder);
 

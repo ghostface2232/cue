@@ -99,6 +99,16 @@ public partial class ShellViewModel : ObservableObject
         await LoadAsync();
     }
 
+    /// <summary>Sets a project's sidebar icon (a Fluent glyph) and reloads so it shows at once.</summary>
+    public async Task SetProjectIconAsync(Guid id, string glyph)
+    {
+        var project = await _store.GetAsync<Project>(id);
+        if (project is null || project.IsDeleted) return;
+        project.Icon = glyph;
+        await _store.SaveAsync(project);
+        await LoadAsync();
+    }
+
     [RelayCommand]
     private async Task CreateLabelAsync(string name)
     {
