@@ -6,19 +6,21 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Recognizers.Text.DateTime" Version="1.8.13" />
+    <!--
+      Transitive pin. Microsoft.Recognizers.Text hard-pins NuGet.CommandLine 5.11.5 — a build-time
+      tool (nuget.exe) we never invoke and that flows no runtime assemblies, but which carries
+      CVE-2024-0057 (GHSA-68w7-72jg-6qpp) and GHSA-g4vj-cjjj-v7hg. Override it to the patched 5.11.7
+      so the resolved graph is clean and the audit can run in full. Deliberately no PrivateAssets:
+      the pin must flow to the consuming projects (app, ViewModels, Tests) so their graphs resolve
+      5.11.7 too. Recognizers is already at its latest (1.8.13), so this is the only fix path.
+    -->
+    <PackageReference Include="NuGet.CommandLine" Version="5.11.7" />
   </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!--
-      Microsoft.Recognizers.Text transitively pins NuGet.CommandLine 5.11.5 — a build-time tool
-      (nuget.exe) we never invoke and that flows no runtime assemblies. Its advisory is unfixable
-      from here (the library hard-pins it), so scope the vulnerability audit to our direct
-      dependencies rather than carrying a permanent warning for a phantom transitive.
-    -->
-    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
 </Project>

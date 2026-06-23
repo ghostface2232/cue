@@ -14,11 +14,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <!--
-      Scope the vulnerability audit to direct dependencies: Cue.Parsing transitively pulls a
-      build-time NuGet.CommandLine (via Recognizers) we never invoke. Same rationale as Cue.Parsing.
-    -->
-    <NuGetAuditMode>direct</NuGetAuditMode>
-    <!--
       This app project lives at the repo root, so the SDK's default **/*.cs glob would
       otherwise sweep in the sibling project folders' sources. Exclude them from every default
       item glob. Add any future sibling project here too.
