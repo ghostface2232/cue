@@ -12,12 +12,16 @@ file static class Opt
     public const RegexOptions Flags = RegexOptions.CultureInvariant | RegexOptions.Compiled;
 }
 
-/// <summary>언젠가 / 나중에 / 시간 날 때 / 여유 생기면 → <see cref="ScheduledWhen.SomeDay"/>.</summary>
+/// <summary>언젠가 / 나중에 / 다음에 / 담에 / 시간 나면 / 여유되면 / 기회 되면 → <see cref="ScheduledWhen.SomeDay"/>.
+/// All multi-word markers use <c>\s*</c> so they match with or without the space ("여유되면" / "여유 되면").</summary>
 public sealed class SomedayRule : IQuickAddRule
 {
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
-        @"(?:언젠가는|언젠가|나중에|시간\s*날\s*때|시간\s*나면|시간\s*있을\s*때|여유\s*생기면|여유\s*되면|여유\s*있을\s*때)" +
+        @"(?:언젠가는|언젠가|나중에|다음에|담에" +
+        @"|시간\s*날\s*때|시간\s*나면|시간\s*있을\s*때" +
+        @"|여유\s*생기면|여유\s*되면|여유\s*있으면|여유\s*있을\s*때" +
+        @"|기회\s*되면|기회\s*생기면|기회\s*있으면|기회\s*있을\s*때)" +
         Korean.RightEdge, Opt.Flags);
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)

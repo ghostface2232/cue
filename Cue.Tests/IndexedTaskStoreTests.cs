@@ -56,8 +56,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         => ZonedDateTime.FromUtc(new DateTimeOffset(day.Year, day.Month, day.Day, 9, 0, 0, TimeSpan.Zero), "UTC");
 
     /// <summary>An OnDate "When" whose calendar day (in UTC) is <paramref name="day"/>.</summary>
-    private static ScheduledWhen OnDay(DateOnly day, bool evening = false)
-        => ScheduledWhen.On(OnDayZoned(day), evening);
+    private static ScheduledWhen OnDay(DateOnly day)
+        => ScheduledWhen.On(OnDayZoned(day));
 
     private static DateOnly Today => DateOnly.FromDateTime(Now.UtcDateTime);
 
@@ -382,19 +382,18 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         var filed = Guid.NewGuid();
         var inbox = new TaskItem { Title = "미분류", When = ScheduledWhen.Unscheduled };                            // Inbox + Anytime
         var someday = new TaskItem { Title = "언젠가", When = ScheduledWhen.SomeDay, ProjectId = filed };           // Someday
-        var evening = new TaskItem { Title = "오늘 저녁", When = OnDay(Today, evening: true), ProjectId = filed };   // Today + This Evening
+        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), ProjectId = filed };              // Today
         var future = new TaskItem { Title = "다가오는 일", When = OnDay(Today.AddDays(2)), ProjectId = filed };      // Upcoming
         var deadlineOnly = new TaskItem { Title = "마감만 있음", ProjectId = filed, Deadline = ZonedDateTime.FromUtc(
             new DateTimeOffset(Today.AddDays(5).Year, Today.AddDays(5).Month, Today.AddDays(5).Day, 9, 0, 0, TimeSpan.Zero), "UTC") };
         var done = new TaskItem { Title = "완료", When = OnDay(Today), CompletedAt = Now, ProjectId = filed };      // Logbook only
 
-        foreach (var t in new[] { inbox, someday, evening, future, deadlineOnly, done })
+        foreach (var t in new[] { inbox, someday, todayTask, future, deadlineOnly, done })
             await store.SaveAsync(t);
 
-        // Inbox is exclusively the project-less task; Someday/This Evening are exclusive buckets.
+        // Inbox is exclusively the project-less task; Someday is its own exclusive bucket.
         Assert.Equal(new[] { inbox.Id }, (await store.GetInboxAsync()).Select(t => t.Id));
         Assert.Equal(new[] { someday.Id }, (await store.GetSomedayAsync()).Select(t => t.Id));
-        Assert.Equal(new[] { evening.Id }, (await store.GetThisEveningAsync()).Select(t => t.Id));
 
         // Anytime = open tasks with no scheduled When. The deadline-only task has no When, so it sits
         // in Anytime *and* (via its future deadline) in Upcoming — a legitimate cross-axis overlap.
@@ -403,7 +402,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
             (await store.GetAnytimeAsync()).Select(t => t.Id).OrderBy(g => g));
 
         var today = (await store.GetTodayAsync()).Select(t => t.Id).ToHashSet();
-        Assert.Contains(evening.Id, today);
+        Assert.Contains(todayTask.Id, today);
         Assert.Contains(done.Id, today);                // completed stays in its time bucket (dimmed)
         Assert.DoesNotContain(future.Id, today);        // future When
         Assert.DoesNotContain(deadlineOnly.Id, today);  // no When ⇒ not a Today item
@@ -607,7 +606,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         task.Priority = Priority.P1;
         task.ProjectId = project.Id;
         task.LabelIds.Add(label.Id);
-        task.When = OnDay(Today.AddDays(3), evening: true);
+        task.When = OnDay(Today.AddDays(3));
         task.Deadline = OnDayZoned(Today.AddDays(4));
         await store.SaveAsync(task);
 
@@ -618,7 +617,6 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Equal("편집 후", indexed.Title);
         Assert.Equal(Priority.P1, indexed.Priority);
         Assert.Equal(Today.AddDays(3), indexed.WhenDate);
-        Assert.True(indexed.IsEvening);
         Assert.Equal(Today.AddDays(4), indexed.DeadlineDate);
     }
 

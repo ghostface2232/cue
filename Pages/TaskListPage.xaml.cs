@@ -306,8 +306,8 @@ public sealed partial class TaskListPage : Page
 
     /// <summary>
     /// Attaches the drag-to-reorder surface to a task <see cref="ItemsRepeater"/> the first time it
-    /// loads. The surface is layout-agnostic, so the same wiring serves the standard list, the This
-    /// Evening section, and each project section's repeater.
+    /// loads. The surface is layout-agnostic, so the same wiring serves the standard list and each
+    /// project section's repeater.
     /// </summary>
     private void ReorderRepeater_Loaded(object sender, RoutedEventArgs e)
     {

@@ -25,7 +25,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 {
     private const string Columns =
         "id, title, project_id, section_id, parent_task_id, when_kind, when_date, " +
-        "when_is_evening, deadline_date, completed_at, priority, sort_order";
+        "deadline_date, completed_at, priority, sort_order";
 
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
@@ -63,7 +63,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 2;
+    private const long SchemaVersion = 3;
 
     private void EnsureSchema()
     {
@@ -92,7 +92,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 parent_task_id  TEXT NULL,
                 when_kind       TEXT NOT NULL,
                 when_date       TEXT NULL,
-                when_is_evening INTEGER NOT NULL DEFAULT 0,
                 deadline_date   TEXT NULL,
                 completed_at    TEXT NULL,
                 deleted_at      TEXT NULL,
@@ -255,10 +254,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 """
                 INSERT INTO tasks
                     (id, title, project_id, section_id, parent_task_id, when_kind, when_date,
-                     when_is_evening, deadline_date, completed_at, deleted_at, priority, sort_order)
+                     deadline_date, completed_at, deleted_at, priority, sort_order)
                 VALUES
                     ($id, $title, $project, $section, $parent, $whenKind, $whenDate,
-                     $evening, $deadline, $completed, $deleted, $priority, $sort)
+                     $deadline, $completed, $deleted, $priority, $sort)
                 ON CONFLICT(id) DO UPDATE SET
                     title           = excluded.title,
                     project_id      = excluded.project_id,
@@ -266,7 +265,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                     parent_task_id  = excluded.parent_task_id,
                     when_kind       = excluded.when_kind,
                     when_date       = excluded.when_date,
-                    when_is_evening = excluded.when_is_evening,
                     deadline_date   = excluded.deadline_date,
                     completed_at    = excluded.completed_at,
                     deleted_at      = excluded.deleted_at,
@@ -280,7 +278,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             Bind(cmd, "$parent", task.ParentTaskId?.ToString());
             Bind(cmd, "$whenKind", task.When.Kind.ToString());
             Bind(cmd, "$whenDate", task.When.Kind == WhenKind.OnDate ? LocalDate(task.When.Date) : null);
-            Bind(cmd, "$evening", task.When.IsEvening ? 1 : 0);
             Bind(cmd, "$deadline", LocalDate(task.Deadline));
             Bind(cmd, "$completed", Instant(task.CompletedAt));
             Bind(cmd, "$deleted", Instant(task.DeletedAt));
@@ -491,13 +488,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY completed_at IS NOT NULL, COALESCE(when_date, deadline_date), sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetThisEveningAsync(CancellationToken cancellationToken = default)
-        => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today " +
-            "AND when_is_evening = 1 ORDER BY completed_at IS NOT NULL, when_date, sort_order;",
-            cmd => Bind(cmd, "$today", Today()), cancellationToken);
-
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND ( " +
@@ -655,11 +645,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         ParentTaskId: GuidOrNull(r, 4),
         WhenKind: Enum.Parse<WhenKind>(r.GetString(5)),
         WhenDate: DateOrNull(r, 6),
-        IsEvening: r.GetInt64(7) != 0,
-        DeadlineDate: DateOrNull(r, 8),
-        IsCompleted: !r.IsDBNull(9),
-        Priority: (Priority)r.GetInt64(10),
-        SortOrder: r.GetString(11));
+        DeadlineDate: DateOrNull(r, 7),
+        IsCompleted: !r.IsDBNull(8),
+        Priority: (Priority)r.GetInt64(9),
+        SortOrder: r.GetString(10));
 
     /// <summary>The current calendar day in the configured zone — computed, never stored.</summary>
     private string Today()

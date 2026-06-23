@@ -5,7 +5,7 @@ namespace Cue.Tests;
 
 /// <summary>
 /// Representative coverage of the Korean quick-add parser across the PARSING.md categories:
-/// relative/weekday/absolute scheduled dates, times and the evening flag, deadlines, recurrence,
+/// relative/weekday/absolute scheduled dates, times and day-part words, deadlines, recurrence,
 /// someday, unscheduled, and the misrecognition guards. The reference instant is fixed so the
 /// relative expressions resolve deterministically; the zone is UTC so local == the wall clock used.
 /// </summary>
@@ -74,7 +74,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(15, WhenDate(r.When).Day);
     }
 
-    // ---- 3. Times + 4. evening flag -----------------------------------------
+    // ---- 3. Times + 4. day-part words ---------------------------------------
 
     [Fact]
     public void Time_IsCapturedOnTheScheduledDate()
@@ -104,7 +104,6 @@ public sealed class KoreanDateParserTests
         Assert.Equal("저녁 약속", r.Title);
         Assert.Equal(Today, WhenDate(r.When));
         Assert.Equal(19, WhenHour(r.When));
-        Assert.False(r.When.IsEvening);
     }
 
     [Theory]
@@ -123,7 +122,6 @@ public sealed class KoreanDateParserTests
         Assert.Equal(WhenKind.OnDate, r.When.Kind);
         Assert.Equal(Today, WhenDate(r.When));
         Assert.Equal(hour, WhenHour(r.When));
-        Assert.False(r.When.IsEvening);
     }
 
     [Theory]
@@ -247,7 +245,6 @@ public sealed class KoreanDateParserTests
         Assert.Equal("약속", r.Title);
         Assert.Equal(Today.AddDays(1), WhenDate(r.When));
         Assert.Equal(hour, WhenHour(r.When));
-        Assert.False(r.When.IsEvening);
     }
 
     // ---- Attached particles that still carry a date/time --------------------
@@ -352,8 +349,13 @@ public sealed class KoreanDateParserTests
     [Theory]
     [InlineData("언젠가 제주도 한 달 살기", "제주도 한 달 살기")]
     [InlineData("나중에 기타 배우기", "기타 배우기")]
+    [InlineData("다음에 만나서 회포 풀기", "만나서 회포 풀기")]
+    [InlineData("담에 영화 보기", "영화 보기")]
     [InlineData("시간 날 때 옛날 사진 백업하기", "옛날 사진 백업하기")]
     [InlineData("여유 생기면 베란다 텃밭 가꾸기", "베란다 텃밭 가꾸기")]
+    [InlineData("여유되면 자전거 정비하기", "자전거 정비하기")]
+    [InlineData("기회 되면 부모님과 여행", "부모님과 여행")]
+    [InlineData("기회되면 중국어 배우기", "중국어 배우기")]
     public void SomedayMarkers_BecomeSomeDay(string input, string title)
     {
         var r = Parse(input);

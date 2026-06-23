@@ -294,7 +294,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 ### List page — `TaskListPage.xaml`
 - Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `28,20` (`page-x` × `page-y`).
 - Two-column body: left list (flexible) + right detail panel (resizable, default 460px). When the detail closes, the list reclaims the width.
-- The list takes **two forms**: a **flat list** (`ItemsRepeater`, with secondary sections like "오늘 저녁" / This Evening) and a **grouped list** (`ListView`, group header + rows). The grouped form is shared by the Project (per-section) and Priority (P1–P4) views (`IsGroupedList`).
+- The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **grouped list** (`ListView`, group header + rows). The grouped form is shared by the Project (per-section) and Priority (P1–P4) views (`IsGroupedList`).
 
 ### Timeline page — `TimelinePage.xaml`
 - A horizontally-scrolling month view (gantt-like). One framed canvas (`{rounded.lg}`, 1px card stroke) holds a row of day-column headers above a stack of task bars.

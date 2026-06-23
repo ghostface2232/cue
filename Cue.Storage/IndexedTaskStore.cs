@@ -290,9 +290,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => _index.GetTodayAsync(cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetThisEveningAsync(CancellationToken cancellationToken = default)
-        => _index.GetThisEveningAsync(cancellationToken);
-
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
         => _index.GetUpcomingAsync(cancellationToken);
 

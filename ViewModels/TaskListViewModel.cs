@@ -69,9 +69,6 @@ public partial class TaskListViewModel : ObservableObject
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    /// <summary>The evening-flagged subset of Today, displayed as a section on that page.</summary>
-    public ObservableCollection<TaskRowViewModel> EveningTasks { get; } = new();
-
     public ObservableCollection<TaskSectionGroupViewModel> ProjectGroups { get; } = new();
 
     public TaskDetailViewModel Detail { get; }
@@ -84,9 +81,6 @@ public partial class TaskListViewModel : ObservableObject
 
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
-
-    [ObservableProperty]
-    public partial bool HasEveningTasks { get; set; }
 
     [ObservableProperty]
     public partial bool IsStandardList { get; set; } = true;
@@ -138,7 +132,6 @@ public partial class TaskListViewModel : ObservableObject
     private IEnumerable<TaskRowViewModel> AllRows()
     {
         foreach (var row in Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
-        foreach (var row in EveningTasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
         foreach (var group in ProjectGroups)
             foreach (var row in group.Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
     }
@@ -218,7 +211,6 @@ public partial class TaskListViewModel : ObservableObject
     public async Task LoadAsync()
     {
         IReadOnlyList<TaskListItem> items;
-        IReadOnlyList<TaskListItem> eveningItems = Array.Empty<TaskListItem>();
 
         switch (_mode)
         {
@@ -227,7 +219,6 @@ public partial class TaskListViewModel : ObservableObject
                 break;
             case TaskListMode.Today:
                 items = await _index.GetTodayAsync();
-                eveningItems = await _index.GetThisEveningAsync();
                 break;
             case TaskListMode.Upcoming:
                 items = await _index.GetUpcomingAsync();
@@ -254,17 +245,8 @@ public partial class TaskListViewModel : ObservableObject
                 throw new ArgumentOutOfRangeException();
         }
 
-        // This Evening is already a subset query of Today. Keep it in its own section without
-        // rendering those same rows twice on the Today page.
-        var eveningIds = eveningItems.Select(item => item.Id).ToHashSet();
-
         Tasks.Clear();
-        AddHierarchicalRows(Tasks, items.Where(item => !eveningIds.Contains(item.Id)));
-
-        EveningTasks.Clear();
-        AddHierarchicalRows(EveningTasks, eveningItems);
-
-        HasEveningTasks = EveningTasks.Count > 0;
+        AddHierarchicalRows(Tasks, items);
 
         ProjectGroups.Clear();
         if (_mode == TaskListMode.Project)
@@ -305,7 +287,7 @@ public partial class TaskListViewModel : ObservableObject
 
         IsEmpty = IsGroupedList
             ? ProjectGroups.Count == 0
-            : Tasks.Count == 0 && !HasEveningTasks;
+            : Tasks.Count == 0;
 
         // Re-apply the selection accent to the freshly rebuilt rows so it survives a reload.
         ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
@@ -377,7 +359,6 @@ public partial class TaskListViewModel : ObservableObject
     private IEnumerable<string?> VisibleRowRanks()
     {
         foreach (var row in Tasks) yield return row.SortOrder;
-        foreach (var row in EveningTasks) yield return row.SortOrder;
         foreach (var group in ProjectGroups)
             foreach (var row in group.Tasks) yield return row.SortOrder;
     }

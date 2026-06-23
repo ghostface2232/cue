@@ -97,7 +97,7 @@ public partial class TaskRowViewModel : ObservableObject
         if (item.WhenKind == WhenKind.SomeDay)
             parts.Add("나중에");
         else if (item.WhenDate is { } when)
-            parts.Add((item.IsEvening ? "저녁 · 시작 " : "시작 ") + Day(when));
+            parts.Add("시작 " + Day(when));
 
         if (item.DeadlineDate is { } deadline)
             parts.Add("마감 " + Day(deadline));

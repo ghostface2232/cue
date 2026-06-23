@@ -54,7 +54,7 @@ public sealed class RecurringTaskService : IRecurringTaskService
         // Method B, step 2: advance the original to the next cycle and keep it open (alive as the
         // next instance). Only When changes; the rank is preserved and the store stamps UpdatedAt
         // (invariants 4 and 8).
-        task.When = ScheduledWhen.On(next.Value, task.When.IsEvening);
+        task.When = ScheduledWhen.On(next.Value);
         task.CompletedAt = null;
         await _store.SaveAsync(task, cancellationToken).ConfigureAwait(false);
     }

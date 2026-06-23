@@ -37,7 +37,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task DetailSavePreservesTodayEveningTimeAndFlag()
+    public async Task DetailSavePreservesTodayTime()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -47,10 +47,8 @@ public sealed class ViewModelRegressionTests
             TimeZoneInfo.Utc);
         var task = new TaskItem
         {
-            Title = "evening",
-            When = ScheduledWhen.On(
-                ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 20, 10, 0), "UTC"),
-                evening: true),
+            Title = "today at 20:10",
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 20, 10, 0), "UTC")),
         };
         await store.SaveAsync(task);
 
@@ -60,7 +58,7 @@ public sealed class ViewModelRegressionTests
 
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.NotNull(saved);
-        Assert.True(saved.When.IsEvening);
+        Assert.Equal(WhenKind.OnDate, saved!.When.Kind);
         Assert.Equal(new TimeSpan(20, 10, 0), saved.When.Date!.Value.ToLocal().TimeOfDay);
     }
 
@@ -202,6 +200,42 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task DetailSomeday_ClearsAndDisablesDeadline_AndSavesAsSomeDay()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem
+        {
+            Title = "has a deadline",
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 9, 0, 0), "UTC")),
+            Deadline = ZonedDateTime.FromLocal(new DateTime(2026, 6, 25, 18, 0, 0), "UTC"),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.True(vm.Detail.IsDeadlineEnabled);
+
+        vm.Detail.IsSomeday = true;
+
+        Assert.Null(vm.Detail.WhenDate);
+        Assert.Null(vm.Detail.DeadlineDate);     // a Someday task drops its deadline
+        Assert.False(vm.Detail.IsDeadlineEnabled);
+        Assert.False(vm.Detail.CanAddWhen);
+        Assert.False(vm.Detail.IsWhenEditorVisible);
+
+        await vm.Detail.SaveCommand.ExecuteAsync(null);
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(WhenKind.SomeDay, saved!.When.Kind);
+        Assert.Null(saved.Deadline);
+    }
+
+    [Fact]
     public async Task TimelineNowLineUsesTimeWithinTheCurrentDay()
     {
         using var temp = new TempDirectory();
@@ -226,18 +260,19 @@ public sealed class ViewModelRegressionTests
     }
 
     [Theory]
-    [InlineData(TaskListMode.Today, WhenKind.OnDate, 0)]
-    [InlineData(TaskListMode.Upcoming, WhenKind.OnDate, 1)]
-    [InlineData(TaskListMode.Someday, WhenKind.SomeDay, 0)]
-    [InlineData(TaskListMode.Anytime, WhenKind.Unscheduled, 0)]
-    public void QuickAddContextKeepsDatelessTaskInItsTimeView(TaskListMode mode, WhenKind kind, int dayOffset)
+    [InlineData(TaskListMode.Today, WhenKind.OnDate)]      // only Today pins an actual day
+    [InlineData(TaskListMode.Upcoming, WhenKind.SomeDay)]  // Upcoming names no specific date → Someday
+    [InlineData(TaskListMode.Someday, WhenKind.SomeDay)]
+    [InlineData(TaskListMode.Anytime, WhenKind.SomeDay)]
+    [InlineData(TaskListMode.Inbox, WhenKind.SomeDay)]
+    public void QuickAddContextParksDatelessTaskInSomedayExceptToday(TaskListMode mode, WhenKind kind)
     {
         var now = new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero);
         var result = QuickAddContext.Apply(ScheduledWhen.Unscheduled, mode, now, TimeZoneInfo.Utc);
 
         Assert.Equal(kind, result.Kind);
         if (kind == WhenKind.OnDate)
-            Assert.Equal(new DateOnly(2026, 6, 23).AddDays(dayOffset), DateOnly.FromDateTime(result.Date!.Value.ToLocal().DateTime));
+            Assert.Equal(new DateOnly(2026, 6, 23), DateOnly.FromDateTime(result.Date!.Value.ToLocal().DateTime));
     }
 
     [Fact]

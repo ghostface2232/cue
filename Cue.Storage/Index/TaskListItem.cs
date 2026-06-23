@@ -27,7 +27,6 @@ public sealed record TaskListItem(
     Guid? ParentTaskId,
     WhenKind WhenKind,
     DateOnly? WhenDate,
-    bool IsEvening,
     DateOnly? DeadlineDate,
     bool IsCompleted,
     Priority Priority,

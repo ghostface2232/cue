@@ -24,7 +24,7 @@ public sealed class FileTaskStoreTests : IDisposable
         Notes = "**굵게** 그리고 _기울임_ 마크다운",
         CompletedAt = new DateTimeOffset(2026, 6, 20, 1, 2, 3, TimeSpan.Zero),
         Deadline = Zoned(2026, 7, 1, 18, 0),
-        When = ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0), evening: true),
+        When = ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)),
         Priority = Priority.P1,
         ProjectId = Guid.NewGuid(),
         SectionId = Guid.NewGuid(),
@@ -84,7 +84,6 @@ public sealed class FileTaskStoreTests : IDisposable
     [InlineData("unscheduled")]
     [InlineData("someday")]
     [InlineData("ondate")]
-    [InlineData("evening")]
     public async Task ScheduledWhen_EachVariant_RoundTrips(string variant)
     {
         var store = NewStore();
@@ -93,7 +92,6 @@ public sealed class FileTaskStoreTests : IDisposable
             "unscheduled" => ScheduledWhen.Unscheduled,
             "someday" => ScheduledWhen.SomeDay,
             "ondate" => ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)),
-            "evening" => ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0), evening: true),
             _ => throw new ArgumentOutOfRangeException(nameof(variant)),
         };
         var task = new TaskItem { When = when };
@@ -104,7 +102,6 @@ public sealed class FileTaskStoreTests : IDisposable
         Assert.Equal(when, loaded!.When);
         Assert.Equal(when.Kind, loaded.When.Kind);
         Assert.Equal(when.Date, loaded.When.Date);
-        Assert.Equal(when.IsEvening, loaded.When.IsEvening);
     }
 
     [Fact]

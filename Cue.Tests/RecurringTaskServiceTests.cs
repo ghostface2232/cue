@@ -46,8 +46,8 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     private static ZonedDateTime OnDayZoned(DateOnly day, string tz = "UTC")
         => ZonedDateTime.FromLocal(new DateTime(day.Year, day.Month, day.Day, 9, 0, 0), tz);
 
-    private static ScheduledWhen OnDay(DateOnly day, bool evening = false, string tz = "UTC")
-        => ScheduledWhen.On(OnDayZoned(day, tz), evening);
+    private static ScheduledWhen OnDay(DateOnly day, string tz = "UTC")
+        => ScheduledWhen.On(OnDayZoned(day, tz));
 
     private static RecurrenceRule Daily(DateOnly anchorDay, string tz = "UTC")
         => new("FREQ=DAILY", OnDayZoned(anchorDay, tz));
@@ -138,22 +138,6 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         var advanced = original!.When.Date!.Value;
         Assert.Equal("Asia/Seoul", advanced.TimeZoneId);
         Assert.Equal(9, advanced.ToLocal().Hour); // 09:00 local preserved
-    }
-
-    [Fact]
-    public async Task CompletingRecurringEvening_KeepsEveningFlag()
-    {
-        var root = NewRoot();
-        await using var store = await OpenAsync(root);
-        var service = new RecurringTaskService(store);
-
-        var task = new TaskItem { Title = "저녁 루틴", When = OnDay(Today, evening: true), Recurrence = Daily(Today) };
-        await store.SaveAsync(task);
-
-        await service.CompleteAsync(task.Id, Now);
-
-        var original = await store.GetAsync<TaskItem>(task.Id);
-        Assert.True(original!.When.IsEvening);
     }
 
     [Fact]

@@ -238,15 +238,6 @@
                             ItemTemplate="{StaticResource TaskRowTemplate}"
                             ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
                             Loaded="ReorderRepeater_Loaded" />
-                        <StackPanel Margin="0,18,0,0" Visibility="{x:Bind ViewModel.HasEveningTasks, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Margin="14,0,0,7" Style="{StaticResource CueSectionHeaderTextStyle}" Text="오늘 저녁" />
-                            <ItemsRepeater
-                                ElementClearing="TaskRepeater_ElementClearing"
-                                ElementPrepared="TaskRepeater_ElementPrepared"
-                                ItemTemplate="{StaticResource TaskRowTemplate}"
-                                ItemsSource="{x:Bind ViewModel.EveningTasks, Mode=OneWay}"
-                                Loaded="ReorderRepeater_Loaded" />
-                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -440,6 +431,8 @@
                              마감일 (WhenMaxDate cap). -->
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
+                                <CheckBox Content="언젠가 (목표 날짜 없음)" IsChecked="{x:Bind ViewModel.Detail.IsSomeday, Mode=TwoWay}" />
+
                                 <Button
                                     HorizontalAlignment="Left"
                                     Click="EnableWhen_Click"
@@ -474,13 +467,14 @@
                                     <Rectangle Height="1" Margin="0,2" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
                                 </StackPanel>
 
+                                <!-- A Someday task has no target date, so its deadline inputs are disabled. -->
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="마감일" />
                                 <Grid x:Name="DeadlineDateTimeGrid" ColumnSpacing="8" RowSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
+                                    <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.Detail.IsDeadlineEnabled, Mode=OneWay}" PlaceholderText="날짜 선택" />
                                     <StackPanel
                                         x:Name="DeadlineTimePanel"
                                         Grid.Column="1"
@@ -488,12 +482,12 @@
                                         Orientation="Horizontal"
                                         Spacing="7"
                                         Visibility="{x:Bind ViewModel.Detail.ShowDeadlineTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
+                                        <ComboBox Width="72" DisplayMemberPath="Label" IsEnabled="{x:Bind ViewModel.Detail.IsDeadlineEnabled, Mode=OneWay}" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineHour, Mode=TwoWay}" />
                                         <TextBlock VerticalAlignment="Center" FontSize="18" Text=":" />
-                                        <ComboBox Width="72" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
+                                        <ComboBox Width="72" DisplayMemberPath="Label" IsEnabled="{x:Bind ViewModel.Detail.IsDeadlineEnabled, Mode=OneWay}" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedDeadlineMinute, Mode=TwoWay}" />
                                     </StackPanel>
                                 </Grid>
-                                <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsDeadlineAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsDeadlineAllDay, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.Detail.IsDeadlineEnabled, Mode=OneWay}" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </Border>
 

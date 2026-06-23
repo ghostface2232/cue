@@ -6,9 +6,9 @@ namespace Cue.Storage.Serialization;
 
 /// <summary>
 /// Serializes <see cref="ScheduledWhen"/> so the variant is explicit. Unscheduled and SomeDay are
-/// just <c>{ "kind": "Unscheduled" }</c> / <c>{ "kind": "SomeDay" }</c>; only OnDate carries a date
-/// and the evening flag: <c>{ "kind": "OnDate", "date": {…}, "isEvening": false }</c>. Reading goes
-/// back through the domain factories, so an invalid combination can never be materialized.
+/// just <c>{ "kind": "Unscheduled" }</c> / <c>{ "kind": "SomeDay" }</c>; only OnDate carries a date:
+/// <c>{ "kind": "OnDate", "date": {…} }</c>. A legacy <c>isEvening</c> field is ignored on read.
+/// Reading goes back through the domain factories, so an invalid combination can never be materialized.
 /// </summary>
 public sealed class ScheduledWhenJsonConverter : JsonConverter<ScheduledWhen>
 {
@@ -19,7 +19,6 @@ public sealed class ScheduledWhenJsonConverter : JsonConverter<ScheduledWhen>
 
         WhenKind? kind = null;
         ZonedDateTime? date = null;
-        bool isEvening = false;
 
         while (reader.Read())
         {
@@ -40,9 +39,6 @@ public sealed class ScheduledWhenJsonConverter : JsonConverter<ScheduledWhen>
                         ? null
                         : JsonSerializer.Deserialize<ZonedDateTime>(ref reader, options);
                     break;
-                case "isEvening":
-                    isEvening = reader.GetBoolean();
-                    break;
                 default:
                     reader.Skip();
                     break;
@@ -54,8 +50,7 @@ public sealed class ScheduledWhenJsonConverter : JsonConverter<ScheduledWhen>
             WhenKind.Unscheduled => ScheduledWhen.Unscheduled,
             WhenKind.SomeDay => ScheduledWhen.SomeDay,
             WhenKind.OnDate => ScheduledWhen.On(
-                date ?? throw new JsonException("An OnDate ScheduledWhen requires a 'date'."),
-                isEvening),
+                date ?? throw new JsonException("An OnDate ScheduledWhen requires a 'date'.")),
             _ => throw new JsonException("Unknown or missing ScheduledWhen 'kind'."),
         };
     }
@@ -68,7 +63,6 @@ public sealed class ScheduledWhenJsonConverter : JsonConverter<ScheduledWhen>
         {
             writer.WritePropertyName("date");
             JsonSerializer.Serialize(writer, value.Date!.Value, options);
-            writer.WriteBoolean("isEvening", value.IsEvening);
         }
         writer.WriteEndObject();
     }

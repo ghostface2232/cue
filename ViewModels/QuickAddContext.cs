@@ -14,13 +14,13 @@ public static class QuickAddContext
         if (parsedWhen.Kind != WhenKind.Unscheduled)
             return parsedWhen;
 
+        // Without a typed date, only the Today list pins an actual day; every other list (Upcoming
+        // included — it names no specific date) parks the task in Someday.
         var localToday = TimeZoneInfo.ConvertTime(utcNow, zone).Date;
         return mode switch
         {
             TaskListMode.Today => ScheduledWhen.On(PinDay(localToday, zone)),
-            TaskListMode.Upcoming => ScheduledWhen.On(PinDay(localToday.AddDays(1), zone)),
-            TaskListMode.Someday => ScheduledWhen.SomeDay,
-            _ => parsedWhen,
+            _ => ScheduledWhen.SomeDay,
         };
     }
 

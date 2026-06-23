@@ -13,7 +13,7 @@ namespace Cue.Storage.Index;
 /// <item><b>Classification</b> — by container: a project, a section, a label, or the unclassified
 /// Inbox (tasks with no project). These return the actionable (open, non-deleted) tasks in that
 /// container.</item>
-/// <item><b>Time</b> — Today / This Evening / Upcoming / Anytime / Someday / Logbook. These are
+/// <item><b>Time</b> — Today / Upcoming / Anytime / Someday / Logbook. These are
 /// <i>never stored</i>: each is computed by comparing the task's pinned date against the current day
 /// at query time, which is exactly what lets an item scheduled for a past date roll forward into
 /// Today.</item>
@@ -74,9 +74,6 @@ public interface ITaskIndex
     /// it is due or overdue). Past dates roll forward into Today rather than being missed.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>The subset of Today flagged for the evening.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetThisEveningAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Open tasks scheduled for a future day, or carrying a future deadline. Excludes anything
