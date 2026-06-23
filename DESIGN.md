@@ -1,208 +1,456 @@
-# Cue 디자인 사양서
+---
+version: alpha
+name: Cue
+description: >-
+  The visual and interaction design system for Cue, a calm, Korean-first task
+  manager built on WinUI 3 / Windows App SDK with a Mica backdrop. The direction
+  fuses Things 3's quiet hierarchy, whitespace, and satisfying completion moments
+  with Todoist's fast capture and priority queue — held to the polish bar of a
+  native Windows app (microinteractions, theme parity, Fluent finish). The
+  defining rule is that nothing hardcodes a color: every interactive, text, and
+  state color aliases one of WinUI's alpha-based theme tokens, so the whole
+  surface inverts automatically between Light and Dark.
 
-Cue의 시각 디자인·인터랙션 규칙을 정의하는 단일 기준 문서다. 새 화면·컴포넌트를 만들거나 기존 요소를 고칠 때 여기에 맞춘다.
+# NOTE — Color tokens below are ALIASES, not literal hex.
+# Cue is a native WinUI 3 app. Each color value names the WinUI theme token it resolves from (e.g. `SubtleFillColorSecondary`).
+# These tokens are alpha-based and theme-aware: they flip between Light/Dark automatically, so there is no single fixed hex per token.
+# The strings are intentionally non-CSS — they are the normative source of truth for this design system. See the "Colors" section.
+colors:
+  # Brand / accent — the system accent is Cue's only "brand" color, used sparingly.
+  primary: AccentFillColorDefault
+  accent: AccentFillColorDefault
+  on-accent: TextOnAccentFillColorPrimary
+  # Surfaces
+  page-surface: LayerFillColorDefault
+  card-surface: CardBackgroundFillColorDefault
+  input-surface: ControlFillColorDefault
+  input-surface-hover: ControlFillColorSecondary
+  # Text hierarchy
+  text-primary: TextFillColorPrimary
+  text-secondary: TextFillColorSecondary
+  text-tertiary: TextFillColorTertiary
+  # Interaction (shared hover/press recipe)
+  hover-fill: SubtleFillColorSecondary
+  pressed-fill: SubtleFillColorTertiary
+  # Strokes / separation
+  card-stroke: CardStrokeColorDefault
+  divider-stroke: DividerStrokeColorDefault
+  control-stroke: ControlStrokeColorDefault
+  elevation-stroke: CircleElevationBorderBrush
+  # Priority queue (P1–P4)
+  priority-p1: SystemFillColorCritical
+  priority-p2: SystemFillColorCaution
+  priority-p3: SystemAccentColor
+  priority-p4: TextFillColorTertiary
+  # Semantic state
+  success: SystemFillColorSuccess
+  error: SystemFillColorCritical
 
-방향성은 **Things 3의 차분한 위계·여백·만족스러운 완료감**과 **Todoist의 빠른 캡처·우선순위 큐**를 합치되, 완성도(마이크로인터랙션·테마 정합성·네이티브 Fluent 폴리시)의 기준은 Windows 네이티브 앱 수준으로 둔다. 스택은 WinUI 3 / Windows App SDK, Mica 백드롭이다.
+# NOTE — Weight is expressed by FAMILY, not FontWeight.
+# Pretendard JP ships as static OTFs, so SemiBold is a separate family (`Pretendard JP SemiBold`).
+# In WinUI the hierarchy switches family rather than setting FontWeight. The `fontWeight` values below (400/600) are the semantic equivalent for non-WinUI consumers (Figma / Tailwind / web export).
+typography:
+  page-title:
+    fontFamily: Pretendard JP SemiBold
+    fontSize: 28px
+    fontWeight: 600
+  detail-title:
+    fontFamily: Pretendard JP SemiBold
+    fontSize: 27px
+    fontWeight: 600
+  section-header:
+    fontFamily: Pretendard JP SemiBold
+    fontSize: 16px
+    fontWeight: 600
+  card-header:
+    fontFamily: Pretendard JP SemiBold
+    fontSize: 14px
+    fontWeight: 600
+  row:
+    fontFamily: Pretendard JP
+    fontSize: 15px
+    fontWeight: 400
+  row-sub:
+    fontFamily: Pretendard JP
+    fontSize: 14px
+    fontWeight: 400
+  secondary:
+    fontFamily: Pretendard JP
+    fontSize: 12px
+    fontWeight: 400
+  pill:
+    fontFamily: Pretendard JP
+    fontSize: 11px
+    fontWeight: 400
 
+rounded:
+  sm: 4px   # buttons, checks, child rows, small surfaces
+  md: 8px   # task rows, detail inner cards, timeline bars
+  lg: 12px  # detail panel, timeline canvas
+  pill: 9999px
+
+# NOTE — Spacing is currently applied inline in XAML; there is no centralized spacing token resource yet (only radius, type, and color tokens live in `Styles/DesignTokens.xaml`).
+# The scale below documents the observed rhythm and is the intended target for future centralization. See "Known Gaps".
+spacing:
+  xxs: 2px
+  xs: 4px
+  sm: 8px
+  md: 12px
+  lg: 16px
+  xl: 20px
+  page-x: 28px
+  page-y: 20px
+
+components:
+  # --- Task row (flat + grouped lists) ---
+  task-row:
+    backgroundColor: transparent
+    rounded: "{rounded.md}"
+    padding: 12px 8px
+  task-row-hover:
+    backgroundColor: "{colors.hover-fill}"
+  task-row-pressed:
+    backgroundColor: "{colors.pressed-fill}"
+  task-row-child:
+    backgroundColor: transparent
+    rounded: "{rounded.sm}"
+    padding: 12px 6px
+  selection-bar:
+    backgroundColor: "{colors.accent}"
+    width: 3px
+    rounded: 1.5px
+  # --- Completion check (custom circular template) ---
+  completion-check:
+    size: 20px
+    rounded: "{rounded.pill}"
+  completion-check-checked:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.on-accent}"
+  # --- Priority pill (importance label) ---
+  priority-pill:
+    backgroundColor: "{colors.priority-p1}"   # rendered at ~17% alpha tint (PriorityToTint)
+    textColor: "{colors.priority-p1}"          # saturated text via PriorityToBrush
+    typography: "{typography.pill}"
+    rounded: 9px
+    padding: 7px 1px
+  # --- Quick-add (omnibar pill) ---
+  quick-add:
+    backgroundColor: "{colors.input-surface}"
+    typography: "{typography.row}"
+    rounded: 24px
+    height: 48px
+    padding: 11px 14px 11px 46px
+  # --- Detail panel + inner cards ---
+  detail-panel:
+    backgroundColor: "{colors.page-surface}"
+    rounded: "{rounded.lg}"
+    width: 460px
+    padding: 16px 6px 20px 18px
+  detail-card:
+    backgroundColor: "{colors.card-surface}"
+    rounded: "{rounded.md}"
+    padding: 16px
+  # --- Timeline ---
+  timeline-canvas:
+    backgroundColor: "{colors.card-surface}"
+    rounded: "{rounded.lg}"
+  timeline-bar:
+    backgroundColor: "{colors.card-surface}"
+    rounded: "{rounded.md}"
+    height: 54px
+    padding: 0 12px
+  timeline-day-header:
+    textColor: "{colors.text-secondary}"
+    height: 58px
+  today-marker:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.on-accent}"
+    rounded: 14px
+    size: 28px
+  today-line:
+    backgroundColor: "{colors.accent}"
+    width: 1px
+  # --- Navigation ---
+  nav-item-selected:
+    textColor: "{colors.text-primary}"
+  # --- Buttons ---
+  icon-button:
+    backgroundColor: transparent
+    rounded: "{rounded.sm}"
+    size: 34px
+  subtle-text-button:
+    backgroundColor: transparent
+    textColor: "{colors.text-secondary}"
+    rounded: "{rounded.sm}"
+    padding: 8px 4px
+  # --- Inputs ---
+  text-input:
+    backgroundColor: "{colors.input-surface}"
+    textColor: "{colors.text-primary}"
+    typography: "{typography.row}"
+  text-input-focused:
+    backgroundColor: "{colors.input-surface}"
+  text-input-dark-well:
+    backgroundColor: "#18000000"   # Dark theme only: a recessed black-overlay well
+  text-input-dark-well-hover:
+    backgroundColor: "#24000000"
 ---
 
-## 1. 디자인 원칙
+# Cue Design System
 
-1. **하드코딩 ARGB를 쓰지 않는다.** 모든 상호작용·텍스트·상태 색은 WinUI의 알파 기반 테마 토큰(`SubtleFillColor*`, `ControlFillColor*`, `TextFillColor*`, `SystemFillColor*`, `CardStrokeColor*` 등)을 참조한다. 이 토큰들은 라이트/다크에서 자동으로 뒤집힌다. 직접 색을 둬야 한다면 브러시의 `Color`를 `{ThemeResource ...Color}`로 묶거나 `ThemeDictionaries`로 라이트/다크를 분리한다.
-2. **스톡 위에 얇게 얹는다.** 컨트롤을 통째로 리템플릿하기보다 테마 리소스 키만 오버라이드한다. 커스텀 템플릿은 필요할 때만(완료 체크 등) 최소 범위로.
-3. **그림자는 진짜 떠 있는 표면에만.** 플라이아웃·팝업·슬라이드오버처럼 실제 오버레이에만 elevation을 준다. 인플로우 카드·리스트 행·디테일 패널은 그림자 0, **1px stroke**로 분리한다.
-4. **악센트는 절제한다.** 면을 악센트로 칠하지 않는다. 악센트는 선택 인디케이터·포커스 링·태그 점·완료 체크 정도에만 쓴다.
-5. **차분한 위계.** 정보 밀도보다 읽는 순서가 먼저다. 굵기·크기·흐림(secondary/tertiary)으로 위계를 만들고, 보조 요소는 조용하게 둔다.
-6. **상호작용 어휘는 작고 반복된다.** 투명 기본 → hover → press의 한 가지 레시피, 색 전환은 83ms 하나로 통일. 같은 동작은 어디서나 같게 보이고 같게 움직인다.
-7. **토큰이 진실이다.** 크기·반경·색·타이밍은 `Styles/DesignTokens.xaml`에 정의된 토큰으로만 소비한다. XAML에 리터럴 수치를 흩뿌리지 않는다.
+This is the single source of truth for Cue's visual and interaction design. Build new screens and components against it, and fix existing ones to match.
 
----
+The direction fuses **Things 3** (calm hierarchy, whitespace, satisfying completion) with **Todoist** (fast capture, priority queue), held to the polish bar of a native Windows app. Stack: **WinUI 3 / Windows App SDK**, Mica backdrop. The product is **Korean-first** — see "UX Writing".
 
-## 2. 시각적 품질 기준선
+## Overview
 
-- 라이트·다크 **양쪽에서** 동일한 의도가 성립해야 한다. 한쪽에서만 보이는 색·대비는 결함이다.
-- 면 분리는 그림자가 아니라 stroke·톤 차이로 읽혀야 한다.
-- 모든 클릭 가능 요소는 hover·press·focus 상태가 보인다. 포커스 사각형을 끄면 배경/stroke로 포커스를 반드시 대체 표시한다(접근성).
-- 중첩 반경은 `inner ≤ outer − padding`으로 정렬한다.
-- 정렬·간격은 토큰 스케일에 맞춘다. 임의의 한 번뿐인 수치를 만들지 않는다.
-- 한국어 우선. 텍스트는 의도가 즉시 들어오는 자연스러운 한국어로 쓴다(§10).
+Cue should feel quiet, native, and considered. Reading order comes before information density: hierarchy is built from weight, size, and tone, and secondary elements stay subdued. The interaction vocabulary is small and repeated — one hover/press recipe, one color-transition timing — so the same action looks and moves the same way everywhere.
 
----
+**Defining principles**
 
-## 3. 디자인 토큰 (`Styles/DesignTokens.xaml`)
+1. **No hardcoded ARGB.** Every interactive, text, and state color references a WinUI alpha-based theme token (`SubtleFillColor*`, `ControlFillColor*`, `TextFillColor*`, `SystemFillColor*`, `CardStrokeColor*`, …). These invert automatically across Light/Dark. When a literal color is unavoidable, wrap the brush's `Color` in `{ThemeResource …Color}` or split Light/Dark via `ThemeDictionaries`.
+2. **Thin layer over stock.** Override theme resource keys rather than re-templating controls. Custom templates only where necessary (e.g. the completion check) and minimal in scope.
+3. **Shadows only on truly floating surfaces.** Flyouts, popups, slide-overs get elevation. In-flow cards, list rows, and the detail panel use zero shadow and a 1px stroke for separation.
+4. **Restrained accent.** Never fill a surface with the accent. The accent is for selection indicators, focus rings, tag dots, and the completion check only.
+5. **Tokens are truth.** Sizes, radii, colors, and timings are consumed from the tokens in `Styles/DesignTokens.xaml` — never sprinkled as literals in XAML.
 
-전역 일관성의 단일 출처. 대부분 WinUI 토큰의 별칭이라 테마가 자동으로 따라온다.
+**Quality baseline**
 
-### 타이포 (글꼴 패밀리)
-- `CueFontFamily` — Pretendard JP (Regular). 본문 기본.
-- `CueFontFamilySemiBold` — Pretendard JP SemiBold(별도 패밀리). **굵기 위계는 FontWeight가 아니라 패밀리 전환으로** 표현한다(정적 OTF 번들이라 SemiBold가 독립 패밀리).
-- `ContentControlThemeFontFamily`를 Pretendard로 덮어 템플릿 컨트롤(버튼·리스트·입력·내비) 전체에 적용. 평문 `TextBlock`은 창 루트의 `FontFamily`로 상속.
+- The same intent must hold in **both** Light and Dark. A color or contrast that only reads in one theme is a defect.
+- Surface separation reads from stroke / tonal difference, not shadow.
+- Every clickable element shows hover, press, and focus. If the focus rectangle is suppressed, focus must be re-expressed via background/stroke (accessibility).
+- Nested radii align to `inner ≤ outer − padding`.
+- Alignment and spacing follow the token scale; no one-off arbitrary values.
 
-### 타입 스케일
-| 토큰 | 값 | 용도 |
+## Colors
+
+Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-based theme tokens so the entire surface flips correctly between Light and Dark. The names below are semantic roles; the value is the WinUI source token.
+
+### Brand & Accent
+- **Accent** (`{colors.accent}` → `AccentFillColorDefault`): Cue's only brand color. Used sparingly — selection bar, focus ring, completion-check fill, today marker/line. Never as a surface fill.
+
+### Surfaces
+- **Page surface** (`{colors.page-surface}` → `LayerFillColorDefault`): page and detail-panel background.
+- **Card surface** (`{colors.card-surface}` → `CardBackgroundFillColorDefault`): detail inner cards, timeline bars.
+- **Input surface** (`{colors.input-surface}` → `ControlFillColorDefault`): the floating quick-add and text inputs.
+
+### Text
+- **Primary** (`{colors.text-primary}` → `TextFillColorPrimary`): titles and primary text.
+- **Secondary** (`{colors.text-secondary}` → `TextFillColorSecondary`): metadata and secondary labels.
+- **Tertiary** (`{colors.text-tertiary}` → `TextFillColorTertiary`): the quietest labels (group/tag headers, unchecked check outline).
+
+### Interaction
+- Transparent at rest → hover `{colors.hover-fill}` (`SubtleFillColorSecondary`) → press `{colors.pressed-fill}` (`SubtleFillColorTertiary`). This **one shared recipe** is used by main list rows, child rows, timeline bars, subtle buttons, and detail-panel controls alike, so Light mode never drifts between surfaces.
+
+  > Implementation note: hover/press is unified through `CueHoverFillBrush` / `CuePressedFillBrush`. The detail panel previously used a one-step-stronger custom overlay; it now aliases the same shared brushes for both themes.
+
+- **Input tone is theme-split.** Light keeps the standard control fill and holds that tone on focus (avoiding the default bright white-out). Dark replaces the framework's translucent-white fill — too bright on dark cards — with a subtle recessed **well**: `#18000000` (~9%) at rest, `#24000000` (~14%) on hover. These are the only literal colors in the system, defined per-theme in `ThemeDictionaries`.
+
+### Priority queue (P1–P4)
+- **P1** (`{colors.priority-p1}` → `SystemFillColorCritical`) — 매우 중요 / Critical
+- **P2** (`{colors.priority-p2}` → `SystemFillColorCaution`) — 중요 / High
+- **P3** (`{colors.priority-p3}` → `SystemAccentColor`) — 보통 / Normal
+- **P4** (`{colors.priority-p4}` → `TextFillColorTertiary`) — 사소 / Low
+
+The importance pill paints its background as a ~17% alpha tint of the priority color (`PriorityToTint`, alpha `0x2B`) with the saturated color as the label text (`PriorityToBrush`).
+
+### Semantic state
+- **Success** (`{colors.success}` → `SystemFillColorSuccess`): the detail Save glyph.
+- **Error** (`{colors.error}` → `SystemFillColorCritical`): the detail Close glyph, error `InfoBar`.
+
+  > Semantic glyphs keep their color through hover/press — they are **never** covered by a gray fill; pressing only drops opacity to 0.6.
+
+## Typography
+
+The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship as two families, **weight hierarchy switches family, not FontWeight**: SemiBold is its own family (`Pretendard JP SemiBold`). `ContentControlThemeFontFamily` is overridden to Pretendard so templated controls (buttons, lists, inputs, nav) inherit it; plain `TextBlock`s inherit via the window root's `FontFamily`.
+
+### Hierarchy
+
+| Token | Family | Size | Use |
+|---|---|---|---|
+| `{typography.page-title}` | SemiBold | 28 | Page title (`CuePageTitleTextStyle`) |
+| `{typography.detail-title}` | SemiBold | 27 | Detail-pane editable title |
+| `{typography.section-header}` | SemiBold | 16 | Section / group headers (`CueSectionHeaderTextStyle`) |
+| `{typography.row}` | Regular | 15 | Task-row title |
+| `{typography.card-header}` | SemiBold | 14 | Detail card headers (`CueCardHeaderTextStyle`) |
+| `{typography.row-sub}` | Regular | 14 | Child task rows, checklist items |
+| `{typography.secondary}` | Regular | 12 | Metadata, secondary labels (`MetadataTextStyle`) |
+| `{typography.pill}` | Regular | 11 | Priority pill label |
+
+### Color hierarchy
+Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quietest labels (group/tag headers) `{colors.text-tertiary}`.
+
+### Principles
+- Weight = family. Titles/headers use SemiBold; body/metadata use Regular.
+- Consume text styles from the central styles (`CuePageTitleTextStyle`, `CueSectionHeaderTextStyle`, `CueCardHeaderTextStyle`, `MetadataTextStyle`) — never create inline font literals.
+
+## Layout
+
+### Shell — `MainWindow.xaml`
+- A `TitleBar` (48px, the WinUI control with `ExtendsContentIntoTitleBar`) + left `NavigationView` (stock, thinly overridden) + content `Frame`. Mica backdrop.
+- Navigation is **flat** — no back history between lists; each selection clears the back stack.
+- Caption (min/max/close) buttons are drawn by the system, so XAML theming does not reach them. Their glyph colors and hover/press backgrounds are set in code and reapplied on every `ActualThemeChanged` (hover bg `#14000000` light / `#20FFFFFF` dark; pressed `#28000000` / `#40FFFFFF`).
+
+### List page — `TaskListPage.xaml`
+- Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `28,20` (`page-x` × `page-y`).
+- Two-column body: left list (flexible) + right detail panel (fixed 460px). When the detail closes, the list reclaims the width.
+- The list takes **two forms**: a **flat list** (`ItemsRepeater`, with secondary sections like "오늘 저녁" / This Evening) and a **grouped list** (`ListView`, group header + rows). The grouped form is shared by the Project (per-section) and Priority (P1–P4) views (`IsGroupedList`).
+
+### Timeline page — `TimelinePage.xaml`
+- A horizontally-scrolling month view (gantt-like). One framed canvas (`{rounded.lg}`, 1px card stroke) holds a row of day-column headers above a stack of task bars.
+- Header row: title + range caption, with prev-month / 오늘 (Today) / next-month controls (`subtle-text-button`, 34px icon buttons with chevron glyphs).
+- Panning: pointer drag and mouse-wheel both scroll the timeline horizontally; keyboard scrolling is supported (the ScrollViewer is a tab stop).
+- Shares the **same detail panel** as the list page (460px, identical card stack).
+
+### Detail panel
+- Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in.
+- A vertical stack of cards (radius 8, 1px stroke, no shadow): task info (notes · importance · group) / start + due date / tags / checklist.
+
+### Spacing
+The page rhythm is body padding `28,20` and card internal padding `16`. Spacing is currently applied inline in XAML (there is no centralized spacing token yet — see "Known Gaps"); the `spacing` scale in the frontmatter documents the intended rhythm.
+
+## Elevation & Depth
+
+Separation is carried by **stroke and tone, not shadow.**
+
+| Level | Treatment | Use |
 |---|---|---|
-| 페이지 타이틀 | 28 | `CuePageTitleTextStyle` (SemiBold) |
-| `CueFontSection` | 16 | 섹션/그룹 헤더 (`CueSectionHeaderTextStyle`, SemiBold) |
-| `CueFontRow` | 15 | 태스크 행 제목 |
-| `CueFontRowSub` | 14 | 서브태스크·카드 헤더 |
-| `CueFontSecondary` | 12 | 메타데이터·보조 라벨 |
+| In-flow | No shadow, 1px stroke | Cards, list rows, detail panel, timeline bars |
+| Pseudo-float | No shadow, gradient stroke | Quick-add (`CircleElevationBorderBrush`) |
+| True overlay | Elevation / shadow | Flyouts, popups, menus |
 
-### 반경
-| 토큰 | 값 | 용도 |
+- In-flow surfaces use **zero shadow**. A 1px `CardStrokeColorDefault` (cards) or `DividerStrokeColorDefault` (inner dividers) does the separating. Stroked cards set `BackgroundSizing="InnerBorderEdge"` so the 1px sits inside the radius.
+- When something needs to feel lifted (the quick-add omnibar) it uses `CircleElevationBorderBrush` — a top-light / bottom-dark gradient stroke — for subtle dimension **instead of** a drop shadow.
+- Shadows belong only to true overlays (flyouts, popups).
+
+## Shapes
+
+### Radius scale
+Use only `{rounded.sm}` (4) / `{rounded.md}` (8) / `{rounded.lg}` (12) plus pills. Arbitrary radii are forbidden. Nested radii align to `inner ≤ outer − padding`.
+
+| Token | Value | Use |
 |---|---|---|
-| `CueRadiusSmall` | 4 | 버튼·체크·서브태스크 행·작은 표면 |
-| `CueRadiusRow` | 8 | 태스크 행 |
-| `CueRadiusCard` | 8 | 디테일 내부 카드 |
-| `CueRadiusPanel` | 12 | 디테일 패널 |
-| (알약) | height/2 | 태그/우선순위/퀵애드 등 pill 전용 |
+| `{rounded.sm}` | 4px | Buttons, checks, child rows, small surfaces |
+| `{rounded.md}` | 8px | Task rows, detail inner cards, timeline bars |
+| `{rounded.lg}` | 12px | Detail panel, timeline canvas |
+| `{rounded.pill}` | height/2 | Pills |
 
-### 색 (우선순위 큐)
-- `CuePriorityP1Brush` = `SystemFillColorCritical` (매우 중요)
-- `CuePriorityP2Brush` = `SystemFillColorCaution` (중요)
-- `CuePriorityP3Brush` = `SystemAccentColor` (보통)
-- `CuePriorityP4Brush` = `TextFillColorTertiary` (사소)
+Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`, today marker circle `14`.
 
-### 모션
-- hover/press 등 색 전환: **83ms**, ease-out.
-- 디테일 패널 진입: ~280–350ms, 시그니처 스플라인 `KeySpline 0.1,0.9 0.2,1.0`.
-- 완료 "팝": 오버슈트 스케일 0.6 → 1.15 → 1.0, ~280ms, 동일 스플라인.
+### Focus & stroke
+- System focus visuals by default.
+- Text-input border thickness is flattened to 1px in every state (`TextControlBorderThemeThickness(Focused)=1`) with the **bottom accent bar removed**; on focus the border color shifts to the accent instead.
+- Where a selectable row suppresses the focus rectangle, focus is re-expressed via background/stroke.
 
-### 페이지 패딩
-- 리스트 페이지 본문 패딩 `28,20`. 카드 내부 패딩 `16`.
+## Components
 
----
+### Task row
+- Columns: `[3px selection bar][circular check][title … priority pill]`, with a one-line metadata row (schedule) below.
+- Selected → left 3px accent bar (`selection-bar`, radius 1.5, a dedicated column so it never shifts content). Background hover transitions over 83ms. Radius `{rounded.md}`.
+- Subtasks render as an indented nested list under the parent (with a 1px divider). Their presence is self-evident, so there is no "N subtasks" caption. Child rows reuse the same circular check, row-sub font, and spacing.
 
-## 4. 색상 & 테마
+### Completion state
+- Completing does not remove the row: it stays in place at **opacity 0.48** and sinks to the bottom of the list. This persists across views (the active query includes completed items, sorted last). Only the sidebar count badge counts open tasks.
+- **Completing a parent completes its whole checklist (subtasks).** A parent is never left complete with open subtasks — except a repeating task that has rolled to its next cycle (the work continues).
 
-- **상호작용:** 투명 기본 → hover `SubtleFillColorSecondary` → press `SubtleFillColorTertiary`. 디테일 패널 내부는 카드 면 위라 hover/press를 한 단계 강하게(테마별 `#14000000`/`#1F000000` 라이트, `#22FFFFFF`/`#30FFFFFF` 다크) 패널 로컬 리소스로 올린다.
-- **면 색:** 페이지/디테일 패널 배경 `LayerFillColorDefault`, 카드 `CardBackgroundFillColorDefault`, 퀵애드(떠 있는 입력) `ControlFillColorDefault`.
-- **입력창 톤은 테마 분리.** 라이트는 표준 컨트롤 fill을 쓰고 포커스 시에도 그 톤을 유지(기본 흰색 번짐 방지). 다크는 반투명 흰색이 카드 위에서 과하게 밝아 보이므로 **살짝 어두운 음각 well**(검정 9–14% 오버레이)로 둔다. → `DesignTokens.xaml`의 `ThemeDictionaries`가 `TextControlBackground/PointerOver/Focused`를 라이트/다크로 나눠 정의.
-- **상태색:** 성공 `SystemFillColorSuccess`, 위험 `SystemFillColorCritical`. 디테일의 저장(녹)/닫기(적) 글리프가 이를 사용하며, **hover/press 시 회색 fill로 덮지 않고** 글리프 색만 유지(누를 때 opacity만 0.6으로 살짝 낮춤).
-- **선택 인디케이터:** 좌측 3px 악센트 바(`AccentFillColorDefault`, radius 1.5), 전용 컬럼이라 콘텐츠를 밀지 않는다.
-- **타이틀바 캡션 버튼:** AppWindow가 그리므로 XAML 테마가 닿지 않는다. 테마별 글리프 색·hover/press 배경을 코드에서 지정하고 `ActualThemeChanged`마다 재적용한다.
+### Priority pill
+- Rendered **after** the row title as a text pill (not a leading dot). Labels: 매우 중요 / 중요 / 보통 / 사소.
+- Background is a ~17% tint of the priority color; text is the saturated tone. Radius 9. Color mapping per the priority tokens; text via `PriorityToLabel`, tint via `PriorityToTint`, saturated color via `PriorityToBrush`.
 
----
+### Circular completion check — `CueCircleCheckBoxStyle`
+- 20×20. Unchecked = 1.6px outline circle (`TextFillColorTertiary`, → secondary on hover). Checked = accent fill + white check glyph + overshoot pop.
+- For completion toggles only — never for multi-select / general checkboxes.
 
-## 5. 반경 · 그림자 · 스트로크 · 포커스
+### Quick-add (omnibar)
+- A floating pill (min height 48, radius 24). Background `ControlFillColorDefault` + `CircleElevationBorderBrush` for subtle dimension (not a shadow). Leading glyph and text are vertically centered.
+- Lifts one tone on hover; gains an accent ring on focus.
+- A natural-language date in the input defaults to the **due date** (the start date is added explicitly in detail).
 
-- **반경:** §3 스케일만 사용(4 / 8 / 12 + 알약). 임의 반경 금지.
-- **그림자:** 인플로우 표면(카드·행·디테일 패널)은 그림자 0. 분리는 1px `CardStrokeColorDefault`(카드) / `DividerStrokeColorDefault`(내부 구분선)가 담당. stroke 카드에는 `BackgroundSizing="InnerBorderEdge"`로 1px를 반경 안쪽에 깐다. 그림자는 플라이아웃·팝업 등 진짜 오버레이에만.
-- **떠 있는 느낌이 필요할 때**(퀵애드)는 그림자 대신 `CircleElevationBorderBrush`(상단 밝고 하단 어두운 그라디언트 stroke)로 미묘한 입체감을 준다.
-- **포커스:** 시스템 포커스 비주얼을 기본으로. 텍스트 입력의 포커스 보더 두께는 1px로 평탄화(`TextControlBorderThemeThickness(Focused)=1`)하되 색을 악센트로 바꿔 표시. 선택형 행에서 포커스 사각형을 억제할 경우 배경/stroke로 포커스를 반드시 대체 표시한다.
+### Start + due date card
+- Start and due dates live in **one card**. Adding a start date places it **above** the due date (natural start→due order), separated by a divider; before that, a "+ 시작일 추가" (Add start date) button holds the slot.
+- The start date can never exceed the due date (calendar `MaxDate` cap; pulling the due date earlier pulls the start with it).
+- Each date shows date + time on one line; "종일" (All day) hides the time (expires at 23:59).
 
----
+### Tags
+- The detail tag card is a **checkbox-free list**. Tapping a row confirms selection with a trailing check (color glyph + name + trailing check).
+- A "태그 없음" (No tags) item at the top makes the untagged state explicit (checked by default); it is mutually exclusive with real tags and is not written as a tag id.
 
-## 6. 타이포그래피
+### Inputs
+- Flat 1px boxes with no bottom accent bar. Theme-split tone (Dark = recessed well). On focus only the border turns accent.
 
-- 위계 램프: **28(페이지) → 16(섹션) → 15(행 제목) → 14(서브) → 12(메타)**. 모두 §3 토큰/스타일로 소비.
-- 굵기는 패밀리로: 제목·헤더는 `CueFontFamilySemiBold`, 본문·메타는 `CueFontFamily`.
-- 색 위계: 주요 텍스트 `TextFillColorPrimary`, 메타 `TextFillColorSecondary`, 가장 조용한 라벨(그룹 헤더 등) `TextFillColorTertiary`.
-- 텍스트 스타일은 중앙 스타일(`CuePageTitleTextStyle` / `CueSectionHeaderTextStyle` / `CueCardHeaderTextStyle` / `MetadataTextStyle`)로 재사용하고 인라인 폰트 리터럴을 만들지 않는다.
+### Sidebar / navigation
+- Stock `NavigationView` + thin override. Selected text is flattened to `TextFillColorPrimary` (calm, not accent); selection reads from the fill + the stock left accent pill.
+- Fixed items: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · **타임라인 (Timeline)** · 언제든 할 일 (Anytime) · 나중에 할 일 (Someday) · 완료한 일 (Logbook) · 중요도 (Priority). Below them: **그룹 (Groups / Projects)** and **태그 (Tags / Labels)** sections.
+- Group/Tag headers are 12 SemiBold `TextFillColorTertiary` (quiet hierarchy).
+- An `InfoBadge` with the open-task count sits at the end of each item (restrained).
+- **Glyph click = instant picker.** Clicking a project glyph opens the icon picker; clicking a tag glyph opens the color picker — directly, no depth (right-click context menu is the fallback).
+- **Sidebar right-click = show/hide menu.** A checkable list toggles the fixed views (오늘 / 앞으로 / 타임라인 / 언제든 / 나중에 / 완료 / 중요도) on and off (name left, accent check right). Saved to app-local settings. "모든 할 일" is always shown.
 
----
+### Selection popup (icon / color)
+- Icon/color only, no names; a 4-column grid flyout anchored to the nav item.
+- **The current selection is ringed** (accent ring for icons, high-contrast ring for colors).
+- Color swatches only **brighten slightly** on hover (white-blend) rather than being covered by a theme fill; the ring persists through hover/press.
+- Project icons are chosen not to clash with the fixed sidebar glyphs; the star uses an outline glyph (tonally matched to the other outline icons).
 
-## 7. 모션 / 마이크로인터랙션
+### Timeline
+- **Day-column header** (`timeline-day-header`, 58px tall): day number over weekday label, secondary text; the cell carries a right + bottom 1px divider. Today's number sits in a 28px accent circle (`today-marker`, radius 14) with on-accent text.
+- **Task bar** (`timeline-bar`): a card-surface bar (radius 8, 1px card stroke, `InnerBorderEdge`), min width 140, min height 54, positioned on a canvas by start offset and width. Carries the title + priority pill and a date caption. Hover uses the shared `CueHoverFillBrush`.
+- **Now line** (`today-line`): a precise 1px accent rectangle at opacity 0.8, positioned by a `TranslateTransform`, shown only when today falls in range.
 
-- **색 전환은 83ms ease-out 하나로 통일.** 태스크 행 배경은 `BrushTransition`(코드비하인드 스왑이 아니라 선언적 전환)으로 hover.
-- **완료 인터랙션(축하 모먼트):** 빈 원(outline) → 채운 악센트 원 + 체크 글리프, 스케일 오버슈트 0.6→1.15→1.0(~280ms, 스플라인 `0.1,0.9 0.2,1.0`). 완료된 행은 opacity 0.48로 흐려지며 그 자리에 남는다(§9 참고).
-- **디테일 패널 진입:** Composition `Translation`(28→0) + `Opacity`로 슬라이드 인(~280–350ms, 시그니처 스플라인).
-- **리스트 재배치:** 행에 `RepositionThemeTransition`. 가상화 충돌을 피하려 모션은 **realized 컨테이너에만** 부착(ElementPrepared/Clearing)하고, Storyboard를 가상 아이템에 키하지 않는다. 드래그 리오더 표면은 기본 트랜지션을 끈 자체 모션을 쓴다.
-- 횡단 규칙: 가상화 행은 Composition implicit를 Storyboard보다 우선. `ConnectedAnimation`은 쓰지 않는다.
+### Dialogs / inline buttons
+- Inline secondary actions (rename / delete / + add) share one style: transparent background + subtle hover + secondary text (`CueSubtleTextButtonStyle`). At most one true primary is emphasized per context.
+- The shared icon button is `CueIconButtonStyle` (34×34 `HyperlinkButton`, transparent at rest, semantic meaning via glyph color only).
 
----
+## Do's and Don'ts
 
-## 8. 레이아웃
-
-### 셸 (`MainWindow.xaml`)
-- 상단 `TitleBar`(48) + 좌측 `NavigationView`(스톡, 얇게 오버라이드) + 콘텐츠 `Frame`. Mica 백드롭.
-- 내비 폰트는 `CueFontFamily`. 평면 내비(리스트 간 뒤로가기 히스토리 없음).
-
-### 리스트 페이지 (`TaskListPage.xaml`)
-- 행 구성: 페이지 타이틀 + 캡션 → (에러 InfoBar) → 퀵애드 → 리스트(+디테일 패널).
-- 본문은 좌측 리스트(가변) + 우측 디테일 패널(고정 460px) 2열. 디테일이 닫히면 리스트가 폭을 차지.
-- 리스트는 두 형태: **평면 리스트**(`ItemsRepeater`, 오늘 저녁 같은 보조 섹션 포함)와 **그룹 리스트**(`ListView`, 그룹 헤더 + 행). 그룹 리스트는 프로젝트(섹션별)와 중요도(P1–P4) 뷰가 공유한다(`IsGroupedList`).
-
-### 디테일 패널
-- radius 12, 그림자 없음, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, 슬라이드 인.
-- 내부는 카드(radius 8, 1px stroke, 그림자 없음)들의 세로 스택. 카드: 작업 정보(메모·중요도·그룹) / 시작일+마감일 / 태그 / 체크리스트.
-
----
-
-## 9. 컴포넌트 사양
-
-### 태스크 행
-- 컬럼: `[3px 선택 바][원형 체크][제목 … 우선순위 알약]`, 하단에 메타(일정 등) 한 줄.
-- 선택 시 좌측 3px 악센트 바. 배경 hover는 83ms 전환. radius `CueRadiusRow`(8).
-- 서브태스크는 부모 아래 들여쓴 중첩 리스트로 렌더. 존재 자체가 보이므로 "하위 작업 N" 같은 캡션은 두지 않는다. 서브태스크 행도 동일한 **원형 체크박스**·행 폰트·간격을 쓴다(메인 리스트와 일관).
-
-### 완료 상태
-- 완료해도 행은 사라지지 않고 **회색(opacity 0.48)으로 그 자리에 남으며 목록 하단으로 가라앉는다.** 다른 화면을 보고 와도 유지된다(활성 쿼리가 완료 항목을 포함, 완료-후순위 정렬). 단 사이드바 카운트 배지는 열린 작업만 센다.
-- **부모를 완료하면 체크리스트(서브태스크) 전체가 함께 완료**된다. 부모만 완료되고 서브만 열린 채 남는 상태를 만들지 않는다(반복 작업이 다음 주기로 전진한 경우는 제외 — 작업이 계속되므로).
-
-### 우선순위(중요도) 알약
-- 행 제목 **뒤**에 텍스트 알약으로 표시(앞의 색 점 아님). 라벨은 매우 중요 / 중요 / 보통 / 사소.
-- 배경은 우선순위 색의 옅은 틴트(~17% 알파), 글자는 같은 색의 진한 톤. radius 9.
-- 색 매핑은 §3 우선순위 브러시. 텍스트 변환은 중앙 변환기로(`PriorityToLabel`), 틴트는 `PriorityToTint`, 진한 색은 `PriorityToBrush`.
-
-### 원형 완료 체크박스 (`CueCircleCheckBoxStyle`)
-- 20×20. 미완료 = 1.6px outline 원(`TextFillColorTertiary`, hover 시 secondary). 완료 = 악센트 fill + 흰 체크 글리프 + 오버슈트 팝(§7).
-- 완료 토글 전용. 다중 선택/일반 체크에는 쓰지 않는다.
-
-### 퀵애드 (omnibar 스타일)
-- 떠 있는 알약(MinHeight 48, radius 24). 배경 `ControlFillColorDefault` + `CircleElevationBorderBrush`로 미묘한 입체감(그림자 아님). 선행 글리프·텍스트는 세로 중앙.
-- hover 시 한 단계 밝아지고, 포커스 시 악센트 링. 텍스트/아이콘 세로 중앙 정렬.
-- 입력의 자연어 일시는 기본적으로 **마감일**로 들어간다(시작일은 상세에서 명시적으로 추가).
-
-### 시작일 · 마감일 카드
-- 시작일과 마감일은 **한 카드**. 시작일을 추가하면 마감일 **위쪽**에 붙고(시작→마감의 자연스러운 순서) 구분선으로 나뉜다. 추가 전에는 그 자리에 "+ 시작일 추가" 버튼.
-- 시작일은 마감일을 넘을 수 없다(달력 `MaxDate` 캡 + 마감일을 당기면 시작일도 따라 당겨짐).
-- 각 날짜는 같은 줄에 날짜+시각, "종일" 체크 시 시각 숨김(밤 23:59로 만료).
-
-### 태그
-- 디테일 태그 카드는 **체크박스 없는 리스트**. 행을 누르면 우측에 체크 표시로 선택을 확인한다(색 글리프 + 이름 + 우측 체크).
-- 맨 위에 "태그 없음" 항목을 두어 무태그 상태를 명시(기본 체크). 실제 태그와 상호 배타이며 저장 시 태그 id로 기록되지 않는다.
-
-### 입력 필드
-- 하단 악센트 바 없이 평탄한 1px 박스. §4의 테마 분리 톤(다크는 음각 well). 포커스 시 보더만 악센트로.
-
-### 사이드바 / 내비게이션
-- 스톡 `NavigationView` + 얇은 오버라이드. 선택 텍스트는 악센트가 아니라 `TextFillColorPrimary`로 평탄화(차분). 선택감은 fill + 좌측 악센트 알약(스톡 제공).
-- 고정 항목: 모든 할 일 · 오늘 할 일 · 앞으로 할 일 · 언제든 할 일 · 나중에 할 일 · 완료한 일 · 중요도. 그 아래 **그룹**(프로젝트)·**태그**(라벨) 섹션.
-- 그룹/태그 헤더는 12 SemiBold `TextFillColorTertiary`(조용한 위계).
-- 항목 끝에 열린 작업 수 `InfoBadge`(절제).
-- **글리프 클릭 = 즉시 선택 팝업**: 프로젝트 글리프를 누르면 아이콘 선택, 태그 글리프를 누르면 색 선택 팝업이 뎁스 없이 바로 뜬다(우클릭 컨텍스트 메뉴는 폴백).
-- **사이드바 우클릭 = 표시/숨김 메뉴**: 고정 항목(오늘/앞으로/언제든/나중에/완료/중요도)을 켜고 끄는 체크 리스트(이름 왼쪽, 악센트 체크 오른쪽). 선택은 앱 로컬 설정에 저장. "모든 할 일"은 항상 표시.
-
-### 선택 팝업 (아이콘 / 색)
-- 이름 없이 아이콘/색만, 4열 그리드 플라이아웃. 나비 항목에 앵커.
-- **현재 선택 항목은 링으로 강조**(아이콘은 악센트 링, 색은 고대비 링).
-- 색 스와치는 hover 시 테마 fill로 덮이지 않고 **살짝 밝아지기만** 한다(흰색 쪽 블렌딩). 링은 hover/press 중에도 유지.
-- 프로젝트 아이콘 세트는 사이드바 고정 글리프와 겹치지 않게 고른다. 별은 외곽선 글리프를 쓴다(나머지 아웃라인 아이콘과 톤 일치).
-
-### 다이얼로그 / 인라인 버튼
-- 인라인 보조 액션(이름 변경/삭제/+추가)은 투명 배경 + subtle hover + secondary 텍스트의 한 스타일(`CueSubtleTextButtonStyle`). 맥락당 진짜 primary는 하나만 강조.
-- 공통 아이콘 버튼은 `CueIconButtonStyle`(투명 기본, 의미색은 글리프 색으로만).
+- **Do** consume color from WinUI theme tokens; **don't** hardcode ARGB. Where a literal is unavoidable, use a `ThemeResource` Color or `ThemeDictionaries`.
+- **Do** verify both Light and Dark — a one-theme-only color is a defect.
+- **Do** separate in-flow surfaces with a 1px stroke + `InnerBorderEdge`; **don't** add a shadow unless the surface is a true overlay.
+- **Do** reuse the one hover/press recipe and the 83ms color transition; **don't** invent per-surface interaction colors.
+- **Do** keep the accent restrained (small indicators); **don't** fill a surface with it.
+- **Do** build hierarchy from family-weight, size, and tone; keep secondary elements quiet.
+- **Do** show hover/press/focus on every clickable element; if the focus rectangle is off, re-express focus with background/stroke.
+- **Do** align nested radii to `inner ≤ outer − padding`; use only the 4/8/12 + pill scale.
 
 ---
 
-## 10. UX 라이팅
+# Appendix (Cue-specific, beyond the standard schema)
 
-- 한국어 우선. 의도가 즉시 들어오는 자연스러운 표현을 쓴다.
-- 도메인 용어 매핑: 프로젝트→**그룹**, 라벨→**태그**, 우선순위→**중요도**(P1–P4 = 매우 중요/중요/보통/사소), 서브태스크→**체크리스트**, 마감→**마감일**, 예정→**시작일**, 상위 작업→**할 일**.
-- 시간 뷰: 오늘 할 일 / 앞으로 할 일 / 언제든 할 일 / 나중에 할 일 / 완료한 일.
-- 군더더기 라벨은 없앤다(예: 자명한 카드 제목은 생략).
+> The sections below capture Cue conventions that the standard DESIGN.md schema does not model (motion, copy, process). They are preserved here as additional, non-normative guidance.
 
----
+## Motion & Microinteractions
 
-## 11. 신규 요소 추가 시 체크리스트
+- **Color transitions are unified at 83ms, ease-out.** Task-row backgrounds hover via a declarative `BrushTransition` (`0:0:0.083`), not a code-behind swap.
+- **Completion (celebration moment):** empty outline → filled accent circle + check glyph, with a scale overshoot 0.6 → 1.15 → 1.0 (~280ms; spline `KeySpline 0.1,0.9 0.2,1.0`). The completed row then fades to opacity 0.48 in place.
+- **Detail-panel entrance:** Composition `Translation` (28→0) + `Opacity`, slide-in over ~350ms on the signature cubic-bezier `(0.1,0.9)(0.2,1.0)`, run on the compositor thread.
+- **Page transition:** subtle `Opacity` + `Scale` settle (≈0.99→1.0) on navigation.
+- **List reposition:** rows carry `RepositionThemeTransition`. To avoid virtualization conflicts, motion is attached **only to realized containers** (`ElementPrepared` / `ElementClearing`); Storyboards are never keyed to virtual items. Drag-reorder surfaces use their own motion with default transitions off.
+- **Cross-cutting:** for virtualized rows, prefer Composition implicit animations over Storyboards. `ConnectedAnimation` is not used.
 
-1. **토큰부터.** 색·반경·폰트·타이밍을 새로 만들기 전에 §3 토큰에 맞는 것이 있는지 본다. 없으면 토큰을 추가하고 그걸 소비한다(리터럴 금지).
-2. **테마 양쪽.** 라이트·다크에서 의도가 성립하는지 확인. 직접 색은 `ThemeResource` Color 또는 `ThemeDictionaries`로.
-3. **분리는 stroke로.** 그림자를 쓰려면 그게 진짜 오버레이인지 자문한다. 인플로우면 1px stroke + `InnerBorderEdge`.
-4. **상호작용 어휘 재사용.** hover/press는 §4 레시피, 색 전환은 83ms. 새 모션은 §3 타이밍·스플라인을 따른다.
-5. **악센트 절제.** 면을 악센트로 칠하지 않는다. 강조는 작은 인디케이터로.
-6. **위계.** 굵기(패밀리)·크기·흐림으로 읽는 순서를 만든다. 보조 요소는 조용하게.
-7. **포커스·접근성.** 클릭 가능 요소는 hover/press/focus가 보이게. 포커스 사각형을 끄면 대체 표시.
-8. **반경 정렬.** 중첩 시 `inner ≤ outer − padding`.
-9. **카피.** §10 용어·톤에 맞춘 자연스러운 한국어.
-10. **검증.** 빌드 + 테스트 통과, 가능하면 라이트/다크 실제 화면 확인.
+## UX Writing
+
+- **Korean-first.** Write natural Korean where intent lands immediately.
+- **Domain term mapping:** Project → **그룹 (Group)**, Label → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), Subtask → **체크리스트 (Checklist)**, Deadline → **마감일 (Due date)**, Scheduled → **시작일 (Start date)**, Parent task → **할 일 (Task)**.
+- **Time views:** 오늘 할 일 (Today) / 앞으로 할 일 (Upcoming) / 언제든 할 일 (Anytime) / 나중에 할 일 (Someday) / 완료한 일 (Logbook).
+- Drop redundant labels (e.g. omit self-evident card titles).
+
+## Adding a New Element — Checklist
+
+1. **Tokens first.** Before inventing a color/radius/font/timing, check for a fit in the existing tokens. If none, add a token and consume that (no literals).
+2. **Both themes.** Confirm the intent holds in Light and Dark. Literals go through `ThemeResource` Color or `ThemeDictionaries`.
+3. **Separate with stroke.** If you want a shadow, ask whether it is a true overlay. If in-flow, use a 1px stroke + `InnerBorderEdge`.
+4. **Reuse the interaction vocabulary.** Hover/press from the shared recipe; color transition at 83ms; new motion follows the token timings/splines.
+5. **Restrain the accent.** No accent-filled surfaces; emphasize with small indicators.
+6. **Hierarchy** from family-weight, size, and tone; keep secondary elements quiet.
+7. **Focus & accessibility.** Clickable elements show hover/press/focus; provide a replacement when the focus rectangle is suppressed.
+8. **Radius alignment.** Nested: `inner ≤ outer − padding`.
+9. **Copy** in natural Korean per the UX Writing terms and tone.
+10. **Verify.** Build + tests pass; check the real screen in Light and Dark where possible.
+
+## Known Gaps
+
+- **No centralized spacing token.** `Styles/DesignTokens.xaml` defines radius, type, and color tokens, but spacing/padding is still applied inline in XAML. The `spacing` scale in the frontmatter documents the intended rhythm (page padding `28,20`, card padding `16`) but is not yet a consumed resource. This is the main unmet part of the "tokens are truth" principle.
+- **Pretendard JP** ships as static OTFs, so weight hierarchy is family-switched (Regular vs. SemiBold) rather than `FontWeight`-driven. The frontmatter encodes the semantic weight (400/600) for non-WinUI export.
+- **Caption (window) buttons** are system-drawn and themed in code-behind (`ApplyCaptionButtonColors`), reapplied on `ActualThemeChanged` — they are not reachable as XAML tokens.
+- The Dark text-input **well** (`#18000000` / `#24000000`) is the only set of literal colors in the system; it is intentionally theme-scoped in `ThemeDictionaries`.
+- Color tokens in this document are **aliases** of WinUI theme tokens, not literal hex; they cannot be WCAG-contrast-checked statically because they resolve to different values per theme.
