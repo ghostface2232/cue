@@ -3,7 +3,10 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cue.Domain;
+using Cue.Storage;
 using Cue.Storage.Index;
+using Cue.Storage.Ranking;
+using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
@@ -21,6 +24,7 @@ public partial class TimelineViewModel : ObservableObject
 
     public ObservableCollection<TimelineDayViewModel> Days { get; } = new();
     public ObservableCollection<TimelineTaskRowViewModel> Rows { get; } = new();
+    public TaskDetailViewModel Detail { get; }
 
     public double DayWidth => DayWidthValue;
     public double TrackWidth => Days.Count * DayWidthValue;
@@ -36,7 +40,13 @@ public partial class TimelineViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
 
-    public TimelineViewModel(ITaskIndex index, TimeProvider clock, TimeZoneInfo zone)
+    public TimelineViewModel(
+        ITaskStore store,
+        ITaskIndex index,
+        IReorderService reorder,
+        IRecurringTaskService recurrence,
+        TimeProvider clock,
+        TimeZoneInfo zone)
     {
         _index = index;
         _clock = clock;
@@ -45,6 +55,7 @@ public partial class TimelineViewModel : ObservableObject
         var today = Today();
         _visibleMonth = new DateOnly(today.Year, today.Month, 1);
         RebuildDays();
+        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync);
     }
 
     [RelayCommand]
@@ -76,6 +87,18 @@ public partial class TimelineViewModel : ObservableObject
         await LoadAsync();
     }
 
+    [RelayCommand]
+    private async Task SelectTaskAsync(Guid id)
+    {
+        if (Detail.IsOpen && Detail.CurrentTaskId != id)
+        {
+            Detail.Close();
+            await Task.Delay(90);
+        }
+
+        await Detail.OpenAsync(id);
+    }
+
     private async Task ReloadRowsAsync()
     {
         var items = await _index.GetTimelineAsync(_rangeStart, _rangeEnd);
@@ -91,7 +114,8 @@ public partial class TimelineViewModel : ObservableObject
     {
         _rangeStart = _visibleMonth;
         _rangeEnd = _visibleMonth.AddMonths(1).AddDays(-1);
-        var today = Today();
+        var now = LocalNow();
+        var today = DateOnly.FromDateTime(now.DateTime);
 
         Days.Clear();
         for (var day = _rangeStart; day <= _rangeEnd; day = day.AddDays(1))
@@ -100,7 +124,8 @@ public partial class TimelineViewModel : ObservableObject
         RangeCaption = _visibleMonth.ToString("yyyy년 M월", CultureInfo.GetCultureInfo("ko-KR"));
         HasTodayInRange = today >= _rangeStart && today <= _rangeEnd;
         TodayLineOffset = HasTodayInRange
-            ? (today.DayNumber - _rangeStart.DayNumber) * DayWidthValue + (DayWidthValue / 2)
+            ? (today.DayNumber - _rangeStart.DayNumber) * DayWidthValue +
+              (now.TimeOfDay.TotalSeconds / TimeSpan.FromDays(1).TotalSeconds * DayWidthValue)
             : 0;
         OnPropertyChanged(nameof(TrackWidth));
         OnPropertyChanged(nameof(TodayLineOffset));
@@ -108,7 +133,9 @@ public partial class TimelineViewModel : ObservableObject
     }
 
     private DateOnly Today()
-        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime);
+        => DateOnly.FromDateTime(LocalNow().DateTime);
+
+    private DateTimeOffset LocalNow() => TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone);
 }
 
 public sealed class TimelineDayViewModel

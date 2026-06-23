@@ -201,6 +201,30 @@ public sealed class ViewModelRegressionTests
         Assert.False(vm.Detail.IsWhenEditorVisible);
     }
 
+    [Fact]
+    public async Task TimelineNowLineUsesTimeWithinTheCurrentDay()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var vm = new TimelineViewModel(
+            store,
+            store,
+            new ReorderService(store),
+            new RecurringTaskService(store),
+            clock,
+            TimeZoneInfo.Utc);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        var expected = ((23 - 1) * vm.DayWidth) + (vm.DayWidth / 2);
+        Assert.True(vm.HasTodayInRange);
+        Assert.Equal(expected, vm.TodayLineOffset, precision: 6);
+    }
+
     [Theory]
     [InlineData(TaskListMode.Today, WhenKind.OnDate, 0)]
     [InlineData(TaskListMode.Upcoming, WhenKind.OnDate, 1)]

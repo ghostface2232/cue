@@ -1,5 +1,7 @@
 using System.Numerics;
+using Cue.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
@@ -24,12 +26,15 @@ public sealed partial class TimelinePage : Page
     private double _panStartY;
     private double _panStartHorizontalOffset;
     private double _panStartVerticalOffset;
+    private bool _panMoved;
 
+    private readonly DialogService _dialogs;
     public TimelineViewModel ViewModel { get; }
 
     public TimelinePage()
     {
         ViewModel = App.Services.GetRequiredService<TimelineViewModel>();
+        _dialogs = App.Services.GetRequiredService<DialogService>();
         InitializeComponent();
     }
 
@@ -96,6 +101,7 @@ public sealed partial class TimelinePage : Page
         _panStartY = point.Position.Y;
         _panStartHorizontalOffset = TimelineScrollViewer.HorizontalOffset;
         _panStartVerticalOffset = TimelineScrollViewer.VerticalOffset;
+        _panMoved = false;
         TimelineScrollViewer.CapturePointer(e.Pointer);
         FocusTimeline();
         e.Handled = true;
@@ -113,9 +119,14 @@ public sealed partial class TimelinePage : Page
             return;
         }
 
+        var deltaX = point.Position.X - _panStartX;
+        var deltaY = point.Position.Y - _panStartY;
+        if (Math.Abs(deltaX) > 4 || Math.Abs(deltaY) > 4)
+            _panMoved = true;
+
         TimelineScrollViewer.ChangeView(
-            ClampOffset(_panStartHorizontalOffset - (point.Position.X - _panStartX), TimelineScrollViewer.ScrollableWidth),
-            ClampOffset(_panStartVerticalOffset - (point.Position.Y - _panStartY), TimelineScrollViewer.ScrollableHeight),
+            ClampOffset(_panStartHorizontalOffset - deltaX, TimelineScrollViewer.ScrollableWidth),
+            ClampOffset(_panStartVerticalOffset - deltaY, TimelineScrollViewer.ScrollableHeight),
             null,
             disableAnimation: true);
         e.Handled = true;
@@ -180,6 +191,21 @@ public sealed partial class TimelinePage : Page
     private static double ClampOffset(double value, double maximum)
         => Math.Min(Math.Max(0, value), Math.Max(0, maximum));
 
+    private async void TimelineBar_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (_panMoved)
+        {
+            _panMoved = false;
+            return;
+        }
+
+        if (sender is not FrameworkElement { Tag: Guid id })
+            return;
+
+        e.Handled = true;
+        await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(id));
+    }
+
     private void TimelineBar_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not Border border) return;
@@ -220,6 +246,136 @@ public sealed partial class TimelinePage : Page
 
         visual.StartAnimation("Opacity", opacity);
         visual.StartAnimation("Scale", scale);
+    }
+
+    private void DetailPanel_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement panel) return;
+        ElementCompositionPreview.SetIsTranslationEnabled(panel, true);
+        var visual = ElementCompositionPreview.GetElementVisual(panel);
+        visual.Opacity = panel.Visibility == Visibility.Visible ? 1f : 0f;
+
+        panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
+        {
+            var shown = panel.Visibility == Visibility.Visible;
+            if (!_animationsEnabled)
+            {
+                visual.Opacity = shown ? 1f : 0f;
+                return;
+            }
+            if (shown)
+                AnimateDetailPanelIn(visual);
+            else
+                visual.Opacity = 0f;
+        });
+    }
+
+    private static void AnimateDetailPanelIn(Visual visual)
+    {
+        var compositor = visual.Compositor;
+        var spline = compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1.0f));
+
+        var slide = compositor.CreateVector3KeyFrameAnimation();
+        slide.Target = "Translation";
+        slide.InsertKeyFrame(0f, new Vector3(28f, 0f, 0f));
+        slide.InsertKeyFrame(1f, Vector3.Zero, spline);
+        slide.Duration = TimeSpan.FromMilliseconds(350);
+
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.Target = "Opacity";
+        fade.InsertKeyFrame(0f, 0f);
+        fade.InsertKeyFrame(1f, 1f, spline);
+        fade.Duration = TimeSpan.FromMilliseconds(280);
+
+        visual.StartAnimation("Translation", slide);
+        visual.StartAnimation("Opacity", fade);
+    }
+
+    private void IconAction_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement element) return;
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        visual.CenterPoint = new Vector3((float)element.ActualWidth / 2f, (float)element.ActualHeight / 2f, 0f);
+        visual.Scale = new Vector3(1.1f, 1.1f, 1f);
+        visual.Opacity = 0.82f;
+    }
+
+    private void IconAction_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement element) return;
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        visual.Scale = Vector3.One;
+        visual.Opacity = 1f;
+    }
+
+    private void EnableWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.EnableWhenEditor();
+    private void ClearWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.ClearWhen();
+    private void CloseDetail_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.Close();
+    private async void SaveDetail_Click(object sender, RoutedEventArgs e)
+        => await RunSafelyAsync(() => ViewModel.Detail.SaveCommand.ExecuteAsync(null));
+
+    private async void AddSubtask_Click(object sender, RoutedEventArgs e)
+        => await RunSafelyAsync(() => ViewModel.Detail.AddSubtaskCommand.ExecuteAsync(null));
+
+    private void LabelRow_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: LabelEditorOption option })
+            ViewModel.Detail.ToggleLabel(option.Id);
+    }
+
+    private async void AddLabel_Click(object sender, RoutedEventArgs e)
+    {
+        await RunSafelyAsync(async () =>
+        {
+            var name = await PromptNameAsync("새 태그", "태그 이름");
+            if (name is not null)
+                await ViewModel.Detail.AddLabelCommand.ExecuteAsync(name);
+        });
+    }
+
+    private async void OpenParent_Click(object sender, RoutedEventArgs e)
+        => await RunSafelyAsync(() => ViewModel.Detail.OpenParentCommand.ExecuteAsync(null));
+
+    private async void OpenSubtask_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: Guid id })
+            await RunSafelyAsync(() => ViewModel.Detail.OpenSubtaskCommand.ExecuteAsync(id));
+    }
+
+    private async void DeleteSubtask_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: Guid id }) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "체크리스트 항목을 삭제할까요?",
+            Content = "파일은 지우지 않고 삭제 시각만 기록됩니다.",
+            PrimaryButtonText = "삭제",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await RunSafelyAsync(async () =>
+        {
+            if (await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary)
+                await ViewModel.Detail.DeleteSubtaskCommand.ExecuteAsync(id);
+        });
+    }
+
+    private async Task<string?> PromptNameAsync(string title, string placeholder, string initial = "")
+    {
+        var input = new TextBox { Text = initial, PlaceholderText = placeholder, MinWidth = 320 };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = title,
+            Content = input,
+            PrimaryButtonText = "저장",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        var result = await _dialogs.ShowAsync(dialog);
+        var name = input.Text.Trim();
+        return result == ContentDialogResult.Primary && name.Length > 0 ? name : null;
     }
 
     private void TimelineRows_ElementClearing(ItemsRepeater sender, ItemsRepeaterElementClearingEventArgs args)
