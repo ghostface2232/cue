@@ -20,6 +20,21 @@ public sealed record WhenEditorOption(WhenEditorMode Mode, string Name);
 public sealed record ProjectEditorOption(Guid? Id, string Name);
 public sealed record TimeOption(int Value, string Label);
 
+/// <summary>
+/// An immutable capture of everything an autosave writes, taken the moment an edit happens. Binding the
+/// target task id together with all field values means a queued save always persists the values that were
+/// on screen for <see cref="Id"/> — never whatever the panel shows by the time the save runs, even if the
+/// user has since switched to a different task.
+/// </summary>
+public sealed record TaskEditSnapshot(
+    Guid Id,
+    string Title,
+    string? Notes,
+    Priority Priority,
+    ScheduledWhen When,
+    Guid? ProjectId,
+    IReadOnlyList<Guid> LabelIds);
+
 public partial class LabelEditorOption : ObservableObject
 {
     public Guid Id { get; }
@@ -100,15 +115,19 @@ public partial class TaskDetailViewModel : ObservableObject
     private bool _loadedIsWhenAllDay;
     private bool _isLoading;
 
-    // Serializes autosaves so a fast run of edits can't interleave or reorder their writes — the same
-    // pattern the list uses for completion toggles. Distinct from <see cref="_isLoading"/> (which
-    // suppresses saves while OpenAsync fills the panel) and <see cref="_suppressAutoSave"/> (which
-    // coalesces a single user action that touches several properties into one save).
-    private readonly SemaphoreSlim _saveGate = new(1, 1);
+    // Coalesces a single user action that touches several properties into one save. Distinct from
+    // <see cref="_isLoading"/>, which suppresses saves entirely while OpenAsync fills the panel.
     private bool _suppressAutoSave;
 
-    // Tracks the most recently requested autosave so it can be awaited deterministically (tests).
-    private Task _pendingAutoSave = Task.CompletedTask;
+    // Autosaves run through a single serial chain: each link awaits the previous one, so a fast run of
+    // edits can never interleave or reorder its writes (the guarantee the list's completion toggles get
+    // from a semaphore). Every link carries an immutable <see cref="TaskEditSnapshot"/> captured when the
+    // edit happened, so a queued save persists the values that were on screen for that task — never
+    // whatever the panel shows by the time the save runs, even after the user switches to another task.
+    // The tail is the whole queue's completion, so DrainPendingSaveAsync waits for every pending save,
+    // not just the latest. Links are appended on the UI thread, so the store write and owner refresh
+    // resume on the captured UI context.
+    private Task _saveChain = Task.CompletedTask;
 
     public IReadOnlyList<Priority> Priorities { get; } = Enum.GetValues<Priority>();
     public IReadOnlyList<TimeOption> Hours { get; } = Enumerable.Range(0, 24).Select(value => new TimeOption(value, value.ToString("00"))).ToArray();
@@ -328,27 +347,66 @@ public partial class TaskDetailViewModel : ObservableObject
 
     /// <summary>
     /// Persists the panel's current edits straight to the file source of truth, flushing any text that
-    /// hasn't been committed by a focus-out yet. The detail panel autosaves on every change, so the
-    /// close button calls this only to catch a title/notes edit whose <c>LostFocus</c> hasn't fired.
+    /// hasn't been committed by a focus-out yet, then waits for the whole save queue to settle. The detail
+    /// panel autosaves on every change, so the close button and task switch call this to catch a
+    /// title/notes edit whose <c>LostFocus</c> hasn't fired and to guarantee nothing is left in flight.
     /// </summary>
-    public Task FlushAsync() => AutoSaveAsync();
+    public Task FlushAsync()
+    {
+        if (CaptureSnapshot() is { } snapshot) Enqueue(snapshot);
+        return DrainPendingSaveAsync();
+    }
 
     /// <summary>
     /// Fire-and-forget autosave for single-selection changes (priority, When, project, label toggles).
-    /// A no-op while OpenAsync is filling the panel (<see cref="_isLoading"/>) or while a multi-property
-    /// action is coalescing its writes (<see cref="_suppressAutoSave"/>); the actual save is serialized
-    /// through <see cref="_saveGate"/> so overlapping edits can't reorder their writes.
+    /// A no-op while OpenAsync is filling the panel (<see cref="_isLoading"/>), while a multi-property
+    /// action is coalescing its writes (<see cref="_suppressAutoSave"/>), or while the panel is closed.
+    /// Captures the panel's current values as an immutable snapshot now and appends it to the serial save
+    /// chain, so overlapping edits can't reorder their writes and a late save can't pick up another task's
+    /// fields.
     /// </summary>
     private void RequestAutoSave()
     {
-        if (_isLoading || _suppressAutoSave) return;
-        _pendingAutoSave = AutoSaveAsync();
+        if (_isLoading || _suppressAutoSave || !IsOpen) return;
+        if (CaptureSnapshot() is { } snapshot) Enqueue(snapshot);
     }
 
-    /// <summary>Awaits the most recently requested autosave. A test/diagnostic seam: production code
-    /// fires autosaves and forgets them (the gate keeps them ordered); only callers that need to
-    /// observe the persisted result deterministically await this.</summary>
-    internal Task DrainPendingSaveAsync() => _pendingAutoSave;
+    /// <summary>Awaits every autosave queued so far. A test/diagnostic seam: production code fires
+    /// autosaves and forgets them (the chain keeps them ordered); only callers that need to observe the
+    /// persisted result deterministically — or a task switch that must not strand a pending write — await
+    /// this. The chain's tail completes only after every link before it, so this drains the full queue.</summary>
+    internal Task DrainPendingSaveAsync() => _saveChain;
+
+    /// <summary>Captures the panel's current edits as an immutable snapshot, or <c>null</c> when no task is
+    /// open. Reads every field (and resolves When via <see cref="BuildWhen"/>) on the calling thread so the
+    /// values can't shift under a later save.</summary>
+    private TaskEditSnapshot? CaptureSnapshot()
+    {
+        if (_taskId is not { } id) return null;
+        return new TaskEditSnapshot(
+            id,
+            Title.Trim(),
+            string.IsNullOrWhiteSpace(Notes) ? null : Notes,
+            SelectedPriority,
+            BuildWhen(),
+            SelectedProject?.Id,
+            Labels.Where(label => label.IsSelected && label.Id != Guid.Empty).Select(label => label.Id).ToList());
+    }
+
+    /// <summary>Appends a save to the serial chain. Called on the UI thread, so the continuation captures
+    /// the UI synchronization context and the store write + owner refresh resume on it. Awaiting the
+    /// returned tail (<see cref="_saveChain"/>) waits for this save and every save queued before it.</summary>
+    private void Enqueue(TaskEditSnapshot snapshot)
+        => _saveChain = ChainSaveAsync(_saveChain, snapshot);
+
+    private async Task ChainSaveAsync(Task previous, TaskEditSnapshot snapshot)
+    {
+        // SaveSnapshotAsync swallows its own failures, so the predecessor never faults; the guard is pure
+        // belt-and-braces so one bad link can never stall the queue behind it.
+        try { await previous; }
+        catch { /* logged by the failing save itself */ }
+        await SaveSnapshotAsync(snapshot);
+    }
 
     /// <summary>
     /// Suppresses per-property autosave for the duration of one user action that touches several
@@ -367,28 +425,27 @@ public partial class TaskDetailViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The single autosave path, reused by every trigger and by the close flush. Reads the live record,
-    /// applies the panel's fields, and saves through <see cref="ITaskStore"/> (which stamps UpdatedAt).
-    /// The dirty-check in <see cref="BuildWhen"/> means a save that never touched the date preserves the
-    /// original When's exact instant and time zone. A failed save is logged, not swallowed silently, and
-    /// left for the next change or the close flush to retry.
+    /// The single autosave path, reused by every trigger and by the close flush. Re-reads the live record
+    /// by the snapshot's id, applies the snapshot's captured fields, and saves through
+    /// <see cref="ITaskStore"/> (which stamps UpdatedAt). Because the values come from the snapshot rather
+    /// than the live panel, a save still targets the task it was queued for even after the user switches
+    /// tasks. The dirty-check in <see cref="BuildWhen"/> (run when the snapshot was captured) means a save
+    /// that never touched the date preserves the original When's exact instant and time zone. A failed
+    /// save is logged, not swallowed silently, and left for the next change or the close flush to retry.
     /// </summary>
-    private async Task AutoSaveAsync()
+    private async Task SaveSnapshotAsync(TaskEditSnapshot snapshot)
     {
-        if (_isLoading || !IsOpen || _taskId is not { } id) return;
-
-        await _saveGate.WaitAsync();
         try
         {
-            var task = await _store.GetAsync<TaskItem>(id);
+            var task = await _store.GetAsync<TaskItem>(snapshot.Id);
             if (task is null || task.IsDeleted) return;
 
-            task.Title = Title.Trim();
-            task.Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes;
-            task.Priority = SelectedPriority;
-            task.When = BuildWhen();
-            task.ProjectId = SelectedProject?.Id;
-            task.LabelIds = Labels.Where(label => label.IsSelected && label.Id != Guid.Empty).Select(label => label.Id).ToList();
+            task.Title = snapshot.Title;
+            task.Notes = snapshot.Notes;
+            task.Priority = snapshot.Priority;
+            task.When = snapshot.When;
+            task.ProjectId = snapshot.ProjectId;
+            task.LabelIds = snapshot.LabelIds.ToList();
 
             await _store.SaveAsync(task);
             await _refreshOwner();
@@ -396,10 +453,6 @@ public partial class TaskDetailViewModel : ObservableObject
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[Cue] Detail autosave failed: {ex.Message}");
-        }
-        finally
-        {
-            _saveGate.Release();
         }
     }
 
@@ -439,7 +492,7 @@ public partial class TaskDetailViewModel : ObservableObject
         var selected = Labels.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).Append(label.Id);
         await LoadLabelsAsync(selected);
         // A newly created tag is selected on the spot — persist the task's tag assignment too.
-        await AutoSaveAsync();
+        await FlushAsync();
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]

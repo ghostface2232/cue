@@ -228,34 +228,27 @@ public partial class TaskListViewModel : ObservableObject
                 throw new ArgumentOutOfRangeException();
         }
 
-        Tasks.Clear();
-        AddHierarchicalRows(Tasks, items);
-
-        Groups.Clear();
+        // Reconcile the live collections in place instead of clearing and rebuilding them, so a refresh
+        // (every save routes through here) reuses unchanged row instances. That keeps scroll position,
+        // focus, selection, a drag in progress, and the item-entrance animation intact, and avoids
+        // recreating hundreds of rows when a single detail-panel edit changed one value.
+        var roots = BuildForest(items);
         if (_mode == TaskListMode.Priority)
         {
-            // One group per priority that has rows, P1 → P4. Rows arrive already ordered by priority.
-            (Priority Priority, string Name)[] buckets =
-            [
-                (Priority.P1, "매우 중요"), (Priority.P2, "중요"), (Priority.P3, "보통"), (Priority.P4, "사소"),
-            ];
-            var byPriority = Tasks.ToLookup(row => row.Priority);
-            Tasks.Clear();
-            foreach (var (priority, name) in buckets)
-            {
-                var rows = byPriority[priority].ToList();
-                if (rows.Count == 0) continue;
-                var group = new TaskGroupViewModel(name);
-                foreach (var row in rows) group.Tasks.Add(row);
-                Groups.Add(group);
-            }
+            SyncRows(Tasks, []);   // the 중요도 view is grouped; its rows live in the buckets, not the flat list
+            SyncGroups(roots);
+        }
+        else
+        {
+            SyncGroups([]);        // every other view is flat; keep the bucket list empty
+            SyncRows(Tasks, roots);
         }
 
         IsEmpty = IsGroupedList
             ? Groups.Count == 0
             : Tasks.Count == 0;
 
-        // Re-apply the selection accent to the freshly rebuilt rows so it survives a reload.
+        // Re-apply the selection accent: reused rows keep theirs, but a freshly inserted row needs it set.
         ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
     }
 
@@ -326,21 +319,124 @@ public partial class TaskListViewModel : ObservableObject
     private TaskRowViewModel CreateRow(TaskListItem item)
         => new(item, row => ToggleCompleteCommand.Execute(row));
 
-    private void AddHierarchicalRows(
-        ObservableCollection<TaskRowViewModel> destination,
-        IEnumerable<TaskListItem> source)
-    {
-        var items = source.ToList();
-        var rows = items.ToDictionary(item => item.Id, CreateRow);
+    // Fixed priority buckets for the 중요도 view, in display order. A bucket is shown only when it has rows.
+    private static readonly (Priority Priority, string Name)[] PriorityBuckets =
+    [
+        (Priority.P1, "매우 중요"), (Priority.P2, "중요"), (Priority.P3, "보통"), (Priority.P4, "사소"),
+    ];
 
+    /// <summary>Groups a flat, source-ordered index projection into a forest: roots (items whose parent
+    /// isn't in the result set) in order, each carrying its child rows in order — mirroring how the list
+    /// nests subtasks under their parent.</summary>
+    private static List<RowNode> BuildForest(IReadOnlyList<TaskListItem> items)
+    {
+        var byId = items.ToDictionary(item => item.Id, item => new RowNode(item));
+        var roots = new List<RowNode>();
         foreach (var item in items)
         {
-            var row = rows[item.Id];
-            if (item.ParentTaskId is { } parentId && rows.TryGetValue(parentId, out var parent))
-                parent.AddSubtask(row);
+            var node = byId[item.Id];
+            if (item.ParentTaskId is { } parentId && byId.TryGetValue(parentId, out var parent))
+                parent.Children.Add(node);
             else
-                destination.Add(row);
+                roots.Add(node);
         }
+        return roots;
+    }
+
+    /// <summary>
+    /// Reconciles <paramref name="target"/> in place to match <paramref name="nodes"/> by id, reusing the
+    /// existing row instances: an unchanged row is patched (silently when nothing actually changed), a
+    /// moved row is repositioned, a row that's gone is removed, and only a genuinely new row is created.
+    /// Recurses into each row's subtasks. This is what lets a save-triggered refresh avoid recreating the
+    /// whole list, preserving scroll, focus, selection, and the entrance animation for unchanged rows.
+    /// </summary>
+    private void SyncRows(ObservableCollection<TaskRowViewModel> target, IReadOnlyList<RowNode> nodes)
+    {
+        var desired = new HashSet<Guid>(nodes.Count);
+        foreach (var node in nodes) desired.Add(node.Item.Id);
+        for (var i = target.Count - 1; i >= 0; i--)
+            if (!desired.Contains(target[i].Id))
+                target.RemoveAt(i);
+
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            var node = nodes[i];
+            if (i >= target.Count || target[i].Id != node.Item.Id)
+            {
+                var existing = IndexOfRow(target, node.Item.Id);
+                if (existing >= 0)
+                {
+                    target.Move(existing, i);
+                }
+                else
+                {
+                    target.Insert(i, BuildRow(node)); // BuildRow assembles the whole subtree
+                    continue;
+                }
+            }
+            target[i].Update(node.Item);
+            SyncRows(target[i].Subtasks, node.Children);
+        }
+    }
+
+    private TaskRowViewModel BuildRow(RowNode node)
+    {
+        var row = CreateRow(node.Item);
+        foreach (var child in node.Children)
+            row.AddSubtask(BuildRow(child));
+        return row;
+    }
+
+    private static int IndexOfRow(ObservableCollection<TaskRowViewModel> rows, Guid id)
+    {
+        for (var i = 0; i < rows.Count; i++)
+            if (rows[i].Id == id) return i;
+        return -1;
+    }
+
+    /// <summary>Reconciles the priority buckets (the only grouped view) in place: keeps a group per
+    /// priority that has rows, in P1→P4 order, reusing existing group instances and syncing each group's
+    /// rows. Pass an empty forest to clear the buckets for an ungrouped view.</summary>
+    private void SyncGroups(IReadOnlyList<RowNode> roots)
+    {
+        var desired = new List<(string Name, List<RowNode> Roots)>();
+        foreach (var (priority, name) in PriorityBuckets)
+        {
+            var bucket = roots.Where(node => node.Item.Priority == priority).ToList();
+            if (bucket.Count > 0) desired.Add((name, bucket));
+        }
+
+        var desiredNames = new HashSet<string>(desired.Select(group => group.Name));
+        for (var i = Groups.Count - 1; i >= 0; i--)
+            if (!desiredNames.Contains(Groups[i].Name))
+                Groups.RemoveAt(i);
+
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var (name, bucket) = desired[i];
+            if (i >= Groups.Count || Groups[i].Name != name)
+            {
+                var existing = IndexOfGroup(name);
+                if (existing >= 0) Groups.Move(existing, i);
+                else Groups.Insert(i, new TaskGroupViewModel(name));
+            }
+            SyncRows(Groups[i].Tasks, bucket);
+        }
+    }
+
+    private int IndexOfGroup(string name)
+    {
+        for (var i = 0; i < Groups.Count; i++)
+            if (Groups[i].Name == name) return i;
+        return -1;
+    }
+
+    /// <summary>A node in the desired row forest built from an index projection: one item plus its ordered
+    /// child nodes.</summary>
+    private sealed class RowNode(TaskListItem item)
+    {
+        public TaskListItem Item { get; } = item;
+        public List<RowNode> Children { get; } = new();
     }
 
     // ---- Row context-menu actions (move group / tag / rename / delete) -------
@@ -403,6 +499,9 @@ public partial class TaskListViewModel : ObservableObject
     {
         if (Detail.IsOpen && Detail.CurrentTaskId != id)
         {
+            // Persist and drain the outgoing task's pending edits before tearing the panel down, so a
+            // queued autosave can't resume against the next task's freshly loaded fields.
+            await Detail.FlushAsync();
             Detail.Close();
             await Task.Delay(90);
         }
