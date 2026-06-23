@@ -41,6 +41,7 @@ public sealed partial class SettingsPage : Page
         BuildAccentSwatches();
         ReloadCustomDateRows();
         AutoAfternoonSwitch.IsOn = _preferences.AutoAfternoonForBareOneToSix;
+        ApplySelectedSection();
         _loading = false;
     }
 
@@ -140,6 +141,21 @@ public sealed partial class SettingsPage : Page
         _customDateRows.Clear();
         foreach (var meaning in _preferences.CustomDateMeanings)
             _customDateRows.Add(new CustomDateMeaningRow(meaning.Name, meaning.DayOfMonth));
+    }
+
+    private void SectionNav_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => ApplySelectedSection();
+
+    private void ApplySelectedSection()
+    {
+        if (TimeSection is null)
+            return;
+
+        var selected = (SectionNav.SelectedItem as ListViewItem)?.Tag?.ToString() ?? "Time";
+        TimeSection.Visibility = selected == "Time" ? Visibility.Visible : Visibility.Collapsed;
+        ParsingSection.Visibility = selected == "Parsing" ? Visibility.Visible : Visibility.Collapsed;
+        AppearanceSection.Visibility = selected == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
+        NotificationsSection.Visibility = selected == "Notifications" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void FirstDayCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

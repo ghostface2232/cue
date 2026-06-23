@@ -11,16 +11,37 @@
     mc:Ignorable="d">
 
     <Page.Resources>
+        <Style x:Key="SettingsNavItemStyle" TargetType="ListViewItem">
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
+        </Style>
+
+        <Style x:Key="SettingsNavTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource CueFontRowSub}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="SettingsNavGlyphStyle" TargetType="FontIcon">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+
         <Style x:Key="SettingsLabelStyle" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
-            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontSize" Value="{StaticResource CueFontRowSub}" />
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
         </Style>
+
         <Style x:Key="SettingsCaptionStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="{StaticResource CueFontSecondary}" />
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+
         <Style x:Key="SettingsCardStyle" TargetType="Border">
             <Setter Property="Padding" Value="16" />
             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusCard}" />
@@ -29,102 +50,165 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BackgroundSizing" Value="InnerBorderEdge" />
         </Style>
+
+        <Style x:Key="SettingsSectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
+            <Setter Property="FontSize" Value="{StaticResource CueFontSection}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+        </Style>
     </Page.Resources>
 
-    <ScrollViewer>
-        <StackPanel
-            MaxWidth="860"
-            Margin="28,20"
-            HorizontalAlignment="Left"
-            Spacing="16">
-            <TextBlock Style="{StaticResource CuePageTitleTextStyle}" Text="설정" />
+    <Grid Padding="28,20" RowSpacing="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-            <TabView
-                IsAddTabButtonVisible="False"
-                TabWidthMode="SizeToContent">
-                <TabViewItem Header="시간">
-                    <StackPanel Spacing="12" Margin="0,16,0,0">
+        <TextBlock Style="{StaticResource CuePageTitleTextStyle}" Text="설정" />
+
+        <Grid Grid.Row="1" ColumnSpacing="24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="176" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ListView
+                x:Name="SectionNav"
+                VerticalAlignment="Top"
+                IsItemClickEnabled="False"
+                ItemContainerStyle="{StaticResource SettingsNavItemStyle}"
+                SelectionChanged="SectionNav_SelectionChanged"
+                SelectionMode="Single"
+                SelectedIndex="0">
+                <ListViewItem Tag="Time">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE823;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="시간" />
+                    </Grid>
+                </ListViewItem>
+                <ListViewItem Tag="Parsing">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE943;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="파싱" />
+                    </Grid>
+                </ListViewItem>
+                <ListViewItem Tag="Appearance">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE790;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="외관" />
+                    </Grid>
+                </ListViewItem>
+                <ListViewItem Tag="Notifications">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE7F4;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="알림" />
+                    </Grid>
+                </ListViewItem>
+            </ListView>
+
+            <ScrollViewer
+                Grid.Column="1"
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto">
+                <Grid MaxWidth="680" HorizontalAlignment="Left">
+                    <StackPanel
+                        x:Name="TimeSection"
+                        Spacing="12"
+                        Visibility="Visible">
+                        <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="시간" />
+
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <Grid RowSpacing="12">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                            <StackPanel Spacing="16">
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="날짜 기준" />
-                                <Grid Grid.Row="1" ColumnSpacing="18">
+                                <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="220" />
-                                        <ColumnDefinition Width="340" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5">
+                                    <StackPanel Spacing="5" VerticalAlignment="Center">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="주 시작 요일" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="주간 보기와 달력 선택에서 먼저 오는 요일" />
                                     </StackPanel>
                                     <ComboBox
                                         x:Name="FirstDayCombo"
                                         Grid.Column="1"
-                                        Width="260"
+                                        Width="220"
+                                        VerticalAlignment="Center"
                                         SelectionChanged="FirstDayCombo_SelectionChanged" />
                                 </Grid>
-                            </Grid>
+                            </StackPanel>
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <Grid RowSpacing="12">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                            <StackPanel Spacing="16">
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="시간대" />
-                                <Grid Grid.Row="1" ColumnSpacing="18">
+                                <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="220" />
-                                        <ColumnDefinition Width="420" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5">
+                                    <StackPanel Spacing="5" VerticalAlignment="Center">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="기본 시간대" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="오늘, 앞으로 할 일, 빠른 입력 날짜 기준. 다음 실행부터 전체 반영" />
                                     </StackPanel>
                                     <ComboBox
                                         x:Name="TimeZoneCombo"
                                         Grid.Column="1"
-                                        Width="380"
+                                        Width="340"
+                                        VerticalAlignment="Center"
                                         SelectionChanged="TimeZoneCombo_SelectionChanged" />
                                 </Grid>
-                            </Grid>
+                            </StackPanel>
                         </Border>
                     </StackPanel>
-                </TabViewItem>
 
-                <TabViewItem Header="파싱">
-                    <StackPanel Spacing="12" Margin="0,16,0,0">
+                    <StackPanel
+                        x:Name="ParsingSection"
+                        Spacing="12"
+                        Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="파싱" />
+
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <Grid RowSpacing="12">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                            <StackPanel Spacing="16">
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="시간 해석" />
-                                <Grid Grid.Row="1" ColumnSpacing="18">
+                                <Grid MinHeight="64" ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1*" />
+                                        <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5">
+                                    <StackPanel Spacing="5" VerticalAlignment="Center">
                                         <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="1-6시를 오후로 해석" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="오전/오후가 없을 때 3시는 15:00으로 저장" />
                                     </StackPanel>
                                     <ToggleSwitch
                                         x:Name="AutoAfternoonSwitch"
                                         Grid.Column="1"
-                                        MinWidth="110"
+                                        MinWidth="96"
+                                        VerticalAlignment="Center"
                                         Toggled="AutoAfternoonSwitch_Toggled" />
                                 </Grid>
-                            </Grid>
+                            </StackPanel>
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
+                            <StackPanel Spacing="16">
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="커스텀 날짜 의미" />
                                 <ListView
                                     x:Name="CustomDatesList"
@@ -136,14 +220,15 @@
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Spacing="2">
-                                                    <TextBlock Text="{x:Bind Name}" />
+                                                    <TextBlock
+                                                        FontSize="{StaticResource CueFontRowSub}"
+                                                        Text="{x:Bind Name}" />
                                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="{x:Bind DayCaption}" />
                                                 </StackPanel>
                                                 <Button
-                                                    Grid.Column="2"
+                                                    Grid.Column="1"
                                                     Padding="8,4"
                                                     Tag="{x:Bind Name}"
                                                     Click="RemoveCustomDate_Click"
@@ -155,8 +240,8 @@
                                 </ListView>
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="220" />
-                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="116" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="CustomDateNameBox" PlaceholderText="예: 월급날" />
@@ -176,17 +261,20 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
-                </TabViewItem>
 
-                <TabViewItem Header="외관">
-                    <StackPanel Spacing="12" Margin="0,16,0,0">
+                    <StackPanel
+                        x:Name="AppearanceSection"
+                        Spacing="12"
+                        Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="외관" />
+
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <Grid ColumnSpacing="18">
+                            <Grid MinHeight="64" ColumnSpacing="20">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="220" />
-                                    <ColumnDefinition Width="260" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="5">
+                                <StackPanel Spacing="5" VerticalAlignment="Center">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="화면 모드" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="시스템, 라이트, 다크" />
                                 </StackPanel>
@@ -194,12 +282,13 @@
                                     x:Name="ThemeCombo"
                                     Grid.Column="1"
                                     Width="220"
+                                    VerticalAlignment="Center"
                                     SelectionChanged="ThemeCombo_SelectionChanged" />
                             </Grid>
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
+                            <StackPanel Spacing="16">
                                 <StackPanel Spacing="5">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="강조 컬러" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="선택 표시, 체크, 포커스 링에만 사용" />
@@ -208,26 +297,32 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
-                </TabViewItem>
 
-                <TabViewItem Header="알림">
-                    <StackPanel Spacing="12" Margin="0,16,0,0">
+                    <StackPanel
+                        x:Name="NotificationsSection"
+                        Spacing="12"
+                        Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="알림" />
+
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <Grid ColumnSpacing="18">
+                            <Grid MinHeight="64" ColumnSpacing="20">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1*" />
+                                    <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="5">
+                                <StackPanel Spacing="5" VerticalAlignment="Center">
                                     <TextBlock Style="{StaticResource SettingsLabelStyle}" Text="알림" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="리마인더 구현 단계에서 활성화" />
                                 </StackPanel>
-                                <ToggleSwitch Grid.Column="1" IsEnabled="False" />
+                                <ToggleSwitch
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    IsEnabled="False" />
                             </Grid>
                         </Border>
                     </StackPanel>
-                </TabViewItem>
-            </TabView>
-        </StackPanel>
-    </ScrollViewer>
+                </Grid>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
 </Page>
