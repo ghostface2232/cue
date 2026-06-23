@@ -265,7 +265,7 @@ public sealed partial class MainWindow : Window
         // tap from also navigating into the project.
         icon.Tapped += (sender, e) => { e.Handled = true; ShowProjectIconPicker((FrameworkElement)sender, project.Id, project.Icon); };
         if (ViewModel.ProjectTaskCounts.TryGetValue(project.Id, out var count) && count > 0)
-            item.InfoBadge = new InfoBadge { Value = count };
+            item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(project, isProject: true, item);
         return item;
     }
@@ -284,9 +284,25 @@ public sealed partial class MainWindow : Window
         // Tapping the glyph opens the color picker directly (no right-click depth).
         icon.Tapped += (sender, e) => { e.Handled = true; ShowLabelColorPicker((FrameworkElement)sender, label.Id, label.Color); };
         if (ViewModel.LabelTaskCounts.TryGetValue(label.Id, out var count) && count > 0)
-            item.InfoBadge = new InfoBadge { Value = count };
+            item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(label, isProject: false, item);
         return item;
+    }
+
+    /// <summary>Open-task count badge for a nav item, using the centered-digit style (see
+    /// CueCountInfoBadgeStyle — fixes Pretendard's digit sitting high in the fixed-height badge).</summary>
+    private static InfoBadge CreateCountBadge(int count)
+    {
+        var badge = new InfoBadge { Value = count };
+        if (ThemeStyle("CueCountInfoBadgeStyle") is { } style)
+            badge.Style = style;
+        return badge;
+    }
+
+    private static Style? ThemeStyle(string key)
+    {
+        try { return (Style)Application.Current.Resources[key]; }
+        catch { return null; }
     }
 
     private MenuFlyout CreateRecordMenu(object record, bool isProject, NavigationViewItem owner)

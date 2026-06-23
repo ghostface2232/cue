@@ -113,6 +113,45 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
+    <!-- ===== Nav count badge =====
+         The app forces Pretendard JP as the default content font, whose line box carries a tall ascent;
+         inside the InfoBadge's fixed 16px height the digit then sits visibly high. Retemplate the value
+         badge with a TextBlock using TextLineBounds="Tight" so the glyph's own ink box (not its padded
+         line box) is what gets vertically centered. Numeric value only — Dot/Icon states are unused. -->
+    <Style x:Key="CueCountInfoBadgeStyle" TargetType="InfoBadge">
+        <Setter Property="Background" Value="{ThemeResource SystemFillColorAttentionBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="MinWidth" Value="16" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="InfoBadge">
+                    <Border
+                        Background="{TemplateBinding Background}"
+                        CornerRadius="{TemplateBinding CornerRadius}"
+                        Height="{TemplateBinding Height}"
+                        MinWidth="{TemplateBinding MinWidth}"
+                        Padding="4,0">
+                        <!-- Value (Int32) → Text (String) needs a converting binding: TemplateBinding does
+                             no type coercion, so it would silently render blank. A TemplatedParent Binding
+                             coerces to string (ToString) and shows the number. -->
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="{TemplateBinding FontSize}"
+                            Foreground="{TemplateBinding Foreground}"
+                            Text="{Binding Value, RelativeSource={RelativeSource TemplatedParent}}"
+                            TextLineBounds="Tight" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===== Subtle text button for tertiary inline actions ===== -->
     <Style x:Key="CueSubtleTextButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
