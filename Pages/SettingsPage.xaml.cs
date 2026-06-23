@@ -20,6 +20,25 @@ public sealed partial class SettingsPage : Page
         ("주황", "#EA580C"),
     };
 
+    private static readonly IReadOnlyDictionary<string, string> TimeZoneLabels = new Dictionary<string, string>
+    {
+        ["Korea Standard Time"] = "서울",
+        ["Tokyo Standard Time"] = "도쿄",
+        ["China Standard Time"] = "베이징, 홍콩",
+        ["Taipei Standard Time"] = "타이베이",
+        ["Singapore Standard Time"] = "싱가포르",
+        ["Pacific Standard Time"] = "로스앤젤레스",
+        ["Mountain Standard Time"] = "덴버",
+        ["Central Standard Time"] = "시카고",
+        ["Eastern Standard Time"] = "뉴욕",
+        ["GMT Standard Time"] = "런던",
+        ["W. Europe Standard Time"] = "베를린, 로마, 파리",
+        ["Romance Standard Time"] = "파리, 마드리드",
+        ["Central European Standard Time"] = "부다페스트, 프라하",
+        ["Russian Standard Time"] = "모스크바",
+        ["AUS Eastern Standard Time"] = "시드니, 멜버른",
+    };
+
     private readonly AppPreferences _preferences;
     private readonly ObservableCollection<CustomDateMeaningRow> _customDateRows = new();
     private bool _loading;
@@ -61,9 +80,26 @@ public sealed partial class SettingsPage : Page
         if (TimeZoneCombo.Items.Count == 0)
         {
             foreach (var zone in TimeZoneInfo.GetSystemTimeZones())
-                AddComboItem(TimeZoneCombo, $"{zone.DisplayName} · {zone.Id}", zone.Id);
+                AddComboItem(TimeZoneCombo, TimeZoneLabel(zone), zone.Id);
         }
         SelectByTag(TimeZoneCombo, _preferences.TimeZoneId);
+    }
+
+    private static string TimeZoneLabel(TimeZoneInfo zone)
+    {
+        if (TimeZoneLabels.TryGetValue(zone.Id, out var label))
+            return label;
+
+        var display = zone.DisplayName;
+        var close = display.IndexOf(')', StringComparison.Ordinal);
+        if (close >= 0 && close + 1 < display.Length)
+            display = display[(close + 1)..].Trim();
+
+        return display
+            .Replace(" Time", string.Empty, StringComparison.Ordinal)
+            .Replace(" Standard", string.Empty, StringComparison.Ordinal)
+            .Replace(" Daylight", string.Empty, StringComparison.Ordinal)
+            .Trim();
     }
 
     private void PopulateThemes()
