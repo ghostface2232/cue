@@ -299,15 +299,15 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 ### Timeline page — `TimelinePage.xaml`
 - A horizontally-scrolling month view (gantt-like). One framed canvas (`{rounded.lg}`, 1px card stroke) holds a row of day-column headers above a stack of task bars.
 - Header row: title + range caption, with prev-month / 오늘 (Today) / next-month controls (`subtle-text-button`, 34px icon buttons with chevron glyphs).
-- Panning: pointer drag and mouse-wheel both scroll the timeline horizontally; keyboard scrolling is supported (the ScrollViewer is a tab stop).
+- Panning: pointer drag and mouse-wheel both scroll the timeline horizontally; left/right arrow keys pan the view in predictable steps (the ScrollViewer is a tab stop).
 - Shares the **same detail panel** as the list page (resizable, identical card stack and behavior).
 
 ### Detail panel
-- Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in (and slides out on close — see "Motion").
+- Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in and slides out on close (see "Motion").
 - A vertical stack of cards (radius 8, 1px stroke, no shadow): task info (notes · importance · group) / start + due date / tags / checklist.
-- **Resizable.** A 10px transparent grab strip on the panel's left edge drag-resizes it. Width is clamped to 320–680px (absolute min 260px) and further capped so the primary list keeps ≥340px — the panel never starves the list.
+- **Resizable.** A 10px transparent grab strip on the panel's left edge drag-resizes it. Width is clamped to 320–680px (absolute min 260px) and further capped so the primary list keeps ≥340px — the panel never starves the list. On hover or while dragging, the strip reveals a slim vertical pill handle (4×58, radius 2, tertiary text brush at ~72% opacity) with the standard 83ms opacity transition.
 - **Responsive.** Below a compact width (~390px), paired side-by-side fields (importance + group, date + time) reflow to stack vertically so nothing is squeezed.
-- **Edge fade for clipped content** (see "Elevation & Depth"): the scroll body fades at the bottom and overflowing inline text (e.g. tag names) fades at the right edge instead of hard-clipping.
+- **Conditional text fade for clipped content** (see "Elevation & Depth"): only overflowing inline text inside padded content, such as long tag names, fades at the right edge instead of hard-clipping. The panel scroll body itself does not get a bottom fade because it clips at the panel boundary.
 - The timeline's detail panel is the same component with the same behavior.
 
 ### Spacing
@@ -326,7 +326,8 @@ Separation is carried by **stroke and tone, not shadow.**
 - In-flow surfaces use **zero shadow**. A 1px `CardStrokeColorDefault` (cards) or `DividerStrokeColorDefault` (inner dividers) does the separating. Stroked cards set `BackgroundSizing="InnerBorderEdge"` so the 1px sits inside the radius.
 - When something needs to feel lifted (the quick-add omnibar) it uses `CircleElevationBorderBrush` — a top-light / bottom-dark gradient stroke — for subtle dimension **instead of** a drop shadow.
 - Shadows belong only to true overlays (flyouts, popups).
-- **Edge fades signal clipped content.** Where content is cut off by a scroll viewport or a width cap, a short gradient (transparent → the surface color) fades the edge rather than hard-clipping or showing ellipsis: the detail panel fades its scroll body at the bottom (→ `LayerFillColorDefault`); overflowing tag names fade at the right (→ `CardBackgroundFillColorDefault`); timeline bar titles fade at the right to the bar's own surface (and to the hover fill while hovered, so the fade always matches the current background).
+- **Edge fades are conditional and local.** Use a short gradient only when content is clipped before it reaches an actual window/card/panel edge — for example, inline text ending inside padded content. Do not add fades where the container boundary already explains the clipping, such as the main list, sidebar, timeline canvas edge, or detail-panel scroll body.
+- The fade appears only when the text actually overflows. Short labels must render without a gradient overlay. Overflowing tag names fade at the right to `CardBackgroundFillColorDefault`; timeline bar titles fade at the right to the bar's current surface, switching to the shared hover fill while hovered. The opaque stop should arrive late enough to feel like the text disappears naturally, not like a translucent veil over readable text.
 
 ## Shapes
 
@@ -399,8 +400,8 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### Timeline
 - **Day-column header** (`timeline-day-header`, 58px tall): day number over weekday label, secondary text; the cell carries a right + bottom 1px divider. Today's number sits in a 28px accent circle (`today-marker`, radius 14) with on-accent text.
-- **Task bar** (`timeline-bar`): a card-surface bar (radius 8, 1px card stroke, `InnerBorderEdge`), min width 140, min height 54, positioned on a canvas by start offset and width. Carries the title + priority pill and a date caption. Hover uses the shared `CueHoverFillBrush`.
-- **Now line** (`today-line`): a precise 1px accent rectangle at opacity 0.8, positioned by a `TranslateTransform`, shown only when today falls in range.
+- **Task bar** (`timeline-bar`): a card-surface bar (radius 8, 1px card stroke, `InnerBorderEdge`), min width 140, min height 54, positioned on a canvas by start offset and width. Carries the title + priority pill and a date caption. Hover uses the shared `CueHoverFillBrush`; the title fade appears only when the measured title overflows.
+- **Now line** (`today-line`): a precise 1px accent rectangle at opacity 0.8, positioned by a `TranslateTransform` using the current time-of-day fraction, shown only when today falls in range.
 
 ### Dialogs / inline buttons
 - Inline secondary actions (rename / delete / + add) share one style: transparent background + subtle hover + secondary text (`CueSubtleTextButtonStyle`). At most one true primary is emphasized per context.
