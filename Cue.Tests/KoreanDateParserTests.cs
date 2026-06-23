@@ -96,26 +96,34 @@ public sealed class KoreanDateParserTests
     }
 
     [Fact]
-    public void EveningTime_SetsTimeAndEveningFlag_WithoutDoubleCounting()
+    public void DayPartWithClock_KeepsTheClock_WithoutDoubleCounting()
     {
         // The tricky case: "오늘 저녁 7시" is the time; the "저녁" inside "저녁 약속" must stay in the title.
+        // "저녁" just confirms PM, giving 19:00; no day-part word raises the evening flag anymore.
         var r = Parse("오늘 저녁 7시 저녁 약속");
         Assert.Equal("저녁 약속", r.Title);
         Assert.Equal(Today, WhenDate(r.When));
         Assert.Equal(19, WhenHour(r.When));
-        Assert.True(r.When.IsEvening);
+        Assert.False(r.When.IsEvening);
     }
 
     [Theory]
-    [InlineData("오늘 저녁 운동", "운동", 0)]
-    [InlineData("저녁에 강아지 산책시키기", "강아지 산책시키기", 0)]
-    public void EveningWord_RaisesEveningFlag(string input, string title, int offsetDays)
+    [InlineData("새벽 운동 가기", "운동 가기", 6)]
+    [InlineData("아침 약 먹기", "약 먹기", 8)]
+    [InlineData("오전 회의 참석", "회의 참석", 10)]
+    [InlineData("점심때 처방약 먹기", "처방약 먹기", 12)]
+    [InlineData("오후에 미팅", "미팅", 15)]
+    [InlineData("저녁에 강아지 산책시키기", "강아지 산책시키기", 18)]
+    [InlineData("밤 산책 나가기", "산책 나가기", 21)]
+    public void BareDayPart_ResolvesToRepresentativeHour(string input, string title, int hour)
     {
+        // Each abstract day-part word resolves to a representative clock time on today (no evening flag).
         var r = Parse(input);
         Assert.Equal(title, r.Title);
         Assert.Equal(WhenKind.OnDate, r.When.Kind);
-        Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
-        Assert.True(r.When.IsEvening);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(hour, WhenHour(r.When));
+        Assert.False(r.When.IsEvening);
     }
 
     [Theory]
@@ -178,6 +186,98 @@ public sealed class KoreanDateParserTests
         var r = _parser.Parse("3시 미팅", at14, Tz);
         Assert.Equal(Today, WhenDate(r.When));
         Assert.Equal(15, WhenHour(r.When));
+    }
+
+    // ---- Casual / colloquial forms ------------------------------------------
+
+    [Fact]
+    public void Colloquial_Nael_IsTomorrow()
+    {
+        var r = Parse("낼 장보기");
+        Assert.Equal("장보기", r.Title);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+    }
+
+    [Theory]
+    [InlineData("내일모레 친구 만나기")]
+    [InlineData("낼모레 친구 만나기")]
+    public void Colloquial_DayAfterTomorrow_Variants(string input)
+    {
+        var r = Parse(input);
+        Assert.Equal("친구 만나기", r.Title);
+        Assert.Equal(Today.AddDays(2), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void NextWeekday_WithoutWeekWord_LandsInTheFollowingWeek()
+    {
+        // "다음 금요일" (no 주) reads as next week's Friday, like "다음 주 금요일".
+        var r = Parse("다음 금요일 동창 모임");
+        Assert.Equal("동창 모임", r.Title);
+        Assert.Equal(new DateOnly(2026, 7, 3), WhenDate(r.When)); // ref Tue 6/23 → next-week Fri
+    }
+
+    [Theory]
+    [InlineData("다음주 수요일 회의", 2026, 7, 1)]
+    [InlineData("담주 목요일 회의", 2026, 7, 2)]
+    public void NextWeekWeekday_Colloquial(string input, int y, int mo, int d)
+    {
+        var r = Parse(input);
+        Assert.Equal("회의", r.Title);
+        Assert.Equal(new DateOnly(y, mo, d), WhenDate(r.When));
+    }
+
+    [Theory]
+    [InlineData("내일 세시 미팅", 1, 15)]      // native hour, bare → afternoon
+    [InlineData("오늘 오후네시 미팅", 0, 16)]   // native hour with an explicit 오후
+    public void NativeHourNumber_IsParsed(string input, int offsetDays, int hour)
+    {
+        var r = Parse(input);
+        Assert.Equal("미팅", r.Title);
+        Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
+        Assert.Equal(hour, WhenHour(r.When));
+    }
+
+    [Theory]
+    [InlineData("낼 밤9시 약속", 21)]
+    [InlineData("낼 저녁5시 약속", 17)]
+    public void Colloquial_TomorrowEveningTime(string input, int hour)
+    {
+        var r = Parse(input);
+        Assert.Equal("약속", r.Title);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(hour, WhenHour(r.When));
+        Assert.False(r.When.IsEvening);
+    }
+
+    // ---- Attached particles that still carry a date/time --------------------
+
+    [Fact]
+    public void Colloquial_NaelKkaji_IsDeadlineTomorrow()
+    {
+        var r = Parse("낼까지 보고서 제출");
+        Assert.Equal("보고서 제출", r.Title);
+        Assert.Equal(Today.AddDays(1), ZonedDate(r.Deadline!.Value));
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+    }
+
+    [Fact]
+    public void Colloquial_DamjuE_IsNextWeek()
+    {
+        var r = Parse("담주에 워크샵 준비");
+        Assert.Equal("워크샵 준비", r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(Today.AddDays(7), WhenDate(r.When));
+    }
+
+    [Theory]
+    [InlineData("내일은 집에서 쉬기", "집에서 쉬기", 1)]
+    [InlineData("모레도 운동 가기", "운동 가기", 2)]
+    public void TopicParticleAfterDate_IsConsumed(string input, string title, int offsetDays)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
     }
 
     // ---- 5. Deadlines -------------------------------------------------------

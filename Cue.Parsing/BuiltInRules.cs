@@ -66,7 +66,7 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
     {
         // A recurrence repeats at a fixed wall-clock time, so the "morning already passed" bump that
         // disambiguates one-off bare hours doesn't apply — meridiemGiven is intentionally ignored here.
-        Korean.TryResolveTime(match, out var h, out var min, out _, out var hasTime, out _);
+        Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out _);
 
         string rule;
         ZonedDateTime anchor;
@@ -177,7 +177,7 @@ public sealed class DeadlineRule : IQuickAddRule
             return false;
         }
 
-        Korean.TryResolveTime(match, out var h, out var min, out _, out var hasTime, out var meridiemGiven);
+        Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
         if (hasTime)
             h = context.DisambiguateBareHour(date, h, min, meridiemGiven);
         return result.TrySetDeadline(context.Zoned(date, hasTime ? h : 0, hasTime ? min : 0));
@@ -191,7 +191,7 @@ public sealed class WhenDateRule : IQuickAddRule
         Korean.LeftEdge +
         Korean.Date +
         @"(?:\s*(?:" + Korean.Time + "|" + Korean.DayPart + "))?" +
-        @"(?:\s*(?:에|에는|부터|쯤|즈음|경))?" +
+        @"(?:\s*(?:에는|에도|에|은|는|도|부터|쯤|즈음|경))?" +
         @"(?!\s*(?:까지|마감|안에|이내))" +
         Korean.RightEdge, Opt.Flags);
 
@@ -199,12 +199,12 @@ public sealed class WhenDateRule : IQuickAddRule
     {
         if (!Korean.TryResolveDate(match, context, out var date))
             return false; // out-of-range date ("99일", "13월 40일") — leave it in the title
-        Korean.TryResolveTime(match, out var h, out var min, out var evening, out var hasTime, out var meridiemGiven);
+        Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
         if (hasTime)
             h = context.DisambiguateBareHour(date, h, min, meridiemGiven);
         var when = hasTime
-            ? ScheduledWhen.On(context.Zoned(date, h, min), evening)
-            : ScheduledWhen.On(context.Zoned(date), evening);
+            ? ScheduledWhen.On(context.Zoned(date, h, min))
+            : ScheduledWhen.On(context.Zoned(date));
         return result.TrySetWhen(when);
     }
 }
@@ -219,12 +219,11 @@ public sealed class TimeOfDayRule : IQuickAddRule
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
     {
-        if (!Korean.TryResolveTime(match, out var h, out var min, out var evening, out var hasTime, out var meridiemGiven))
+        if (!Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven))
             return false;
-        if (!hasTime && !evening)
-            return false; // a stray part-of-day ("오전") alone schedules nothing
-        if (hasTime)
-            h = context.DisambiguateBareHour(context.Today, h, min, meridiemGiven);
-        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, hasTime ? h : 0, hasTime ? min : 0), evening));
+        if (!hasTime)
+            return false; // nothing concrete to schedule
+        h = context.DisambiguateBareHour(context.Today, h, min, meridiemGiven);
+        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, h, min)));
     }
 }

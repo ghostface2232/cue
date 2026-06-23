@@ -35,36 +35,49 @@ internal static class Korean
     {
         ["한"] = 1, ["두"] = 2, ["세"] = 3, ["네"] = 4, ["다섯"] = 5,
         ["여섯"] = 6, ["일곱"] = 7, ["여덟"] = 8, ["아홉"] = 9, ["열"] = 10,
+        ["열한"] = 11, ["열두"] = 12,
     };
+
+    /// <summary>Native-Korean hour words ("한"…"열두"), longest-first so the regex prefers "열두" over "열".</summary>
+    public const string NativeHour = @"열두|열한|열|아홉|여덟|일곱|여섯|다섯|네|세|두|한";
 
     /// <summary>Parses an Arabic ("3") or native-Korean ("세") small number.</summary>
     public static int Number(string token)
         => int.TryParse(token, out var n) ? n : NativeSmallNumbers.GetValueOrDefault(token, 0);
 
-    /// <summary>
-    /// Resolves a matched time (with meridiem/half) to a 24h hour+minute, the evening flag, and
-    /// whether a concrete clock time was actually given. Returns false for impossible times
-    /// (e.g. "24시"), which the caller treats as "not a time" so it stays in the title.
-    /// </summary>
-    public static bool TryResolveTime(Match m, out int hour, out int minute, out bool evening, out bool hasTime, out bool meridiemGiven)
+    /// <summary>The representative clock hour each abstract day-part word resolves to on its own.</summary>
+    private static readonly IReadOnlyDictionary<string, int> DayPartHour = new Dictionary<string, int>
     {
-        hour = 0; minute = 0; evening = false; hasTime = false;
+        ["새벽"] = 6, ["아침"] = 8, ["오전"] = 10, ["점심"] = 12,
+        ["오후"] = 15, ["저녁"] = 18, ["밤"] = 21,
+    };
+
+    /// <summary>
+    /// Resolves a matched time (with meridiem/half) to a 24h hour+minute and whether a concrete clock
+    /// time was actually given. A bare day-part word ("저녁", "밤") resolves to its representative hour
+    /// (see <see cref="DayPartHour"/>). Returns false for impossible times (e.g. "24시"), which the
+    /// caller treats as "not a time" so it stays in the title.
+    /// </summary>
+    public static bool TryResolveTime(Match m, out int hour, out int minute, out bool hasTime, out bool meridiemGiven)
+    {
+        hour = 0; minute = 0; hasTime = false;
 
         var meridiem = First(m, "mer", "daypart");
-        var isEveningWord = meridiem is "저녁" or "밤";
-        evening = isEveningWord;
         meridiemGiven = meridiem is not null; // any AM/PM word fixes the half-day; its absence leaves the hour ambiguous
 
         if (!m.Groups["h"].Success)
         {
-            // A bare day-part with no clock ("저녁", "점심때"). 점심 implies midday; evening words just
-            // raise the flag; the rest only mark the part of day and carry no specific time.
-            if (meridiem == "점심") { hour = 12; hasTime = true; return true; }
-            if (isEveningWord) return true;               // evening flag, no concrete time
-            return meridiem is "새벽" or "아침" or "오전" or "오후"; // consumed, no concrete time
+            // A bare day-part with no clock ("저녁", "점심때") resolves to its representative hour.
+            if (meridiem is not null && DayPartHour.TryGetValue(meridiem, out var dh))
+            {
+                hour = dh;
+                hasTime = true;
+                return true;
+            }
+            return false;
         }
 
-        var h = int.Parse(m.Groups["h"].Value);
+        var h = Number(m.Groups["h"].Value);               // Arabic ("3") or native ("세")
         if (h is < 0 or > 23)
             return false;                                  // "24시" and friends are not clock times here
 
@@ -109,9 +122,9 @@ internal static class Korean
     /// <summary>A date expression. Alternatives are ordered most-specific first.</summary>
     public const string Date =
         @"(?:" +
-        @"(?<rel>오늘|내일모레|모레|글피|내일)" +
+        @"(?<rel>오늘|내일모레|낼모레|모레|글피|내일|낼)" +
         @"|(?<weekend>이번\s*주말|주말)" +
-        @"|다음\s*주\s*(?<nwwd>[월화수목금토일])요일" +
+        @"|(?:다음\s*주|다음|담주)\s*(?<nwwd>[월화수목금토일])요일" +
         @"|(?<nextweek>다음\s*주|담주)" +
         @"|(?<nextmonth>다음\s*달|담달)" +
         @"|(?<endmonth>이번\s*달\s*말일|이번\s*달\s*말)" +
@@ -126,7 +139,7 @@ internal static class Korean
 
     /// <summary>A clock time, optionally with a meridiem/part-of-day prefix.</summary>
     public const string Time =
-        @"(?:(?<mer>오전|오후|새벽|아침|저녁|밤|점심)\s*)?(?<h>\d{1,2})\s*시(?:\s*(?<min>\d{1,2})\s*분|\s*(?<half>반))?";
+        @"(?:(?<mer>오전|오후|새벽|아침|저녁|밤|점심)\s*)?(?<h>\d{1,2}|" + NativeHour + @")\s*시(?:\s*(?<min>\d{1,2})\s*분|\s*(?<half>반))?";
 
     /// <summary>A bare part-of-day with no clock ("저녁", "점심때", "오전").</summary>
     public const string DayPart = @"(?<daypart>새벽|아침|점심|오전|오후|저녁|밤)(?:에|때)?";
@@ -155,8 +168,8 @@ internal static class Korean
                 date = ctx.Today.AddDays(m.Groups["rel"].Value switch
                 {
                     "오늘" => 0,
-                    "내일" => 1,
-                    "모레" or "내일모레" => 2,
+                    "내일" or "낼" => 1,
+                    "모레" or "내일모레" or "낼모레" => 2,
                     "글피" => 3,
                     _ => 0,
                 });
