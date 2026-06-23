@@ -16,7 +16,7 @@
             <Setter Property="Margin" Value="0,1" />
             <Setter Property="Padding" Value="10,0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
+            <Setter Property="CornerRadius" Value="{StaticResource CueRadiusRow}" />
             <Setter Property="FocusVisualMargin" Value="2" />
             <Setter Property="FocusVisualPrimaryThickness" Value="1" />
             <Setter Property="FocusVisualSecondaryThickness" Value="0" />
@@ -83,73 +83,65 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border
+            <ListView
+                x:Name="SectionNav"
                 VerticalAlignment="Top"
-                Padding="5"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BackgroundSizing="InnerBorderEdge"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource CueRadiusCard}">
-                <ListView
-                    x:Name="SectionNav"
-                    HorizontalAlignment="Stretch"
-                    Background="Transparent"
-                    IsItemClickEnabled="False"
-                    ItemContainerStyle="{StaticResource SettingsNavItemStyle}"
-                    SelectionChanged="SectionNav_SelectionChanged"
-                    SelectionMode="Single"
-                    SelectedIndex="0">
-                    <ListView.Resources>
-                        <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="{ThemeResource SubtleFillColorSecondary}" />
-                        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
-                        <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
-                        <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="{ThemeResource SubtleFillColorTertiary}" />
-                        <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="{ThemeResource TextFillColorPrimary}" />
-                        <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
-                    </ListView.Resources>
-                    <ListViewItem Tag="Time">
-                        <Grid ColumnSpacing="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE823;" Style="{StaticResource SettingsNavGlyphStyle}" />
-                            <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="시간" />
-                        </Grid>
-                    </ListViewItem>
-                    <ListViewItem Tag="Parsing">
-                        <Grid ColumnSpacing="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE943;" Style="{StaticResource SettingsNavGlyphStyle}" />
-                            <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="파싱" />
-                        </Grid>
-                    </ListViewItem>
-                    <ListViewItem Tag="Appearance">
-                        <Grid ColumnSpacing="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE790;" Style="{StaticResource SettingsNavGlyphStyle}" />
-                            <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="외관" />
-                        </Grid>
-                    </ListViewItem>
-                    <ListViewItem Tag="Notifications">
-                        <Grid ColumnSpacing="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE7F4;" Style="{StaticResource SettingsNavGlyphStyle}" />
-                            <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="알림" />
-                        </Grid>
-                    </ListViewItem>
-                </ListView>
-            </Border>
+                HorizontalAlignment="Stretch"
+                Background="Transparent"
+                IsItemClickEnabled="False"
+                ItemContainerStyle="{StaticResource SettingsNavItemStyle}"
+                SelectionChanged="SectionNav_SelectionChanged"
+                SelectionMode="Single"
+                SelectedIndex="0">
+                <ListView.Resources>
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="{ThemeResource SubtleFillColorSecondary}" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="{ThemeResource SubtleFillColorTertiary}" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="{ThemeResource TextFillColorPrimary}" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
+                </ListView.Resources>
+                <ListViewItem Tag="Time">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE823;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="시간" />
+                    </Grid>
+                </ListViewItem>
+                <ListViewItem Tag="Parsing">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE943;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="파싱" />
+                    </Grid>
+                </ListViewItem>
+                <ListViewItem Tag="Appearance">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE790;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="외관" />
+                    </Grid>
+                </ListViewItem>
+                <ListViewItem Tag="Notifications">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE7F4;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="알림" />
+                    </Grid>
+                </ListViewItem>
+            </ListView>
 
             <ScrollViewer
                 Grid.Column="1"
