@@ -16,16 +16,6 @@ public class ScheduledWhenTests
     }
 
     [Fact]
-    public void SomeDay_IsParkedWithNoDate()
-    {
-        var when = ScheduledWhen.SomeDay;
-
-        Assert.Equal(WhenKind.SomeDay, when.Kind);
-        Assert.False(when.HasDate);
-        Assert.Null(when.Date);
-    }
-
-    [Fact]
     public void On_PinsAZonedDate()
     {
         var date = ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 9, 0, 0), "Asia/Seoul");

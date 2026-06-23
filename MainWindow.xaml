@@ -64,14 +64,9 @@
                         <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE9D2;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem x:Name="AnytimeItem" Content="언제든 할 일" Tag="anytime">
+                <NavigationViewItem x:Name="AnytimeItem" Content="언젠가 할 일" Tag="anytime">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8FD;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="SomedayItem" Content="나중에 할 일" Tag="someday">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8F1;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="LogbookItem" Content="완료한 일" Tag="logbook">

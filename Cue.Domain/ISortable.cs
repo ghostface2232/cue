@@ -2,7 +2,7 @@ namespace Cue.Domain;
 
 /// <summary>
 /// Marks a record that carries a manual ordering rank. Implemented by every manually-ordered
-/// entity (<see cref="TaskItem"/>, <see cref="Project"/>, <see cref="Section"/>, <see cref="Label"/>).
+/// entity (<see cref="TaskItem"/>, <see cref="Project"/>, <see cref="Label"/>).
 /// </summary>
 /// <remarks>
 /// This is purely a property contract — it adds no behavior and keeps the domain a pure data holder.

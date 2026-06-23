@@ -241,7 +241,6 @@ public sealed partial class TaskListPage : Page
         var compact = width < DetailCompactBreakpoint;
         SetResponsivePair(DetailMetaGrid, DetailProjectField, compact, new GridLength(1, GridUnitType.Star));
         SetResponsivePair(WhenDateTimeGrid, WhenTimePanel, compact, GridLength.Auto);
-        SetResponsivePair(DeadlineDateTimeGrid, DeadlineTimePanel, compact, GridLength.Auto);
     }
 
     private static void SetResponsivePair(Grid grid, FrameworkElement second, bool compact, GridLength normalSecondWidth)
@@ -560,46 +559,6 @@ public sealed partial class TaskListPage : Page
         {
             if (await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary)
                 await ViewModel.Detail.DeleteSubtaskCommand.ExecuteAsync(id);
-        });
-    }
-
-    private async void AddSection_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        await RunSafelyAsync(async () =>
-        {
-            var name = await PromptNameAsync("새 섹션", "섹션 이름");
-            if (name is not null) await ViewModel.CreateSectionCommand.ExecuteAsync(name);
-        });
-    }
-
-    private async void RenameSection_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        await RunSafelyAsync(async () =>
-        {
-            if (sender is not Button { Tag: Guid id }) return;
-            var group = ViewModel.ProjectGroups.FirstOrDefault(item => item.Id == id);
-            if (group is null) return;
-            var name = await PromptNameAsync("섹션 이름 변경", "섹션 이름", group.Name);
-            if (name is not null) await ViewModel.RenameSectionCommand.ExecuteAsync(new RenameRecordRequest(id, name));
-        });
-    }
-
-    private async void DeleteSection_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: Guid id }) return;
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "섹션을 삭제할까요?",
-            Content = "섹션 안의 할 일은 지우지 않고 Cue로 옮깁니다.",
-            PrimaryButtonText = "삭제",
-            CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        await RunSafelyAsync(async () =>
-        {
-            if (await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary)
-                await ViewModel.DeleteSectionCommand.ExecuteAsync(id);
         });
     }
 

@@ -11,17 +11,18 @@ public static class QuickAddContext
         DateTimeOffset utcNow,
         TimeZoneInfo zone)
     {
+        // A typed date wins outright.
         if (parsedWhen.Kind != WhenKind.Unscheduled)
             return parsedWhen;
 
-        // Without a typed date, only the Today list pins an actual day; every other list (Upcoming
-        // included — it names no specific date) parks the task in Someday.
+        // With no typed date, only the Today list pins an actual day. Every other list (Upcoming
+        // included — it names no specific date) leaves the task Unscheduled, so a dateless quick-add
+        // lands in "언젠가" (Anytime).
+        if (mode != TaskListMode.Today)
+            return parsedWhen;
+
         var localToday = TimeZoneInfo.ConvertTime(utcNow, zone).Date;
-        return mode switch
-        {
-            TaskListMode.Today => ScheduledWhen.On(PinDay(localToday, zone)),
-            _ => ScheduledWhen.SomeDay,
-        };
+        return ScheduledWhen.On(PinDay(localToday, zone));
     }
 
     private static ZonedDateTime PinDay(DateTime localDay, TimeZoneInfo zone)

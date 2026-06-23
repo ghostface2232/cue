@@ -16,17 +16,14 @@ public enum TaskListMode
     /// <summary>Home / Cue — project-less (unclassified) open tasks.</summary>
     Inbox,
 
-    /// <summary>Today — open tasks due or scheduled today or earlier.</summary>
+    /// <summary>Today — open tasks with a When date today or earlier.</summary>
     Today,
 
-    /// <summary>Open tasks scheduled for a future day or carrying a future deadline.</summary>
+    /// <summary>Open tasks with a When date on a future day.</summary>
     Upcoming,
 
-    /// <summary>Open tasks without a scheduled When date.</summary>
+    /// <summary>Open tasks without a When date — the "언젠가" bucket.</summary>
     Anytime,
-
-    /// <summary>Open tasks parked for Someday.</summary>
-    Someday,
 
     /// <summary>Completed tasks.</summary>
     Logbook,
@@ -69,7 +66,8 @@ public partial class TaskListViewModel : ObservableObject
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    public ObservableCollection<TaskSectionGroupViewModel> ProjectGroups { get; } = new();
+    /// <summary>Grouped rows for the 중요도 (priority) view — the only grouped list.</summary>
+    public ObservableCollection<TaskGroupViewModel> Groups { get; } = new();
 
     public TaskDetailViewModel Detail { get; }
 
@@ -88,8 +86,8 @@ public partial class TaskListViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsProjectMode { get; set; }
 
-    /// <summary>True when the list is rendered as grouped sections (a project's sections, or the
-    /// 중요도 view's P1–P4 buckets) rather than one flat list.</summary>
+    /// <summary>True when the list is rendered as grouped buckets (the 중요도 view's P1–P4 buckets)
+    /// rather than one flat list.</summary>
     [ObservableProperty]
     public partial bool IsGroupedList { get; set; }
 
@@ -128,11 +126,11 @@ public partial class TaskListViewModel : ObservableObject
             row.IsSelected = row.Id == id;
     }
 
-    /// <summary>Every realized row across all sections, including subtask rows.</summary>
+    /// <summary>Every realized row across the flat list and all groups, including subtask rows.</summary>
     private IEnumerable<TaskRowViewModel> AllRows()
     {
         foreach (var row in Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
-        foreach (var group in ProjectGroups)
+        foreach (var group in Groups)
             foreach (var row in group.Tasks) { yield return row; foreach (var sub in row.Subtasks) yield return sub; }
     }
 
@@ -146,20 +144,17 @@ public partial class TaskListViewModel : ObservableObject
             TaskListMode.Inbox => "모든 할 일",
             TaskListMode.Today => "오늘 할 일",
             TaskListMode.Upcoming => "앞으로 할 일",
-            TaskListMode.Anytime => "언제든 할 일",
-            TaskListMode.Someday => "나중에 할 일",
+            TaskListMode.Anytime => "언젠가 할 일",
             TaskListMode.Logbook => "완료한 일",
             TaskListMode.Priority => "중요도",
             TaskListMode.Project => "그룹",
             TaskListMode.Label => "태그",
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
-        TitleCaption = navigation.DeadlineDate is { } deadline
-            ? $"마감일 {deadline.Month}월 {deadline.Day}일"
-            : string.Empty;
+        TitleCaption = string.Empty;
         OnPropertyChanged(nameof(HasTitleCaption));
         IsProjectMode = _mode == TaskListMode.Project;
-        IsGroupedList = _mode is TaskListMode.Project or TaskListMode.Priority;
+        IsGroupedList = _mode is TaskListMode.Priority;
         IsStandardList = !IsGroupedList;
         OnPropertyChanged(nameof(CanQuickAdd));
     }
@@ -175,31 +170,18 @@ public partial class TaskListViewModel : ObservableObject
 
         var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId);
 
-        // A concrete date typed in quick-add is treated as a deadline (due date) by default — that is
-        // the natural reading of "내일 3시 회의". The scheduled "예정" (when you plan to work on it) is a
-        // deliberate, separate act made in the detail panel. A recurring task keeps its parsed When as
-        // the recurrence anchor (recurrence is inherently a scheduling concept), and SomeDay is a When
-        // concept rather than a datetime, so neither is promoted to a deadline.
-        var parsedWhen = parsed.When;
-        var deadline = parsed.Deadline;
-        if (parsed.Recurrence is null && parsedWhen.Date is { } scheduled)
-        {
-            deadline ??= scheduled;
-            parsedWhen = ScheduledWhen.Unscheduled;
-        }
-
-        // The current list parks a task that carries nothing (Today → today, else Someday). A task
-        // that already has a deadline or recurrence has a target/schedule, so it is never parked —
-        // otherwise a typed due date ("다음주 금요일 회의") would land in Someday with its deadline disabled.
-        var when = deadline is null && parsed.Recurrence is null
-            ? QuickAddContext.Apply(parsedWhen, _mode, _clock.GetUtcNow(), _timeZone)
-            : parsedWhen;
+        // The parser's When is used as-is — a task has a single date. When the user typed no date,
+        // QuickAddContext pins today only on the Today list; on every other list the task stays
+        // Unscheduled and lands in "언젠가". A recurring task keeps its parsed When as the recurrence
+        // anchor, so it is never re-parked.
+        var when = parsed.Recurrence is null
+            ? QuickAddContext.Apply(parsed.When, _mode, _clock.GetUtcNow(), _timeZone)
+            : parsed.When;
 
         var task = new TaskItem
         {
             Title = parsed.Title,
             When = when,
-            Deadline = deadline,
             Recurrence = parsed.Recurrence,
             ProjectId = _mode == TaskListMode.Project ? _filterId : null,
             // New tasks append to the end of the list the user is currently looking at.
@@ -233,9 +215,6 @@ public partial class TaskListViewModel : ObservableObject
             case TaskListMode.Anytime:
                 items = await _index.GetAnytimeAsync();
                 break;
-            case TaskListMode.Someday:
-                items = await _index.GetSomedayAsync();
-                break;
             case TaskListMode.Logbook:
                 items = await _index.GetLogbookAsync();
                 break;
@@ -255,25 +234,8 @@ public partial class TaskListViewModel : ObservableObject
         Tasks.Clear();
         AddHierarchicalRows(Tasks, items);
 
-        ProjectGroups.Clear();
-        if (_mode == TaskListMode.Project)
-        {
-            var sections = await _index.GetSectionsByProjectAsync(RequiredFilterId());
-            var groups = sections.ToDictionary(section => section.Id, section => new TaskSectionGroupViewModel(section));
-            var unsectioned = new TaskSectionGroupViewModel((SectionListItem?)null);
-            foreach (var row in Tasks)
-            {
-                var item = items.First(item => item.Id == row.Id);
-                if (item.SectionId is { } sectionId && groups.TryGetValue(sectionId, out var group))
-                    group.Tasks.Add(row);
-                else
-                    unsectioned.Tasks.Add(row);
-            }
-            Tasks.Clear();
-            foreach (var section in sections) ProjectGroups.Add(groups[section.Id]);
-            if (unsectioned.Tasks.Count > 0) ProjectGroups.Add(unsectioned);
-        }
-        else if (_mode == TaskListMode.Priority)
+        Groups.Clear();
+        if (_mode == TaskListMode.Priority)
         {
             // One group per priority that has rows, P1 → P4. Rows arrive already ordered by priority.
             (Priority Priority, string Name)[] buckets =
@@ -286,51 +248,18 @@ public partial class TaskListViewModel : ObservableObject
             {
                 var rows = byPriority[priority].ToList();
                 if (rows.Count == 0) continue;
-                var group = new TaskSectionGroupViewModel(name);
+                var group = new TaskGroupViewModel(name);
                 foreach (var row in rows) group.Tasks.Add(row);
-                ProjectGroups.Add(group);
+                Groups.Add(group);
             }
         }
 
         IsEmpty = IsGroupedList
-            ? ProjectGroups.Count == 0
+            ? Groups.Count == 0
             : Tasks.Count == 0;
 
         // Re-apply the selection accent to the freshly rebuilt rows so it survives a reload.
         ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
-    }
-
-    [RelayCommand]
-    private async Task CreateSectionAsync(string name)
-    {
-        if (!IsProjectMode || string.IsNullOrWhiteSpace(name)) return;
-        var projectId = RequiredFilterId();
-        var existing = await _index.GetSectionsByProjectAsync(projectId);
-        await _store.SaveAsync(new Section
-        {
-            ProjectId = projectId,
-            Name = name.Trim(),
-            SortOrder = _reorder.AppendRank(existing.Select(section => section.SortOrder)),
-        });
-        await LoadAsync();
-    }
-
-    [RelayCommand]
-    private async Task RenameSectionAsync(RenameRecordRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Name)) return;
-        var section = await _store.GetAsync<Section>(request.Id);
-        if (section is null || section.IsDeleted) return;
-        section.Name = request.Name.Trim();
-        await _store.SaveAsync(section);
-        await LoadAsync();
-    }
-
-    [RelayCommand]
-    private async Task DeleteSectionAsync(Guid id)
-    {
-        await _store.DeleteAsync<Section>(id);
-        await LoadAsync();
     }
 
     /// <summary>
@@ -366,7 +295,7 @@ public partial class TaskListViewModel : ObservableObject
     private IEnumerable<string?> VisibleRowRanks()
     {
         foreach (var row in Tasks) yield return row.SortOrder;
-        foreach (var group in ProjectGroups)
+        foreach (var group in Groups)
             foreach (var row in group.Tasks) yield return row.SortOrder;
     }
 

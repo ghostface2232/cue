@@ -44,9 +44,9 @@ public sealed class CustomDayOfMonthRule : IQuickAddRule
         if (hasTime)
             hour = context.DisambiguateBareHour(date, hour, minute, meridiemGiven);
 
+        // A task has a single date: a trailing "까지/마감" is still recognized and stripped, but it
+        // resolves to the same When (OnDate) as a plain scheduled date — there is no separate deadline.
         var zoned = context.Zoned(date, hasTime ? hour : 0, hasTime ? minute : 0);
-        return match.Groups["deadline"].Success
-            ? result.TrySetDeadline(zoned)
-            : result.TrySetWhen(ScheduledWhen.On(zoned));
+        return result.TrySetWhen(ScheduledWhen.On(zoned));
     }
 }

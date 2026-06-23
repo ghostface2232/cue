@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Cue.Storage;
 
-internal enum ContainerDeletionKind { Project, Section, Label }
+internal enum ContainerDeletionKind { Project, Label }
 
 internal sealed class ContainerDeletionOperation
 {

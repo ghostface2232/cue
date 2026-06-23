@@ -5,9 +5,8 @@ using Cue.Domain;
 namespace Cue.Storage.Serialization;
 
 /// <summary>
-/// Serializes <see cref="ScheduledWhen"/> so the variant is explicit. Unscheduled and SomeDay are
-/// just <c>{ "kind": "Unscheduled" }</c> / <c>{ "kind": "SomeDay" }</c>; only OnDate carries a date:
-/// <c>{ "kind": "OnDate", "date": {…} }</c>. A legacy <c>isEvening</c> field is ignored on read.
+/// Serializes <see cref="ScheduledWhen"/> so the variant is explicit. Unscheduled is just
+/// <c>{ "kind": "Unscheduled" }</c>; only OnDate carries a date: <c>{ "kind": "OnDate", "date": {…} }</c>.
 /// Reading goes back through the domain factories, so an invalid combination can never be materialized.
 /// </summary>
 public sealed class ScheduledWhenJsonConverter : JsonConverter<ScheduledWhen>
@@ -48,7 +47,6 @@ public sealed class ScheduledWhenJsonConverter : JsonConverter<ScheduledWhen>
         return kind switch
         {
             WhenKind.Unscheduled => ScheduledWhen.Unscheduled,
-            WhenKind.SomeDay => ScheduledWhen.SomeDay,
             WhenKind.OnDate => ScheduledWhen.On(
                 date ?? throw new JsonException("An OnDate ScheduledWhen requires a 'date'.")),
             _ => throw new JsonException("Unknown or missing ScheduledWhen 'kind'."),

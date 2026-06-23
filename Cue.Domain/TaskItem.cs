@@ -5,8 +5,7 @@ namespace Cue.Domain;
 /// </summary>
 /// <remarks>
 /// A task's container is a single optional <see cref="ProjectId"/>: it either belongs to one
-/// project (optionally grouped under a <see cref="Section"/>) or, when null, is unclassified
-/// (free / Inbox).
+/// project or, when null, is unclassified (free / Cue home).
 /// <para>
 /// Sub-tasks are <i>not</i> a lightweight checklist: each is its own <see cref="TaskItem"/>
 /// record (own file) pointing at its parent via <see cref="ParentTaskId"/>, so a sub-task can
@@ -45,25 +44,17 @@ public sealed class TaskItem : RecordBase, ISortable
     public bool IsCompleted => CompletedAt is not null;
 
     /// <summary>
-    /// Hard due date — when something is actually <i>due</i> (Things' "Deadline"). In the default
-    /// single-date workflow this is the only date used. Stores UTC plus the original time zone.
-    /// </summary>
-    public ZonedDateTime? Deadline { get; set; }
-
-    /// <summary>
-    /// Scheduled date — when the user intends to work on the task, and the basis for
-    /// Today/Upcoming (Things' "When"). Defaults to <see cref="WhenKind.Unscheduled"/>.
+    /// The task's single date — when the user intends to work on it / when it is due, and the basis
+    /// for Today/Upcoming/Timeline. Two states only: a concrete date (OnDate) or none (Unscheduled).
+    /// Defaults to <see cref="WhenKind.Unscheduled"/>.
     /// </summary>
     public ScheduledWhen When { get; set; } = ScheduledWhen.Unscheduled;
 
     /// <summary>Priority flag.</summary>
     public Priority Priority { get; set; } = Priority.None;
 
-    /// <summary>Owning project, if any. <c>null</c> means the task is unclassified (free).</summary>
+    /// <summary>Owning project, if any. <c>null</c> means the task is unclassified (free / Cue home).</summary>
     public Guid? ProjectId { get; set; }
-
-    /// <summary>Grouping section/heading within the project, if any.</summary>
-    public Guid? SectionId { get; set; }
 
     /// <summary>Parent task when this is a sub-task; <c>null</c> for a top-level task.</summary>
     public Guid? ParentTaskId { get; set; }

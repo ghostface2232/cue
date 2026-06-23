@@ -14,7 +14,6 @@ public enum WhenEditorMode
     Unscheduled,
     Today,
     SpecificDate,
-    Someday,
 }
 
 public sealed record WhenEditorOption(WhenEditorMode Mode, string Name);
@@ -81,6 +80,7 @@ public partial class SubtaskRowViewModel : ObservableObject
 /// Edits one full <see cref="TaskItem"/>. Detail reads use the file source of truth by id; option
 /// and subtask lists use <see cref="ITaskIndex"/>. Every mutation returns through
 /// <see cref="ITaskStore"/> and then asks the owning list to re-query its current index view.
+/// A task has a single date (When) — there is no separate deadline.
 /// </summary>
 public partial class TaskDetailViewModel : ObservableObject
 {
@@ -94,14 +94,10 @@ public partial class TaskDetailViewModel : ObservableObject
     private readonly Func<Guid, Task> _openTask;
     private Guid? _taskId;
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
-    private ZonedDateTime? _originalDeadline;
     private WhenEditorMode _loadedWhenMode;
     private DateTimeOffset? _loadedWhenDate;
     private TimeSpan? _loadedWhenTime;
     private bool _loadedIsWhenAllDay;
-    private DateTimeOffset? _loadedDeadlineDate;
-    private TimeSpan? _loadedDeadlineTime;
-    private bool _loadedIsDeadlineAllDay;
     private bool _isLoading;
 
     public IReadOnlyList<Priority> Priorities { get; } = Enum.GetValues<Priority>();
@@ -112,7 +108,6 @@ public partial class TaskDetailViewModel : ObservableObject
         new(WhenEditorMode.Unscheduled, "미지정"),
         new(WhenEditorMode.Today, "Today"),
         new(WhenEditorMode.SpecificDate, "날짜 지정"),
-        new(WhenEditorMode.Someday, "Someday"),
     ];
 
     public ObservableCollection<ProjectEditorOption> Projects { get; } = new();
@@ -147,28 +142,9 @@ public partial class TaskDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial TimeOption? SelectedWhenMinute { get; set; }
 
-    [ObservableProperty]
-    public partial bool IsSomeday { get; set; }
-
     /// <summary>종일 — a date-only When that carries no time (pinned to end of day, 23:59).</summary>
     [ObservableProperty]
     public partial bool IsWhenAllDay { get; set; }
-
-    /// <summary>종일 — a date-only Deadline that carries no time (pinned to end of day, 23:59).</summary>
-    [ObservableProperty]
-    public partial bool IsDeadlineAllDay { get; set; }
-
-    [ObservableProperty]
-    public partial DateTimeOffset? DeadlineDate { get; set; }
-
-    [ObservableProperty]
-    public partial TimeSpan? DeadlineTime { get; set; }
-
-    [ObservableProperty]
-    public partial TimeOption? SelectedDeadlineHour { get; set; }
-
-    [ObservableProperty]
-    public partial TimeOption? SelectedDeadlineMinute { get; set; }
 
     [ObservableProperty]
     public partial ProjectEditorOption? SelectedProject { get; set; }
@@ -181,27 +157,17 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public bool IsSpecificDate => SelectedWhenOption.Mode == WhenEditorMode.SpecificDate;
     public bool HasConcreteWhen => SelectedWhenOption.Mode is WhenEditorMode.Today or WhenEditorMode.SpecificDate;
-    public bool HasDeadline => DeadlineDate is not null;
 
-    /// <summary>A Someday task has no target date, so its deadline inputs are shown disabled.</summary>
-    public bool IsDeadlineEnabled => !IsSomeday;
-
-    /// <summary>The latest day the 예정 (When) may fall on — capped at the deadline so a task is never
-    /// scheduled to be worked on after it is due. Far-future (effectively unbounded) with no deadline.</summary>
-    public DateTimeOffset WhenMaxDate => DeadlineDate ?? new DateTimeOffset(2200, 12, 31, 0, 0, 0, TimeSpan.Zero);
-
-    /// <summary>Time pickers show only with a concrete date that is not all-day.</summary>
+    /// <summary>Time picker shows only with a concrete date that is not all-day.</summary>
     public bool ShowWhenTime => HasConcreteWhen && !IsWhenAllDay;
-    public bool ShowDeadlineTime => HasDeadline && !IsDeadlineAllDay;
 
     /// <summary>End-of-day time a 종일 (all-day) item is pinned to so it expires at 23:59 local.</summary>
     private static readonly TimeSpan AllDayTime = new(23, 59, 0);
     private TimeSpan? EffectiveWhenTime => IsWhenAllDay ? AllDayTime : WhenTime;
-    private TimeSpan? EffectiveDeadlineTime => IsDeadlineAllDay ? AllDayTime : DeadlineTime;
     public bool HasParentTask => ParentTaskId is not null;
     public bool IsWhenEditorVisible => HasConcreteWhen;
-    // The "+ 시작일 추가" button shows only when there is neither a concrete date nor a Someday parking.
-    public bool CanAddWhen => !IsWhenEditorVisible && !IsSomeday;
+    // The "+ 날짜 추가" button shows only when there is no concrete date.
+    public bool CanAddWhen => !IsWhenEditorVisible;
 
     public TaskDetailViewModel(
         ITaskStore store,
@@ -247,68 +213,23 @@ public partial class TaskDetailViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowWhenTime));
     }
 
-    partial void OnIsDeadlineAllDayChanged(bool value)
-    {
-        if (!value && DeadlineTime == AllDayTime)
-        {
-            DeadlineTime = TimeSpan.FromHours(12);
-            SetDeadlineTimeEditors(DeadlineTime);
-        }
-        OnPropertyChanged(nameof(ShowDeadlineTime));
-    }
-
     partial void OnWhenDateChanged(DateTimeOffset? value)
     {
         if (_isLoading) return;
         if (value is not null)
         {
-            IsSomeday = false;
             SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
             WhenTime ??= TimeSpan.FromHours(12);
             SetWhenTimeEditors(WhenTime);
         }
-        else if (!IsSomeday)
+        else
         {
             SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
         }
-    }
-
-    partial void OnIsSomedayChanged(bool value)
-    {
-        OnPropertyChanged(nameof(IsDeadlineEnabled));
-        if (_isLoading) return;
-        if (value)
-        {
-            WhenDate = null;
-            DeadlineDate = null; // a Someday task has no target date — clear and disable the deadline
-            SelectedWhenOption = FindOption(WhenEditorMode.Someday);
-        }
-        else if (SelectedWhenOption.Mode == WhenEditorMode.Someday)
-        {
-            SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
-        }
-    }
-
-    partial void OnDeadlineDateChanged(DateTimeOffset? value)
-    {
-        if (value is not null && DeadlineTime is null)
-            DeadlineTime = TimeSpan.FromHours(12);
-        if (value is not null)
-            SetDeadlineTimeEditors(DeadlineTime);
-        if (value is null)
-            IsDeadlineAllDay = false;
-        // The 예정 date can never be later than the deadline; pull it back if the new deadline is earlier.
-        if (value is { } deadline && WhenDate is { } when && when.Date > deadline.Date)
-            WhenDate = deadline;
-        OnPropertyChanged(nameof(HasDeadline));
-        OnPropertyChanged(nameof(ShowDeadlineTime));
-        OnPropertyChanged(nameof(WhenMaxDate));
     }
 
     partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
     partial void OnSelectedWhenMinuteChanged(TimeOption? value) => SyncWhenTimeFromParts();
-    partial void OnSelectedDeadlineHourChanged(TimeOption? value) => SyncDeadlineTimeFromParts();
-    partial void OnSelectedDeadlineMinuteChanged(TimeOption? value) => SyncDeadlineTimeFromParts();
 
     public async Task OpenAsync(Guid taskId)
     {
@@ -328,25 +249,16 @@ public partial class TaskDetailViewModel : ObservableObject
         SelectedPriority = task.Priority;
         WhenDate = task.When.Date?.ToLocal();
         WhenTime = task.When.Date?.ToLocal().TimeOfDay;
-        DeadlineDate = task.Deadline?.ToLocal();
-        DeadlineTime = task.Deadline?.ToLocal().TimeOfDay;
         SetWhenTimeEditors(WhenTime);
-        SetDeadlineTimeEditors(DeadlineTime);
-        IsSomeday = task.When.Kind == WhenKind.SomeDay;
         // A date-only (종일) item was pinned to 23:59 — recognize it on load.
         IsWhenAllDay = task.When.Date is not null && WhenTime == AllDayTime;
-        IsDeadlineAllDay = task.Deadline is not null && DeadlineTime == AllDayTime;
         SelectedWhenOption = OptionFor(task.When);
 
         _originalWhen = task.When;
-        _originalDeadline = task.Deadline;
         _loadedWhenMode = SelectedWhenOption.Mode;
         _loadedWhenDate = WhenDate;
         _loadedWhenTime = WhenTime;
         _loadedIsWhenAllDay = IsWhenAllDay;
-        _loadedDeadlineDate = DeadlineDate;
-        _loadedDeadlineTime = DeadlineTime;
-        _loadedIsDeadlineAllDay = IsDeadlineAllDay;
         _isLoading = false;
 
         await LoadProjectsAsync(task.ProjectId);
@@ -367,27 +279,17 @@ public partial class TaskDetailViewModel : ObservableObject
         SetWhenTimeEditors(time);
     }
 
-    public void SetDeadlineTime(TimeSpan time)
-    {
-        DeadlineTime = time;
-        SetDeadlineTimeEditors(time);
-    }
-
     public void EnableWhenEditor()
     {
-        // Seed today, but never past the deadline — a task can't be scheduled after it is due.
-        var start = LocalNow();
-        if (DeadlineDate is { } deadline && start.Date > deadline.Date) start = deadline;
-        WhenDate = start;
+        WhenDate = LocalNow();
         WhenTime ??= TimeSpan.FromHours(12);
         SetWhenTimeEditors(WhenTime);
         SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
-        IsWhenAllDay = true; // new schedules start as 종일; uncheck to set a time
+        IsWhenAllDay = true; // new dates start as 종일; uncheck to set a time
     }
 
     public void ClearWhen()
     {
-        IsSomeday = false;
         IsWhenAllDay = false;
         WhenDate = null;
         WhenTime = null;
@@ -407,11 +309,7 @@ public partial class TaskDetailViewModel : ObservableObject
         task.Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes;
         task.Priority = SelectedPriority;
         task.When = BuildWhen();
-        task.Deadline = BuildDeadline();
-
-        var projectId = SelectedProject?.Id;
-        if (task.ProjectId != projectId) task.SectionId = null;
-        task.ProjectId = projectId;
+        task.ProjectId = SelectedProject?.Id;
         task.LabelIds = Labels.Where(label => label.IsSelected && label.Id != Guid.Empty).Select(label => label.Id).ToList();
 
         await _store.SaveAsync(task);
@@ -432,7 +330,6 @@ public partial class TaskDetailViewModel : ObservableObject
             Title = NewSubtaskTitle.Trim(),
             ParentTaskId = parent.Id,
             ProjectId = parent.ProjectId,
-            SectionId = parent.SectionId,
             SortOrder = _reorder.AppendRank(siblings.Select(item => item.SortOrder)),
         };
         await _store.SaveAsync(child);
@@ -510,21 +407,11 @@ public partial class TaskDetailViewModel : ObservableObject
         return SelectedWhenOption.Mode switch
         {
             WhenEditorMode.Unscheduled => ScheduledWhen.Unscheduled,
-            WhenEditorMode.Someday => ScheduledWhen.SomeDay,
             WhenEditorMode.Today => ScheduledWhen.On(PinDate(LocalNow(), EffectiveWhenTime)),
             WhenEditorMode.SpecificDate when WhenDate is { } date => ScheduledWhen.On(PinDate(date, EffectiveWhenTime)),
             WhenEditorMode.SpecificDate => ScheduledWhen.Unscheduled,
             _ => throw new ArgumentOutOfRangeException(),
         };
-    }
-
-    private ZonedDateTime? BuildDeadline()
-    {
-        if (SameDay(DeadlineDate, _loadedDeadlineDate)
-            && DeadlineTime == _loadedDeadlineTime
-            && IsDeadlineAllDay == _loadedIsDeadlineAllDay)
-            return _originalDeadline;
-        return DeadlineDate is { } deadline ? PinDate(deadline, EffectiveDeadlineTime) : null;
     }
 
     private static bool SameDay(DateTimeOffset? left, DateTimeOffset? right)
@@ -535,7 +422,6 @@ public partial class TaskDetailViewModel : ObservableObject
     private WhenEditorOption OptionFor(ScheduledWhen when)
     {
         if (when.Kind == WhenKind.Unscheduled) return FindOption(WhenEditorMode.Unscheduled);
-        if (when.Kind == WhenKind.SomeDay) return FindOption(WhenEditorMode.Someday);
 
         var chosenDay = when.Date is { } value ? DateOnly.FromDateTime(value.ToLocal().DateTime) : default;
         var today = DateOnly.FromDateTime(LocalNow().DateTime);
@@ -565,22 +451,10 @@ public partial class TaskDetailViewModel : ObservableObject
         SelectedWhenMinute = time is { } selected ? Minutes[selected.Minutes] : null;
     }
 
-    private void SetDeadlineTimeEditors(TimeSpan? time)
-    {
-        SelectedDeadlineHour = time is { } value ? Hours[value.Hours] : null;
-        SelectedDeadlineMinute = time is { } selected ? Minutes[selected.Minutes] : null;
-    }
-
     private void SyncWhenTimeFromParts()
     {
         if (_isLoading || SelectedWhenHour is null || SelectedWhenMinute is null) return;
         WhenTime = new TimeSpan(SelectedWhenHour.Value, SelectedWhenMinute.Value, 0);
-    }
-
-    private void SyncDeadlineTimeFromParts()
-    {
-        if (_isLoading || SelectedDeadlineHour is null || SelectedDeadlineMinute is null) return;
-        DeadlineTime = new TimeSpan(SelectedDeadlineHour.Value, SelectedDeadlineMinute.Value, 0);
     }
 
     private async Task LoadProjectsAsync(Guid? selectedId)

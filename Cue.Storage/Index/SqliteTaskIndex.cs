@@ -24,8 +24,8 @@ namespace Cue.Storage.Index;
 public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 {
     private const string Columns =
-        "id, title, project_id, section_id, parent_task_id, when_kind, when_date, " +
-        "deadline_date, completed_at, priority, sort_order";
+        "id, title, project_id, parent_task_id, when_kind, when_date, " +
+        "completed_at, priority, sort_order";
 
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
@@ -77,6 +77,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 drop.CommandText =
                     "DROP TABLE IF EXISTS task_labels; DROP TABLE IF EXISTS tasks; " +
                     "DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS sections; DROP TABLE IF EXISTS labels;";
+                // (sections is dropped only to clear any stale table from before the model change.)
                 drop.ExecuteNonQuery();
             }
         }
@@ -88,11 +89,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 id              TEXT PRIMARY KEY,
                 title           TEXT NOT NULL,
                 project_id      TEXT NULL,
-                section_id      TEXT NULL,
                 parent_task_id  TEXT NULL,
                 when_kind       TEXT NOT NULL,
                 when_date       TEXT NULL,
-                deadline_date   TEXT NULL,
                 completed_at    TEXT NULL,
                 deleted_at      TEXT NULL,
                 priority        INTEGER NOT NULL DEFAULT 0,
@@ -107,19 +106,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 id            TEXT PRIMARY KEY,
                 name          TEXT NOT NULL,
                 icon          TEXT NULL,
-                deadline_date TEXT NULL,
-                is_archived   INTEGER NOT NULL DEFAULT 0,
-                completed_at  TEXT NULL,
-                deleted_at    TEXT NULL,
-                sort_order    TEXT NOT NULL DEFAULT ''
-            );
-            CREATE TABLE IF NOT EXISTS sections (
-                id            TEXT PRIMARY KEY,
-                project_id    TEXT NOT NULL,
-                name          TEXT NOT NULL,
-                deadline_date TEXT NULL,
-                is_archived   INTEGER NOT NULL DEFAULT 0,
-                completed_at  TEXT NULL,
                 deleted_at    TEXT NULL,
                 sort_order    TEXT NOT NULL DEFAULT ''
             );
@@ -131,12 +117,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 sort_order TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS ix_tasks_project ON tasks(project_id);
-            CREATE INDEX IF NOT EXISTS ix_tasks_section ON tasks(section_id);
             CREATE INDEX IF NOT EXISTS ix_tasks_when    ON tasks(when_kind, when_date);
             CREATE INDEX IF NOT EXISTS ix_tasks_active  ON tasks(deleted_at, completed_at);
             CREATE INDEX IF NOT EXISTS ix_labels_label  ON task_labels(label_id);
-            CREATE INDEX IF NOT EXISTS ix_projects_active ON projects(deleted_at, is_archived, completed_at);
-            CREATE INDEX IF NOT EXISTS ix_sections_project ON sections(project_id, deleted_at, is_archived, completed_at);
+            CREATE INDEX IF NOT EXISTS ix_projects_active ON projects(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_navigation_labels_active ON labels(deleted_at);
             PRAGMA user_version = 2;
             """;
@@ -151,13 +135,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     public async Task RebuildAsync(
         IEnumerable<TaskItem> tasks,
         IEnumerable<Project> projects,
-        IEnumerable<Section> sections,
         IEnumerable<Label> labels,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(tasks);
         ArgumentNullException.ThrowIfNull(projects);
-        ArgumentNullException.ThrowIfNull(sections);
         ArgumentNullException.ThrowIfNull(labels);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -169,8 +151,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             {
                 clear.Transaction = tx;
                 clear.CommandText =
-                    "DELETE FROM task_labels; DELETE FROM tasks; DELETE FROM projects; " +
-                    "DELETE FROM sections; DELETE FROM labels;";
+                    "DELETE FROM task_labels; DELETE FROM tasks; DELETE FROM projects; DELETE FROM labels;";
                 await clear.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -182,8 +163,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
             foreach (var project in projects)
                 await UpsertProjectCoreAsync(project, tx, cancellationToken).ConfigureAwait(false);
-            foreach (var section in sections)
-                await UpsertSectionCoreAsync(section, tx, cancellationToken).ConfigureAwait(false);
             foreach (var label in labels)
                 await UpsertLabelCoreAsync(label, tx, cancellationToken).ConfigureAwait(false);
 
@@ -220,9 +199,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     public Task ReflectAsync(Project project, CancellationToken cancellationToken = default)
         => ReflectRecordAsync(project, UpsertProjectCoreAsync, cancellationToken);
 
-    public Task ReflectAsync(Section section, CancellationToken cancellationToken = default)
-        => ReflectRecordAsync(section, UpsertSectionCoreAsync, cancellationToken);
-
     public Task ReflectAsync(Label label, CancellationToken cancellationToken = default)
         => ReflectRecordAsync(label, UpsertLabelCoreAsync, cancellationToken);
 
@@ -253,19 +229,17 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             cmd.CommandText =
                 """
                 INSERT INTO tasks
-                    (id, title, project_id, section_id, parent_task_id, when_kind, when_date,
-                     deadline_date, completed_at, deleted_at, priority, sort_order)
+                    (id, title, project_id, parent_task_id, when_kind, when_date,
+                     completed_at, deleted_at, priority, sort_order)
                 VALUES
-                    ($id, $title, $project, $section, $parent, $whenKind, $whenDate,
-                     $deadline, $completed, $deleted, $priority, $sort)
+                    ($id, $title, $project, $parent, $whenKind, $whenDate,
+                     $completed, $deleted, $priority, $sort)
                 ON CONFLICT(id) DO UPDATE SET
                     title           = excluded.title,
                     project_id      = excluded.project_id,
-                    section_id      = excluded.section_id,
                     parent_task_id  = excluded.parent_task_id,
                     when_kind       = excluded.when_kind,
                     when_date       = excluded.when_date,
-                    deadline_date   = excluded.deadline_date,
                     completed_at    = excluded.completed_at,
                     deleted_at      = excluded.deleted_at,
                     priority        = excluded.priority,
@@ -274,11 +248,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             Bind(cmd, "$id", task.Id.ToString());
             Bind(cmd, "$title", task.Title);
             Bind(cmd, "$project", task.ProjectId?.ToString());
-            Bind(cmd, "$section", task.SectionId?.ToString());
             Bind(cmd, "$parent", task.ParentTaskId?.ToString());
             Bind(cmd, "$whenKind", task.When.Kind.ToString());
             Bind(cmd, "$whenDate", task.When.Kind == WhenKind.OnDate ? LocalDate(task.When.Date) : null);
-            Bind(cmd, "$deadline", LocalDate(task.Deadline));
             Bind(cmd, "$completed", Instant(task.CompletedAt));
             Bind(cmd, "$deleted", Instant(task.DeletedAt));
             Bind(cmd, "$priority", (int)task.Priority);
@@ -312,47 +284,17 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         cmd.Transaction = tx;
         cmd.CommandText =
             """
-            INSERT INTO projects (id, name, icon, deadline_date, is_archived, completed_at, deleted_at, sort_order)
-            VALUES ($id, $name, $icon, $deadline, $archived, $completed, $deleted, $sort)
+            INSERT INTO projects (id, name, icon, deleted_at, sort_order)
+            VALUES ($id, $name, $icon, $deleted, $sort)
             ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name, icon = excluded.icon, deadline_date = excluded.deadline_date,
-                is_archived = excluded.is_archived, completed_at = excluded.completed_at,
+                name = excluded.name, icon = excluded.icon,
                 deleted_at = excluded.deleted_at, sort_order = excluded.sort_order;
             """;
         Bind(cmd, "$id", project.Id.ToString());
         Bind(cmd, "$name", project.Name);
         Bind(cmd, "$icon", project.Icon);
-        Bind(cmd, "$deadline", LocalDate(project.Deadline));
-        Bind(cmd, "$archived", project.IsArchived ? 1 : 0);
-        Bind(cmd, "$completed", Instant(project.CompletedAt));
         Bind(cmd, "$deleted", Instant(project.DeletedAt));
         Bind(cmd, "$sort", project.SortOrder);
-        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task UpsertSectionCoreAsync(Section section, SqliteTransaction tx, CancellationToken cancellationToken)
-    {
-        await using var cmd = _connection.CreateCommand();
-        cmd.Transaction = tx;
-        cmd.CommandText =
-            """
-            INSERT INTO sections
-                (id, project_id, name, deadline_date, is_archived, completed_at, deleted_at, sort_order)
-            VALUES ($id, $project, $name, $deadline, $archived, $completed, $deleted, $sort)
-            ON CONFLICT(id) DO UPDATE SET
-                project_id = excluded.project_id, name = excluded.name,
-                deadline_date = excluded.deadline_date, is_archived = excluded.is_archived,
-                completed_at = excluded.completed_at, deleted_at = excluded.deleted_at,
-                sort_order = excluded.sort_order;
-            """;
-        Bind(cmd, "$id", section.Id.ToString());
-        Bind(cmd, "$project", section.ProjectId.ToString());
-        Bind(cmd, "$name", section.Name);
-        Bind(cmd, "$deadline", LocalDate(section.Deadline));
-        Bind(cmd, "$archived", section.IsArchived ? 1 : 0);
-        Bind(cmd, "$completed", Instant(section.CompletedAt));
-        Bind(cmd, "$deleted", Instant(section.DeletedAt));
-        Bind(cmd, "$sort", section.SortOrder);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -380,22 +322,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default)
         => QueryRecordsAsync(
-            "SELECT id, name, icon, deadline_date, sort_order FROM projects " +
-            "WHERE deleted_at IS NULL AND is_archived = 0 AND completed_at IS NULL " +
-            "ORDER BY sort_order, name;",
+            "SELECT id, name, icon, sort_order FROM projects " +
+            "WHERE deleted_at IS NULL ORDER BY sort_order, name;",
             _ => { },
-            r => new ProjectListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), DateOrNull(r, 3), r.GetString(4)),
-            cancellationToken);
-
-    public Task<IReadOnlyList<SectionListItem>> GetSectionsByProjectAsync(
-        Guid projectId,
-        CancellationToken cancellationToken = default)
-        => QueryRecordsAsync(
-            "SELECT id, project_id, name, deadline_date, sort_order FROM sections " +
-            "WHERE project_id = $project AND deleted_at IS NULL AND is_archived = 0 " +
-            "AND completed_at IS NULL ORDER BY sort_order, name;",
-            cmd => Bind(cmd, "$project", projectId.ToString()),
-            r => new SectionListItem(Guid.Parse(r.GetString(0)), Guid.Parse(r.GetString(1)), r.GetString(2), DateOrNull(r, 3), r.GetString(4)),
+            r => new ProjectListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3)),
             cancellationToken);
 
     public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default)
@@ -425,21 +355,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "SELECT id FROM tasks WHERE project_id = $id AND deleted_at IS NULL;",
             cmd => Bind(cmd, "$id", projectId.ToString()), cancellationToken);
 
-    internal Task<IReadOnlyList<Guid>> GetTaskIdsBySectionAsync(Guid sectionId, CancellationToken cancellationToken = default)
-        => QueryIdsAsync(
-            "SELECT id FROM tasks WHERE section_id = $id AND deleted_at IS NULL;",
-            cmd => Bind(cmd, "$id", sectionId.ToString()), cancellationToken);
-
     internal Task<IReadOnlyList<Guid>> GetTaskIdsByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
         => QueryIdsAsync(
             "SELECT t.id FROM tasks t INNER JOIN task_labels tl ON tl.task_id = t.id " +
             "WHERE tl.label_id = $id AND t.deleted_at IS NULL;",
             cmd => Bind(cmd, "$id", labelId.ToString()), cancellationToken);
-
-    internal Task<IReadOnlyList<Guid>> GetSectionIdsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
-        => QueryIdsAsync(
-            "SELECT id FROM sections WHERE project_id = $id AND deleted_at IS NULL;",
-            cmd => Bind(cmd, "$id", projectId.ToString()), cancellationToken);
 
     // ---- Classification axis -------------------------------------------------
 
@@ -457,12 +377,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
             "AND project_id = $project ORDER BY completed_at IS NOT NULL, sort_order;",
             cmd => Bind(cmd, "$project", projectId.ToString()), cancellationToken);
-
-    public Task<IReadOnlyList<TaskListItem>> GetBySectionAsync(Guid sectionId, CancellationToken cancellationToken = default)
-        => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND section_id = $section ORDER BY completed_at IS NOT NULL, sort_order;",
-            cmd => Bind(cmd, "$section", sectionId.ToString()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
         => QueryAsync(
@@ -482,30 +396,22 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND ( " +
-            "(when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today) OR " +
-            "(deadline_date IS NOT NULL AND deadline_date <= $today) ) " +
-            "ORDER BY completed_at IS NOT NULL, COALESCE(when_date, deadline_date), sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today " +
+            "ORDER BY completed_at IS NOT NULL, when_date, sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND ( " +
-            "(when_kind = 'OnDate' AND when_date > $today) OR " +
-            "(deadline_date IS NOT NULL AND deadline_date > $today) ) " +
-            "ORDER BY completed_at IS NOT NULL, COALESCE(when_date, deadline_date), sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND when_kind = 'OnDate' AND when_date > $today " +
+            "ORDER BY completed_at IS NOT NULL, when_date, sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
             "AND when_kind = 'Unscheduled' ORDER BY completed_at IS NOT NULL, sort_order;",
-            _ => { }, cancellationToken);
-
-    public Task<IReadOnlyList<TaskListItem>> GetSomedayAsync(CancellationToken cancellationToken = default)
-        => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
-            "AND when_kind = 'SomeDay' ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
@@ -528,41 +434,27 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         if (end < start)
             throw new ArgumentException("Timeline end date must be on or after the start date.", nameof(end));
 
-        const string effectiveStart =
-            "CASE WHEN when_kind = 'OnDate' AND when_date IS NOT NULL THEN when_date ELSE deadline_date END";
-        const string effectiveEnd =
-            "CASE WHEN deadline_date IS NOT NULL THEN deadline_date ELSE when_date END";
-
         return QueryRecordsAsync(
             $"""
-            SELECT id, title, {effectiveStart}, {effectiveEnd}, completed_at, priority, when_kind
+            SELECT id, title, when_date, completed_at, priority
             FROM tasks
             WHERE deleted_at IS NULL
-              AND ((when_kind = 'OnDate' AND when_date IS NOT NULL) OR deadline_date IS NOT NULL)
-              AND {effectiveStart} <= $end
-              AND {effectiveEnd} >= $start
-            ORDER BY {effectiveStart}, completed_at IS NOT NULL, sort_order;
+              AND when_kind = 'OnDate' AND when_date IS NOT NULL
+              AND when_date >= $start
+              AND when_date <= $end
+            ORDER BY when_date, completed_at IS NOT NULL, sort_order;
             """,
             cmd =>
             {
                 Bind(cmd, "$start", start.ToString("yyyy-MM-dd"));
                 Bind(cmd, "$end", end.ToString("yyyy-MM-dd"));
             },
-            r =>
-            {
-                var itemStart = DateOnly.ParseExact(r.GetString(2), "yyyy-MM-dd");
-                var itemEnd = DateOnly.ParseExact(r.GetString(3), "yyyy-MM-dd");
-                if (itemEnd < itemStart)
-                    (itemStart, itemEnd) = (itemEnd, itemStart);
-                return new TimelineTaskItem(
-                    Guid.Parse(r.GetString(0)),
-                    r.GetString(1),
-                    itemStart,
-                    itemEnd,
-                    !r.IsDBNull(4),
-                    (Priority)r.GetInt64(5),
-                    Enum.Parse<WhenKind>(r.GetString(6)));
-            },
+            r => new TimelineTaskItem(
+                Guid.Parse(r.GetString(0)),
+                r.GetString(1),
+                DateOnly.ParseExact(r.GetString(2), "yyyy-MM-dd"),
+                !r.IsDBNull(3),
+                (Priority)r.GetInt64(4)),
             cancellationToken);
     }
 
@@ -641,14 +533,12 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         Id: Guid.Parse(r.GetString(0)),
         Title: r.GetString(1),
         ProjectId: GuidOrNull(r, 2),
-        SectionId: GuidOrNull(r, 3),
-        ParentTaskId: GuidOrNull(r, 4),
-        WhenKind: Enum.Parse<WhenKind>(r.GetString(5)),
-        WhenDate: DateOrNull(r, 6),
-        DeadlineDate: DateOrNull(r, 7),
-        IsCompleted: !r.IsDBNull(8),
-        Priority: (Priority)r.GetInt64(9),
-        SortOrder: r.GetString(10));
+        ParentTaskId: GuidOrNull(r, 3),
+        WhenKind: Enum.Parse<WhenKind>(r.GetString(4)),
+        WhenDate: DateOrNull(r, 5),
+        IsCompleted: !r.IsDBNull(6),
+        Priority: (Priority)r.GetInt64(7),
+        SortOrder: r.GetString(8));
 
     /// <summary>The current calendar day in the configured zone — computed, never stored.</summary>
     private string Today()

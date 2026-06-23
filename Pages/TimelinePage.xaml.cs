@@ -428,7 +428,6 @@ public sealed partial class TimelinePage : Page
         var compact = width < DetailCompactBreakpoint;
         SetResponsivePair(DetailMetaGrid, DetailProjectField, compact, new GridLength(1, GridUnitType.Star));
         SetResponsivePair(WhenDateTimeGrid, WhenTimePanel, compact, GridLength.Auto);
-        SetResponsivePair(DeadlineDateTimeGrid, DeadlineTimePanel, compact, GridLength.Auto);
     }
 
     private static void SetResponsivePair(Grid grid, FrameworkElement second, bool compact, GridLength normalSecondWidth)

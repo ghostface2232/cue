@@ -79,7 +79,6 @@ public sealed class KoreanDateParser : IDateParser
             return new ParsedQuickAdd(
                 title,
                 result.WhenAssigned ? result.When : ScheduledWhen.Unscheduled,
-                result.Deadline,
                 result.Recurrence);
         }
         catch

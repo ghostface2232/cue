@@ -8,8 +8,8 @@ namespace Cue.Storage;
 /// </summary>
 /// <remarks>
 /// Methods are generic over the concrete record type (<see cref="TaskItem"/>, <see cref="Project"/>,
-/// <see cref="Section"/>, <see cref="Label"/>): the type selects the storage partition. The
-/// foundation-phase implementation is file-based (<see cref="FileTaskStore"/>).
+/// <see cref="Label"/>): the type selects the storage partition. The foundation-phase implementation
+/// is file-based (<see cref="FileTaskStore"/>).
 /// </remarks>
 public interface ITaskStore
 {

@@ -40,9 +40,6 @@ public sealed class QuickAddResult
     /// <summary>The scheduled date, if recognized.</summary>
     public ScheduledWhen When { get; private set; } = ScheduledWhen.Unscheduled;
 
-    /// <summary>The deadline, if a "까지/마감/안에" expression was recognized.</summary>
-    public ZonedDateTime? Deadline { get; private set; }
-
     /// <summary>The recurrence, if a "매일/매주/…" expression was recognized.</summary>
     public RecurrenceRule? Recurrence { get; private set; }
 
@@ -53,15 +50,6 @@ public sealed class QuickAddResult
             return false;
         When = when;
         WhenAssigned = true;
-        return true;
-    }
-
-    /// <summary>Sets <see cref="Deadline"/> once; returns false if it was already set.</summary>
-    public bool TrySetDeadline(ZonedDateTime deadline)
-    {
-        if (Deadline.HasValue)
-            return false;
-        Deadline = deadline;
         return true;
     }
 

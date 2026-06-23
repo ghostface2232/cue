@@ -12,7 +12,9 @@ file static class Opt
     public const RegexOptions Flags = RegexOptions.CultureInvariant | RegexOptions.Compiled;
 }
 
-/// <summary>언젠가 / 나중에 / 다음에 / 담에 / 시간 나면 / 여유되면 / 기회 되면 → <see cref="ScheduledWhen.SomeDay"/>.
+/// <summary>언젠가 / 나중에 / 다음에 / 담에 / 시간 나면 / 여유되면 / 기회 되면 → an explicit
+/// <see cref="ScheduledWhen.Unscheduled"/> (the "언젠가" bucket; there is no separate Someday state).
+/// The phrase is still recognized and stripped from the title; it just resolves to no date.
 /// All multi-word markers use <c>\s*</c> so they match with or without the space ("여유되면" / "여유 되면").</summary>
 public sealed class SomedayRule : IQuickAddRule
 {
@@ -25,7 +27,7 @@ public sealed class SomedayRule : IQuickAddRule
         Korean.RightEdge, Opt.Flags);
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
-        => result.TrySetWhen(ScheduledWhen.SomeDay);
+        => result.TrySetWhen(ScheduledWhen.Unscheduled);
 }
 
 /// <summary>한/두/세 시간 후, N시간 후 → a When at the clock-relative moment.</summary>
@@ -155,7 +157,9 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         => ctx.Zoned(date, hasTime ? h : 0, hasTime ? m : 0);
 }
 
-/// <summary>…까지 / …마감 / N일 안에 → a <see cref="QuickAddResult.Deadline"/>.</summary>
+/// <summary>…까지 / …마감 / N일 안에 → an OnDate <see cref="QuickAddResult.When"/>. A task has a single
+/// date, so a "due" phrase resolves to the same When as a plain scheduled date ("금요일까지 보고서" →
+/// title "보고서", When 금요일). The phrase is still recognized and stripped from the title.</summary>
 public sealed class DeadlineRule : IQuickAddRule
 {
     public Regex Pattern { get; } = new(
@@ -184,7 +188,10 @@ public sealed class DeadlineRule : IQuickAddRule
         Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
         if (hasTime)
             h = context.DisambiguateBareHour(date, h, min, meridiemGiven);
-        return result.TrySetDeadline(context.Zoned(date, hasTime ? h : 0, hasTime ? min : 0));
+        var when = hasTime
+            ? ScheduledWhen.On(context.Zoned(date, h, min))
+            : ScheduledWhen.On(context.Zoned(date));
+        return result.TrySetWhen(when);
     }
 }
 

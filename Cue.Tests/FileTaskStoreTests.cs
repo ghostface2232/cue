@@ -23,11 +23,9 @@ public sealed class FileTaskStoreTests : IDisposable
         Title = "분기 보고서 마무리",
         Notes = "**굵게** 그리고 _기울임_ 마크다운",
         CompletedAt = new DateTimeOffset(2026, 6, 20, 1, 2, 3, TimeSpan.Zero),
-        Deadline = Zoned(2026, 7, 1, 18, 0),
         When = ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)),
         Priority = Priority.P1,
         ProjectId = Guid.NewGuid(),
-        SectionId = Guid.NewGuid(),
         ParentTaskId = Guid.NewGuid(),
         LabelIds = { Guid.NewGuid(), Guid.NewGuid() },
         Recurrence = new RecurrenceRule("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO", Zoned(2026, 6, 22, 9, 0)),
@@ -49,11 +47,9 @@ public sealed class FileTaskStoreTests : IDisposable
         Assert.Equal(task.Notes, loaded.Notes);
         Assert.Equal(task.CompletedAt, loaded.CompletedAt);
         Assert.True(loaded.IsCompleted);
-        Assert.Equal(task.Deadline, loaded.Deadline);
         Assert.Equal(task.When, loaded.When);
         Assert.Equal(task.Priority, loaded.Priority);
         Assert.Equal(task.ProjectId, loaded.ProjectId);
-        Assert.Equal(task.SectionId, loaded.SectionId);
         Assert.Equal(task.ParentTaskId, loaded.ParentTaskId);
         Assert.Equal(task.LabelIds, loaded.LabelIds);
         Assert.NotNull(loaded.Recurrence);
@@ -69,20 +65,19 @@ public sealed class FileTaskStoreTests : IDisposable
     public async Task ZonedDate_PreservesInstantAndZone()
     {
         var store = NewStore();
-        var task = new TaskItem { Deadline = Zoned(2026, 7, 1, 18, 0) };
+        var task = new TaskItem { When = ScheduledWhen.On(Zoned(2026, 7, 1, 18, 0)) };
 
         await store.SaveAsync(task);
         var loaded = await store.GetAsync<TaskItem>(task.Id);
 
-        Assert.Equal(task.Deadline!.Value.Utc, loaded!.Deadline!.Value.Utc);
-        Assert.Equal(Seoul, loaded.Deadline.Value.TimeZoneId);
+        Assert.Equal(task.When.Date!.Value.Utc, loaded!.When.Date!.Value.Utc);
+        Assert.Equal(Seoul, loaded.When.Date.Value.TimeZoneId);
         // The zone id survives, so display conversion still works after a round-trip.
-        Assert.Equal(task.Deadline.Value.ToLocal(), loaded.Deadline.Value.ToLocal());
+        Assert.Equal(task.When.Date.Value.ToLocal(), loaded.When.Date.Value.ToLocal());
     }
 
     [Theory]
     [InlineData("unscheduled")]
-    [InlineData("someday")]
     [InlineData("ondate")]
     public async Task ScheduledWhen_EachVariant_RoundTrips(string variant)
     {
@@ -90,7 +85,6 @@ public sealed class FileTaskStoreTests : IDisposable
         var when = variant switch
         {
             "unscheduled" => ScheduledWhen.Unscheduled,
-            "someday" => ScheduledWhen.SomeDay,
             "ondate" => ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)),
             _ => throw new ArgumentOutOfRangeException(nameof(variant)),
         };
@@ -113,9 +107,6 @@ public sealed class FileTaskStoreTests : IDisposable
             Name = "런치 준비",
             Notes = "보드 뷰로 본다",
             Color = "#4F8CC9",
-            Deadline = Zoned(2026, 8, 1, 9, 0),
-            IsArchived = true,
-            CompletedAt = new DateTimeOffset(2026, 7, 30, 0, 0, 0, TimeSpan.Zero),
             View = ProjectView.Board,
             SortOrder = "0|i00000:",
         };
@@ -127,30 +118,20 @@ public sealed class FileTaskStoreTests : IDisposable
         Assert.Equal(project.Name, loaded!.Name);
         Assert.Equal(project.Notes, loaded.Notes);
         Assert.Equal(project.Color, loaded.Color);
-        Assert.Equal(project.Deadline, loaded.Deadline);
-        Assert.True(loaded.IsArchived);
-        Assert.Equal(project.CompletedAt, loaded.CompletedAt);
-        Assert.True(loaded.IsCompleted);
         Assert.Equal(ProjectView.Board, loaded.View);
         Assert.Equal(project.SortOrder, loaded.SortOrder);
     }
 
     [Fact]
-    public async Task SectionAndLabel_RoundTrip()
+    public async Task Label_RoundTrips()
     {
         var store = NewStore();
-        var section = new Section { ProjectId = Guid.NewGuid(), Name = "이번 주", SortOrder = "0|a:" };
         var label = new Label { Name = "긴급", Color = "#D33", SortOrder = "0|b:" };
 
-        await store.SaveAsync(section);
         await store.SaveAsync(label);
 
-        var loadedSection = await store.GetAsync<Section>(section.Id);
         var loadedLabel = await store.GetAsync<Label>(label.Id);
 
-        Assert.Equal(section.ProjectId, loadedSection!.ProjectId);
-        Assert.Equal(section.Name, loadedSection.Name);
-        Assert.Equal(section.SortOrder, loadedSection.SortOrder);
         Assert.Equal(label.Name, loadedLabel!.Name);
         Assert.Equal(label.Color, loadedLabel.Color);
         Assert.Equal(label.SortOrder, loadedLabel.SortOrder);
@@ -174,7 +155,7 @@ public sealed class FileTaskStoreTests : IDisposable
     {
         var store = NewStore();
         var task = new TaskItem { CompletedAt = DateTimeOffset.UtcNow, When = ScheduledWhen.On(Zoned(2026, 6, 25, 0, 0)) };
-        var project = new Project { IsArchived = true };
+        var project = new Project { Color = "#4F8CC9" };
 
         await store.SaveAsync(task);
         await store.SaveAsync(project);
@@ -187,7 +168,7 @@ public sealed class FileTaskStoreTests : IDisposable
         Assert.DoesNotContain("isDeleted", taskJson);
         Assert.DoesNotContain("hasDate", taskJson);
         // Real fields with setters stay.
-        Assert.Contains("isArchived", projectJson);
+        Assert.Contains("color", projectJson);
     }
 
     [Fact]

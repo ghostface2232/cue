@@ -69,11 +69,9 @@ public sealed class RecurringTaskService : IRecurringTaskService
         Title = original.Title,
         Notes = original.Notes,
         CompletedAt = completedAt,
-        Deadline = original.Deadline,
-        When = original.When, // the instance's own scheduled date, frozen as the historical record
+        When = original.When, // the instance's own date, frozen as the historical record
         Priority = original.Priority,
         ProjectId = original.ProjectId,
-        SectionId = original.SectionId,
         ParentTaskId = original.ParentTaskId,
         LabelIds = new List<Guid>(original.LabelIds),
 

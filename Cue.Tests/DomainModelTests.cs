@@ -14,12 +14,10 @@ public class DomainModelTests
         Assert.Null(task.Notes);
         Assert.Null(task.CompletedAt);
         Assert.False(task.IsCompleted);
-        Assert.Null(task.Deadline);
         Assert.Equal(WhenKind.Unscheduled, task.When.Kind);
         Assert.False(task.When.HasDate);
         Assert.Equal(Priority.None, task.Priority);
         Assert.Null(task.ProjectId);
-        Assert.Null(task.SectionId);
         Assert.Null(task.ParentTaskId);
         Assert.Null(task.Recurrence);
         Assert.NotNull(task.LabelIds);
@@ -42,34 +40,9 @@ public class DomainModelTests
     }
 
     [Fact]
-    public void Project_Completion_IsDerivedFromCompletedAt()
-    {
-        var project = new Project();
-        Assert.False(project.IsCompleted);
-
-        project.CompletedAt = new DateTimeOffset(2026, 6, 22, 3, 0, 0, TimeSpan.Zero);
-        Assert.True(project.IsCompleted);
-    }
-
-    [Fact]
-    public void Section_HasProjectLevelLifecycleAndDeadlineSemantics()
-    {
-        var deadline = ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 18, 0, 0), "Asia/Seoul");
-        var section = new Section { Deadline = deadline };
-
-        Assert.False(section.IsArchived);
-        Assert.False(section.IsCompleted);
-        Assert.Equal(deadline, section.Deadline);
-
-        section.CompletedAt = new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.FromHours(9));
-        Assert.True(section.IsCompleted);
-        Assert.Equal(TimeSpan.Zero, section.CompletedAt!.Value.Offset);
-    }
-
-    [Fact]
     public void EveryRecordType_CarriesTheCommonAuditFields()
     {
-        RecordBase[] records = { new TaskItem(), new Project(), new Label(), new Section() };
+        RecordBase[] records = { new TaskItem(), new Project(), new Label() };
 
         foreach (var record in records)
         {
@@ -110,8 +83,8 @@ public class DomainModelTests
         Assert.Equal(2, distinct.Count);
 
         // A different record type with the same Guid is not equal.
-        var section = new Section { Id = id };
-        Assert.False(a.Equals(section));
+        var project = new Project { Id = id };
+        Assert.False(a.Equals(project));
     }
 
     [Fact]
@@ -141,21 +114,19 @@ public class DomainModelTests
             Title = "Book flights",
             ParentTaskId = parent.Id,
             Priority = Priority.P1,
-            Deadline = ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 18, 0, 0), "Asia/Seoul"),
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 7, 1, 18, 0, 0), "Asia/Seoul")),
         };
 
         Assert.Equal(parent.Id, child.ParentTaskId);
         Assert.Equal(Priority.P1, child.Priority);
-        Assert.NotNull(child.Deadline);
+        Assert.True(child.When.HasDate);
     }
 
     [Fact]
-    public void Project_Defaults_AreActiveListView()
+    public void Project_Defaults_AreListView()
     {
         var project = new Project();
 
-        Assert.False(project.IsArchived);
-        Assert.Null(project.CompletedAt);
         Assert.Equal(ProjectView.List, project.View);
     }
 }

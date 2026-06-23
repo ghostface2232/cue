@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using Cue.Storage.Index;
 
 namespace Cue.ViewModels;
 
@@ -7,8 +6,7 @@ namespace Cue.ViewModels;
 public sealed record TaskListNavigation(
     TaskListMode Mode,
     Guid? FilterId = null,
-    string? Title = null,
-    DateOnly? DeadlineDate = null);
+    string? Title = null);
 
 /// <summary>Input for a record rename command.</summary>
 public sealed record RenameRecordRequest(Guid Id, string Name);
@@ -16,29 +14,12 @@ public sealed record RenameRecordRequest(Guid Id, string Name);
 /// <summary>A drag-reorder move within a list, by source and destination position.</summary>
 public sealed record ReorderRequest(int OldIndex, int NewIndex);
 
-/// <summary>A section heading and its indexed task rows on a project page.</summary>
-public sealed class TaskSectionGroupViewModel
+/// <summary>A synthetic group heading and its indexed task rows — used by the 중요도 (priority) view,
+/// the only grouped list now that sections are gone.</summary>
+public sealed class TaskGroupViewModel
 {
-    public Guid? Id { get; }
     public string Name { get; }
-    public string DeadlineCaption { get; }
-    public bool CanEdit => Id is not null;
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    public TaskSectionGroupViewModel(SectionListItem? section)
-    {
-        Id = section?.Id;
-        Name = section?.Name ?? "기타";
-        DeadlineCaption = section?.DeadlineDate is { } deadline
-            ? $"마감일 {deadline.Month}월 {deadline.Day}일"
-            : string.Empty;
-    }
-
-    /// <summary>A synthetic, non-editable group heading (e.g. a 중요도 bucket) with no backing section.</summary>
-    public TaskSectionGroupViewModel(string name)
-    {
-        Id = null;
-        Name = name;
-        DeadlineCaption = string.Empty;
-    }
+    public TaskGroupViewModel(string name) => Name = name;
 }

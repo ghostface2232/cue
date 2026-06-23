@@ -68,9 +68,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     {
         var tasks = await _files.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
         var projects = await _files.GetAllAsync<Project>(cancellationToken).ConfigureAwait(false);
-        var sections = await _files.GetAllAsync<Section>(cancellationToken).ConfigureAwait(false);
         var labels = await _files.GetAllAsync<Label>(cancellationToken).ConfigureAwait(false);
-        await _index.RebuildAsync(tasks, projects, sections, labels, cancellationToken).ConfigureAwait(false);
+        await _index.RebuildAsync(tasks, projects, labels, cancellationToken).ConfigureAwait(false);
     }
 
     // ---- Write path: file first, then index (always both) --------------------
@@ -90,12 +89,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
 
         if (record is TaskItem task)
             await NormalizeTaskReferencesAsync(task, cancellationToken).ConfigureAwait(false);
-        else if (record is Section section)
-        {
-            var project = await _files.GetAsync<Project>(section.ProjectId, cancellationToken).ConfigureAwait(false);
-            if (project?.IsDeleted == true)
-                throw new InvalidOperationException("A section cannot be saved under a deleted project.");
-        }
 
         await _files.SaveAsync(record, cancellationToken).ConfigureAwait(false);
         await ReflectAsync(record, cancellationToken).ConfigureAwait(false);
@@ -107,20 +100,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         {
             var project = await _files.GetAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
             if (project?.IsDeleted == true)
-            {
                 task.ProjectId = null;
-                task.SectionId = null;
-            }
-        }
-
-        if (task.SectionId is { } sectionId)
-        {
-            var section = await _files.GetAsync<Section>(sectionId, cancellationToken).ConfigureAwait(false);
-            if (section?.IsDeleted == true)
-            {
-                task.ProjectId = null;
-                task.SectionId = null;
-            }
         }
 
         if (task.LabelIds.Count > 0)
@@ -141,7 +121,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         try
         {
             if (typeof(T) == typeof(Project)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Project, id, cancellationToken).ConfigureAwait(false);
-            else if (typeof(T) == typeof(Section)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Section, id, cancellationToken).ConfigureAwait(false);
             else if (typeof(T) == typeof(Label)) await RunContainerDeletionCoreAsync(ContainerDeletionKind.Label, id, cancellationToken).ConfigureAwait(false);
             else await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
         }
@@ -172,7 +151,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         => operation.Kind switch
         {
             ContainerDeletionKind.Project => DeleteProjectAsync(operation.TargetId, cancellationToken),
-            ContainerDeletionKind.Section => DeleteSectionAsync(operation.TargetId, cancellationToken),
             ContainerDeletionKind.Label => DeleteLabelAsync(operation.TargetId, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(operation.Kind)),
         };
@@ -183,7 +161,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
         {
             case TaskItem task: await _index.ReflectAsync(task, cancellationToken).ConfigureAwait(false); break;
             case Project project: await _index.ReflectAsync(project, cancellationToken).ConfigureAwait(false); break;
-            case Section section: await _index.ReflectAsync(section, cancellationToken).ConfigureAwait(false); break;
             case Label label: await _index.ReflectAsync(label, cancellationToken).ConfigureAwait(false); break;
             default: throw new NotSupportedException($"Index reflection is not defined for {record.GetType().Name}.");
         }
@@ -199,38 +176,18 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
 
     private async Task DeleteProjectAsync(Guid projectId, CancellationToken cancellationToken)
     {
-        // Foundation deletion policy: preserve user work by moving every live task to Inbox rather
-        // than cascading task tombstones. Both container ids are cleared because project deletion
-        // also tombstones its child sections. This is intentionally the least destructive default.
+        // Foundation deletion policy: preserve user work by moving every live task to the unclassified
+        // Cue home (clear ProjectId) rather than cascading task tombstones. The least destructive
+        // default. With sections gone the cascade is a single reparent step.
         foreach (var taskId in await _index.GetTaskIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
         {
             var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
             if (task is null || task.ProjectId != projectId) continue;
             task.ProjectId = null;
-            task.SectionId = null;
             await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
-
-        foreach (var sectionId in await _index.GetSectionIdsByProjectAsync(projectId, cancellationToken).ConfigureAwait(false))
-            await SoftDeleteAndReflectAsync<Section>(sectionId, cancellationToken).ConfigureAwait(false);
 
         await SoftDeleteAndReflectAsync<Project>(projectId, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task DeleteSectionAsync(Guid sectionId, CancellationToken cancellationToken)
-    {
-        // Same preservation policy as project deletion: removing the grouping must never delete the
-        // work inside it. Move affected tasks to the unclassified Inbox (clear both references).
-        foreach (var taskId in await _index.GetTaskIdsBySectionAsync(sectionId, cancellationToken).ConfigureAwait(false))
-        {
-            var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
-            if (task is null || task.SectionId != sectionId) continue;
-            task.ProjectId = null;
-            task.SectionId = null;
-            await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
-        }
-
-        await SoftDeleteAndReflectAsync<Section>(sectionId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task DeleteLabelAsync(Guid labelId, CancellationToken cancellationToken)
@@ -260,9 +217,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public Task<IReadOnlyList<ProjectListItem>> GetProjectsAsync(CancellationToken cancellationToken = default)
         => _index.GetProjectsAsync(cancellationToken);
 
-    public Task<IReadOnlyList<SectionListItem>> GetSectionsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
-        => _index.GetSectionsByProjectAsync(projectId, cancellationToken);
-
     public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default)
         => _index.GetLabelsAsync(cancellationToken);
 
@@ -278,9 +232,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
         => _index.GetByProjectAsync(projectId, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetBySectionAsync(Guid sectionId, CancellationToken cancellationToken = default)
-        => _index.GetBySectionAsync(sectionId, cancellationToken);
-
     public Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
         => _index.GetByLabelAsync(labelId, cancellationToken);
 
@@ -295,9 +246,6 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
 
     public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default)
         => _index.GetAnytimeAsync(cancellationToken);
-
-    public Task<IReadOnlyList<TaskListItem>> GetSomedayAsync(CancellationToken cancellationToken = default)
-        => _index.GetSomedayAsync(cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
         => _index.GetLogbookAsync(cancellationToken);

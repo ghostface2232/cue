@@ -91,19 +91,7 @@ public partial class TaskRowViewModel : ObservableObject
     }
 
     private static string BuildSchedule(TaskListItem item)
-    {
-        var parts = new List<string>();
-
-        if (item.WhenKind == WhenKind.SomeDay)
-            parts.Add("나중에");
-        else if (item.WhenDate is { } when)
-            parts.Add("시작 " + Day(when));
-
-        if (item.DeadlineDate is { } deadline)
-            parts.Add("마감 " + Day(deadline));
-
-        return string.Join("   ·   ", parts);
-    }
+        => item.WhenDate is { } when ? Day(when) : string.Empty;
 
     private static string Day(DateOnly d)
         => d.ToString("M월 d일 (ddd)", CultureInfo.GetCultureInfo("ko-KR"));

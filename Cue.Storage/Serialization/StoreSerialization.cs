@@ -24,7 +24,7 @@ public static class StoreSerialization
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             // Drop computed/derived properties (IsCompleted, IsDeleted, HasDate, …) without the
             // domain ever knowing about serialization: they have no setter, so they are removed
-            // from the contract here. Real fields (IsArchived, etc.) have a setter and stay.
+            // from the contract here. Real fields (Notes, Priority, etc.) have a setter and stay.
             TypeInfoResolver = new DefaultJsonTypeInfoResolver
             {
                 Modifiers = { DropReadOnlyComputedProperties },

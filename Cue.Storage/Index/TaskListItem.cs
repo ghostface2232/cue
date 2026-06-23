@@ -13,9 +13,9 @@ namespace Cue.Storage.Index;
 /// (Notes, Recurrence, full label set, the raw <see cref="ZonedDateTime"/> instants) are deliberately
 /// omitted — a detail view loads the full <see cref="TaskItem"/> by id from the store when needed.
 /// <para>
-/// The two date fields are stored as calendar <see cref="DateOnly"/> values — the local date the
-/// user pinned, in the task's own time zone — because every time-axis view is a date comparison.
-/// The index never stores which view a task falls into; that is computed at query time against the
+/// The When date is stored as a calendar <see cref="DateOnly"/> value — the local date the user
+/// pinned, in the task's own time zone — because every time-axis view is a date comparison. The
+/// index never stores which view a task falls into; that is computed at query time against the
 /// current day.
 /// </para>
 /// </remarks>
@@ -23,11 +23,9 @@ public sealed record TaskListItem(
     Guid Id,
     string Title,
     Guid? ProjectId,
-    Guid? SectionId,
     Guid? ParentTaskId,
     WhenKind WhenKind,
     DateOnly? WhenDate,
-    DateOnly? DeadlineDate,
     bool IsCompleted,
     Priority Priority,
     string SortOrder);

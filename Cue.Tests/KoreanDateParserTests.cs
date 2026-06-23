@@ -40,7 +40,6 @@ public sealed class KoreanDateParserTests
         Assert.Equal(title, r.Title);
         Assert.Equal(WhenKind.OnDate, r.When.Kind);
         Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
-        Assert.Null(r.Deadline);
         Assert.Null(r.Recurrence);
     }
 
@@ -261,12 +260,13 @@ public sealed class KoreanDateParserTests
     // ---- Attached particles that still carry a date/time --------------------
 
     [Fact]
-    public void Colloquial_NaelKkaji_IsDeadlineTomorrow()
+    public void Colloquial_NaelKkaji_IsWhenTomorrow()
     {
+        // "…까지" is still recognized and stripped, but a task has a single date: it resolves to When.
         var r = Parse("낼까지 보고서 제출");
         Assert.Equal("보고서 제출", r.Title);
-        Assert.Equal(Today.AddDays(1), ZonedDate(r.Deadline!.Value));
-        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
     }
 
     [Fact]
@@ -288,38 +288,40 @@ public sealed class KoreanDateParserTests
         Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
     }
 
-    // ---- 5. Deadlines -------------------------------------------------------
+    // ---- 5. Due expressions (까지 / 마감 / N일 안에) → a single When ----------------
 
     [Fact]
-    public void DeadlineParticle_RoutesToDeadline_NotWhen()
+    public void DueParticle_ResolvesToWhen()
     {
+        // "금요일까지 보고서" → title "보고서", When 금요일. There is no separate deadline.
         var r = Parse("금요일까지 보고서 제출");
         Assert.Equal("보고서 제출", r.Title);
-        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
-        Assert.NotNull(r.Deadline);
-        Assert.Equal(DayOfWeek.Friday, ZonedDate(r.Deadline!.Value).DayOfWeek);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(DayOfWeek.Friday, WhenDate(r.When).DayOfWeek);
     }
 
     [Fact]
-    public void DeadlineRelative_AndWithinDays()
+    public void DueRelative_AndWithinDays()
     {
         var tomorrow = Parse("내일까지 과제 마무리");
         Assert.Equal("과제 마무리", tomorrow.Title);
-        Assert.Equal(Today.AddDays(1), ZonedDate(tomorrow.Deadline!.Value));
+        Assert.Equal(WhenKind.OnDate, tomorrow.When.Kind);
+        Assert.Equal(Today.AddDays(1), WhenDate(tomorrow.When));
 
         var within = Parse("3일 안에 교환 신청 넣기");
         Assert.Equal("교환 신청 넣기", within.Title);
-        Assert.Equal(Today.AddDays(3), ZonedDate(within.Deadline!.Value));
-        Assert.Equal(WhenKind.Unscheduled, within.When.Kind);
+        Assert.Equal(WhenKind.OnDate, within.When.Kind);
+        Assert.Equal(Today.AddDays(3), WhenDate(within.When));
     }
 
     [Fact]
-    public void DeadlineAbsoluteMonthDay()
+    public void DueAbsoluteMonthDay()
     {
         var r = Parse("5월 31일까지 종합소득세 신고");
         Assert.Equal("종합소득세 신고", r.Title);
-        Assert.Equal(5, ZonedDate(r.Deadline!.Value).Month);
-        Assert.Equal(31, ZonedDate(r.Deadline!.Value).Day);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(5, WhenDate(r.When).Month);
+        Assert.Equal(31, WhenDate(r.When).Day);
     }
 
     // ---- 6. Recurrence ------------------------------------------------------
@@ -342,7 +344,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
     }
 
-    // ---- 7/8. Unscheduled & Someday -----------------------------------------
+    // ---- 7/8. Unscheduled & "언젠가" markers ---------------------------------
 
     [Theory]
     [InlineData("새 노트북 알아보기")]
@@ -353,7 +355,6 @@ public sealed class KoreanDateParserTests
         var r = Parse(input);
         Assert.Equal(input, r.Title);
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
-        Assert.Null(r.Deadline);
         Assert.Null(r.Recurrence);
     }
 
@@ -367,12 +368,14 @@ public sealed class KoreanDateParserTests
     [InlineData("여유되면 자전거 정비하기", "자전거 정비하기")]
     [InlineData("기회 되면 부모님과 여행", "부모님과 여행")]
     [InlineData("기회되면 중국어 배우기", "중국어 배우기")]
-    public void SomedayMarkers_BecomeSomeDay(string input, string title)
+    public void SomedayMarkers_BecomeUnscheduled(string input, string title)
     {
+        // The "언젠가/나중에/…" phrase is recognized and stripped, but it resolves to Unscheduled —
+        // there is no separate Someday state; these tasks live in the "언젠가" (Anytime) bucket.
         var r = Parse(input);
         Assert.Equal(title, r.Title);
-        Assert.Equal(WhenKind.SomeDay, r.When.Kind);
-        Assert.Null(r.Deadline);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.False(r.When.HasDate);
     }
 
     // ---- 10. Misrecognition guards ------------------------------------------
@@ -388,7 +391,6 @@ public sealed class KoreanDateParserTests
         var r = Parse(input);
         Assert.Equal(input, r.Title);
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
-        Assert.Null(r.Deadline);
         Assert.Null(r.Recurrence);
     }
 
@@ -405,7 +407,6 @@ public sealed class KoreanDateParserTests
         var r = Parse(input);
         Assert.Equal(input, r.Title);
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
-        Assert.Null(r.Deadline);
         Assert.Null(r.Recurrence);
     }
 
@@ -441,22 +442,23 @@ public sealed class KoreanDateParserTests
     }
 
     [Fact]
-    public void TrailingDeadline_IsRecognized()
+    public void TrailingDue_IsRecognizedAsWhen()
     {
         var r = Parse("보고서 금요일까지 끝내기");
         Assert.Equal("보고서 끝내기", r.Title);
-        Assert.Equal(DayOfWeek.Friday, ZonedDate(r.Deadline!.Value).DayOfWeek);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(DayOfWeek.Friday, WhenDate(r.When).DayOfWeek);
     }
 
     [Fact]
-    public void Composite_SplitsScheduledDateAndDeadline()
+    public void Composite_DateAndTimeComposeIntoOneWhen()
     {
-        var r = Parse("내일 오전에 자료 모아서 금요일까지 기획안 제출");
+        // A task has a single date: a date + part-of-day compose into one When, with both phrases
+        // stripped from the title.
+        var r = Parse("내일 오전에 자료 모아서 기획안 제출");
         Assert.Equal("자료 모아서 기획안 제출", r.Title);
         Assert.Equal(WhenKind.OnDate, r.When.Kind);
         Assert.Equal(Today.AddDays(1), WhenDate(r.When));
-        Assert.NotNull(r.Deadline);
-        Assert.Equal(DayOfWeek.Friday, ZonedDate(r.Deadline!.Value).DayOfWeek);
     }
 
     // ---- Robustness ---------------------------------------------------------
@@ -468,7 +470,6 @@ public sealed class KoreanDateParserTests
     {
         var r = Parse(input);
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
-        Assert.Null(r.Deadline);
         Assert.Null(r.Recurrence);
     }
 }

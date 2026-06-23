@@ -153,8 +153,7 @@ public sealed partial class MainWindow : Window
         ("today", "", "오늘 할 일"),
         ("upcoming", "", "앞으로 할 일"),
         ("timeline", "\uE9D2", "타임라인"),
-        ("anytime", "", "언제든 할 일"),
-        ("someday", "", "나중에 할 일"),
+        ("anytime", "", "언젠가 할 일"),
         ("logbook", "", "완료한 일"),
         ("priority", "", "중요도"),
     };
@@ -165,7 +164,6 @@ public sealed partial class MainWindow : Window
         "upcoming" => UpcomingItem,
         "timeline" => TimelineItem,
         "anytime" => AnytimeItem,
-        "someday" => SomedayItem,
         "logbook" => LogbookItem,
         "priority" => PriorityItem,
         _ => throw new ArgumentOutOfRangeException(nameof(key)),
@@ -260,7 +258,7 @@ public sealed partial class MainWindow : Window
         var item = new NavigationViewItem
         {
             Content = project.Name,
-            Tag = new TaskListNavigation(TaskListMode.Project, project.Id, project.Name, project.DeadlineDate),
+            Tag = new TaskListNavigation(TaskListMode.Project, project.Id, project.Name),
             Icon = icon,
         };
         // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
@@ -435,7 +433,7 @@ public sealed partial class MainWindow : Window
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Project && _currentNavigation.FilterId == project.Id;
             await ViewModel.RenameProjectCommand.ExecuteAsync(new RenameRecordRequest(project.Id, name));
             RebuildLiveNavigation();
-            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Project, project.Id, name, project.DeadlineDate));
+            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Project, project.Id, name));
         });
     }
 

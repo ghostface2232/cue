@@ -167,36 +167,32 @@ public sealed class TimelineTaskRowViewModel
 
     public Guid Id { get; }
     public string Title { get; }
-    public DateOnly StartDate { get; }
-    public DateOnly EndDate { get; }
+    public DateOnly Date { get; }
     public string DateCaption { get; }
     public bool IsCompleted { get; }
     public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
     public Priority Priority { get; }
     public bool HasPriority => Priority != Priority.None;
+
+    /// <summary>Left offset of the card, placed at the task's single When date (a point, not a bar).</summary>
     public double StartOffset { get; }
-    public double BarWidth { get; }
+
+    /// <summary>Fixed card width — one day-column wide. The timeline shows a card at a date, not a span.</summary>
+    public double CardWidth { get; }
     public double TrackWidth { get; }
 
     public TimelineTaskRowViewModel(TimelineTaskItem item, DateOnly rangeStart, DateOnly rangeEnd, double dayWidth)
     {
         Id = item.Id;
         Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
-        StartDate = item.StartDate;
-        EndDate = item.EndDate;
+        Date = item.Date;
         IsCompleted = item.IsCompleted;
         Priority = item.Priority;
 
-        var clampedStart = item.StartDate < rangeStart ? rangeStart : item.StartDate;
-        var clampedEnd = item.EndDate > rangeEnd ? rangeEnd : item.EndDate;
-        if (clampedEnd < clampedStart)
-            clampedEnd = clampedStart;
-
-        StartOffset = (clampedStart.DayNumber - rangeStart.DayNumber) * dayWidth + 8;
-        BarWidth = Math.Max(dayWidth - 16, (clampedEnd.DayNumber - clampedStart.DayNumber + 1) * dayWidth - 16);
+        var clamped = item.Date < rangeStart ? rangeStart : item.Date > rangeEnd ? rangeEnd : item.Date;
+        StartOffset = (clamped.DayNumber - rangeStart.DayNumber) * dayWidth + 8;
+        CardWidth = dayWidth - 16;
         TrackWidth = (rangeEnd.DayNumber - rangeStart.DayNumber + 1) * dayWidth;
-        DateCaption = item.StartDate == item.EndDate
-            ? item.StartDate.ToString("M월 d일 (ddd)", Korean)
-            : $"{item.StartDate.ToString("M월 d일", Korean)} - {item.EndDate.ToString("M월 d일", Korean)}";
+        DateCaption = item.Date.ToString("M월 d일 (ddd)", Korean);
     }
 }

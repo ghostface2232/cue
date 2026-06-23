@@ -1,9 +1,9 @@
 namespace Cue.Domain;
 
-/// <summary>The kind of "when" a task is scheduled for (Things' When semantics).</summary>
+/// <summary>The kind of "when" a task is scheduled for.</summary>
 public enum WhenKind
 {
-    /// <summary>미정 — no scheduled date; the task does not surface in Today/Upcoming.</summary>
+    /// <summary>미정 — no scheduled date; the task surfaces only in "언젠가" (Anytime), never Today/Upcoming.</summary>
     Unscheduled,
 
     /// <summary>
@@ -12,19 +12,15 @@ public enum WhenKind
     /// compares against the current day.
     /// </summary>
     OnDate,
-
-    /// <summary>언젠가 — Things' "Someday"; parked, with no date.</summary>
-    SomeDay,
 }
 
 /// <summary>
-/// A task's scheduled date ("When"): when the user intends to work on it, and the basis for
-/// Today/Upcoming.
+/// A task's single date ("When"): when the user intends to work on it / when it is due, and the
+/// basis for Today/Upcoming/Timeline. There is no separate deadline — a task has exactly one date.
 /// </summary>
 /// <remarks>
-/// There are only three stored states: <see cref="WhenKind.Unscheduled"/> (no date),
-/// <see cref="WhenKind.OnDate"/> (a concrete zoned date), and <see cref="WhenKind.SomeDay"/>
-/// (parked, no date).
+/// There are only two stored states: <see cref="WhenKind.Unscheduled"/> (no date) and
+/// <see cref="WhenKind.OnDate"/> (a concrete zoned date).
 /// <para>
 /// "Today" is <b>not</b> stored as a distinct state. When the user picks it, the caller stamps the
 /// current day in the user's time zone and stores it as <see cref="WhenKind.OnDate"/>. The domain
@@ -32,17 +28,16 @@ public enum WhenKind
 /// <see cref="Date"/> against the current day.
 /// </para>
 /// <para>
-/// A concrete <see cref="Date"/> is a user-specified scheduled date, so it stores UTC plus the
-/// original time zone (<see cref="ZonedDateTime"/>). The default value is
-/// <see cref="WhenKind.Unscheduled"/>.
+/// A concrete <see cref="Date"/> is a user-specified date, so it stores UTC plus the original time
+/// zone (<see cref="ZonedDateTime"/>). The default value is <see cref="WhenKind.Unscheduled"/>.
 /// </para>
 /// </remarks>
 /// <remarks>
 /// The setters are private so the only ways to build a value are the factories below
-/// (<see cref="Unscheduled"/>, <see cref="SomeDay"/>, <see cref="On"/>) — and the struct's
-/// <c>default</c>, which is <see cref="Unscheduled"/>. This makes the invalid combinations
-/// (OnDate without a date, or a dateless state carrying a date) unrepresentable. The guard is pure
-/// domain logic; it pulls in no serialization concern.
+/// (<see cref="Unscheduled"/>, <see cref="On"/>) — and the struct's <c>default</c>, which is
+/// <see cref="Unscheduled"/>. This makes the invalid combinations (OnDate without a date, or a
+/// dateless state carrying a date) unrepresentable. The guard is pure domain logic; it pulls in no
+/// serialization concern.
 /// </remarks>
 public readonly record struct ScheduledWhen
 {
@@ -54,9 +49,6 @@ public readonly record struct ScheduledWhen
 
     /// <summary>미정 — the default, no scheduled date.</summary>
     public static readonly ScheduledWhen Unscheduled = default;
-
-    /// <summary>언젠가.</summary>
-    public static readonly ScheduledWhen SomeDay = new() { Kind = WhenKind.SomeDay };
 
     /// <summary>
     /// Schedule for a concrete (zoned) date. Use this for a specific day and for "Today" (pass the

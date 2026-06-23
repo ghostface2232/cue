@@ -10,7 +10,7 @@ namespace Cue.Tests;
 public sealed class ViewModelRegressionTests
 {
     [Fact]
-    public async Task DetailSavePreservesWhenAndDeadlineTimes()
+    public async Task DetailSavePreservesWhenTime()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -22,7 +22,6 @@ public sealed class ViewModelRegressionTests
         {
             Title = "meeting",
             When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 15, 30, 0), "UTC")),
-            Deadline = ZonedDateTime.FromLocal(new DateTime(2026, 6, 25, 18, 45, 0), "UTC"),
         };
         await store.SaveAsync(task);
 
@@ -33,7 +32,6 @@ public sealed class ViewModelRegressionTests
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.NotNull(saved);
         Assert.Equal(new TimeSpan(15, 30, 0), saved.When.Date!.Value.ToLocal().TimeOfDay);
-        Assert.Equal(new TimeSpan(18, 45, 0), saved.Deadline!.Value.ToLocal().TimeOfDay);
     }
 
     [Fact]
@@ -63,7 +61,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task DetailSaveWithoutDateEditsPreservesOriginalTimeZonesAndInstants()
+    public async Task DetailSaveWithoutDateEditsPreservesOriginalTimeZoneAndInstant()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -72,8 +70,7 @@ public sealed class ViewModelRegressionTests
             clock,
             TimeZoneInfo.Utc);
         var originalWhen = ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 15, 30, 0), "Korea Standard Time");
-        var originalDeadline = ZonedDateTime.FromLocal(new DateTime(2026, 6, 25, 18, 45, 0), "Korea Standard Time");
-        var task = new TaskItem { Title = "zoned", When = ScheduledWhen.On(originalWhen), Deadline = originalDeadline };
+        var task = new TaskItem { Title = "zoned", When = ScheduledWhen.On(originalWhen) };
         await store.SaveAsync(task);
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
@@ -84,7 +81,6 @@ public sealed class ViewModelRegressionTests
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.NotNull(saved);
         Assert.Equal(originalWhen, saved.When.Date);
-        Assert.Equal(originalDeadline, saved.Deadline);
     }
 
     [Fact]
@@ -168,7 +164,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task UnscheduledTaskOffersOptionalWhenEditorAlongsideDeadline()
+    public async Task UnscheduledTaskOffersOptionalWhenEditor()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -176,17 +172,13 @@ public sealed class ViewModelRegressionTests
             new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
             clock,
             TimeZoneInfo.Utc);
-        var task = new TaskItem
-        {
-            Title = "deadline first",
-            Deadline = ZonedDateTime.FromLocal(new DateTime(2026, 6, 25, 18, 0, 0), "UTC"),
-        };
+        var task = new TaskItem { Title = "no date yet" };
         await store.SaveAsync(task);
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
 
-        Assert.True(vm.Detail.HasDeadline);
+        // No date yet: the "+ 날짜 추가" affordance shows, the editor is hidden.
         Assert.True(vm.Detail.CanAddWhen);
         Assert.False(vm.Detail.IsWhenEditorVisible);
 
@@ -200,7 +192,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task QuickAddWithTypedDate_BecomesDeadline_NotSomeday()
+    public async Task QuickAddWithTypedDate_BecomesOnDateWhen_DatelessStaysUnscheduled()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -210,25 +202,26 @@ public sealed class ViewModelRegressionTests
             TimeZoneInfo.Utc);
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
 
-        // A typed due date is promoted to a deadline; it must NOT then be parked in Someday.
+        // A typed date resolves to a single When (OnDate) — the task surfaces by that date.
         vm.QuickAddText = "다음주 금요일 회의";
         await vm.AddCommand.ExecuteAsync(null);
 
         var withDate = Assert.Single(await store.GetInboxAsync(), t => t.Title == "회의");
-        Assert.NotEqual(WhenKind.SomeDay, withDate.WhenKind);
-        Assert.NotNull(withDate.DeadlineDate);
+        Assert.Equal(WhenKind.OnDate, withDate.WhenKind);
+        Assert.NotNull(withDate.WhenDate);
 
-        // A genuinely dateless task does park in Someday (default off the Today list).
+        // A genuinely dateless task off the Today list stays Unscheduled → lands in "언젠가" (Anytime).
         vm.QuickAddText = "장보기";
         await vm.AddCommand.ExecuteAsync(null);
 
         var dateless = Assert.Single(await store.GetInboxAsync(), t => t.Title == "장보기");
-        Assert.Equal(WhenKind.SomeDay, dateless.WhenKind);
-        Assert.Null(dateless.DeadlineDate);
+        Assert.Equal(WhenKind.Unscheduled, dateless.WhenKind);
+        Assert.Null(dateless.WhenDate);
+        Assert.Contains(await store.GetAnytimeAsync(), t => t.Id == dateless.Id);
     }
 
     [Fact]
-    public async Task DetailSomeday_ClearsAndDisablesDeadline_AndSavesAsSomeDay()
+    public async Task DetailClearWhen_SavesAsUnscheduled()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -238,29 +231,24 @@ public sealed class ViewModelRegressionTests
             TimeZoneInfo.Utc);
         var task = new TaskItem
         {
-            Title = "has a deadline",
+            Title = "has a date",
             When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 9, 0, 0), "UTC")),
-            Deadline = ZonedDateTime.FromLocal(new DateTime(2026, 6, 25, 18, 0, 0), "UTC"),
         };
         await store.SaveAsync(task);
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
         await vm.Detail.OpenAsync(task.Id);
-        Assert.True(vm.Detail.IsDeadlineEnabled);
 
-        vm.Detail.IsSomeday = true;
-
+        vm.Detail.ClearWhen();
         Assert.Null(vm.Detail.WhenDate);
-        Assert.Null(vm.Detail.DeadlineDate);     // a Someday task drops its deadline
-        Assert.False(vm.Detail.IsDeadlineEnabled);
-        Assert.False(vm.Detail.CanAddWhen);
+        Assert.True(vm.Detail.CanAddWhen);
         Assert.False(vm.Detail.IsWhenEditorVisible);
 
         await vm.Detail.SaveCommand.ExecuteAsync(null);
 
         var saved = await store.GetAsync<TaskItem>(task.Id);
-        Assert.Equal(WhenKind.SomeDay, saved!.When.Kind);
-        Assert.Null(saved.Deadline);
+        Assert.Equal(WhenKind.Unscheduled, saved!.When.Kind);
+        Assert.False(saved.When.HasDate);
     }
 
     [Fact]
@@ -288,12 +276,11 @@ public sealed class ViewModelRegressionTests
     }
 
     [Theory]
-    [InlineData(TaskListMode.Today, WhenKind.OnDate)]      // only Today pins an actual day
-    [InlineData(TaskListMode.Upcoming, WhenKind.SomeDay)]  // Upcoming names no specific date → Someday
-    [InlineData(TaskListMode.Someday, WhenKind.SomeDay)]
-    [InlineData(TaskListMode.Anytime, WhenKind.SomeDay)]
-    [InlineData(TaskListMode.Inbox, WhenKind.SomeDay)]
-    public void QuickAddContextParksDatelessTaskInSomedayExceptToday(TaskListMode mode, WhenKind kind)
+    [InlineData(TaskListMode.Today, WhenKind.OnDate)]          // only Today pins an actual day
+    [InlineData(TaskListMode.Upcoming, WhenKind.Unscheduled)]  // names no specific date → Unscheduled
+    [InlineData(TaskListMode.Anytime, WhenKind.Unscheduled)]
+    [InlineData(TaskListMode.Inbox, WhenKind.Unscheduled)]
+    public void QuickAddContextPinsTodayOnly_ElseLeavesUnscheduled(TaskListMode mode, WhenKind kind)
     {
         var now = new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero);
         var result = QuickAddContext.Apply(ScheduledWhen.Unscheduled, mode, now, TimeZoneInfo.Utc);
@@ -376,25 +363,7 @@ public sealed class ViewModelRegressionTests
 
         var savedTask = await store.GetAsync<TaskItem>(task.Id);
         Assert.Null(savedTask!.ProjectId);
-        Assert.Null(savedTask.SectionId);
         Assert.True((await store.GetAsync<Project>(project.Id))!.IsDeleted);
-    }
-
-    [Fact]
-    public async Task QueuedSectionCannotAttachToDeletedProject()
-    {
-        using var temp = new TempDirectory();
-        var options = new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") };
-        await using var store = await IndexedTaskStore.OpenAsync(options, timeZone: TimeZoneInfo.Utc);
-        var project = new Project { Name = "project" };
-        await store.SaveAsync(project);
-        var queuedSection = new Section { Name = "late section", ProjectId = project.Id };
-
-        await store.DeleteAsync<Project>(project.Id);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => store.SaveAsync(queuedSection));
-        Assert.Empty(await store.GetSectionsByProjectAsync(project.Id));
-        Assert.Null(await store.GetAsync<Section>(queuedSection.Id));
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
