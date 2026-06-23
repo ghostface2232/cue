@@ -67,6 +67,10 @@ public partial class TaskRowViewModel : ObservableObject
     public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled)
     {
         _onUserToggled = onUserToggled;
+        // The in-place list reconcile (SyncRows) mutates Subtasks directly rather than through AddSubtask,
+        // so notify HasSubtasks from the collection itself — that's what flips the nested-list divider
+        // live when a row's first subtask appears (or its last is removed).
+        Subtasks.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSubtasks));
         Id = item.Id;
         Title = FormatTitle(item.Title);
         SortOrder = item.SortOrder;
