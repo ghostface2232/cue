@@ -10,48 +10,43 @@
     mc:Ignorable="d">
 
     <Page.Resources>
-        <SolidColorBrush x:Key="TaskHoverBrush" Color="#0F000000" />
-        <SolidColorBrush x:Key="TaskPressedBrush" Color="#18000000" />
-        <SolidColorBrush x:Key="DetailCardBrush" Color="#FFFEFEFE" />
-        <SolidColorBrush x:Key="SaveActionBrush" Color="#FF168A45" />
-        <SolidColorBrush x:Key="CloseActionBrush" Color="#FFC83C3C" />
-
-        <Style x:Key="IconActionStyle" TargetType="HyperlinkButton">
-            <Setter Property="Width" Value="38" />
-            <Setter Property="Height" Value="38" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
+        <!-- Theme-aware interactive brushes: Color comes from a ThemeResource so it flips light/dark
+             (fixes the old hardcoded #0F000000 hover that was invisible in dark mode). -->
+        <SolidColorBrush x:Key="TaskHoverBrush" Color="{ThemeResource SubtleFillColorSecondary}" />
+        <SolidColorBrush x:Key="TaskPressedBrush" Color="{ThemeResource SubtleFillColorTertiary}" />
+        <SolidColorBrush x:Key="DetailCardBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
 
         <Style x:Key="MetadataTextStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontSize" Value="{StaticResource CueFontSecondary}" />
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
         <DataTemplate x:Key="ChildTaskRowTemplate" x:DataType="vm:TaskRowViewModel">
             <Border
                 Margin="0,1,4,1"
-                Padding="10,7"
+                Padding="12,6"
                 Background="Transparent"
-                CornerRadius="7"
+                CornerRadius="{StaticResource CueRadiusSmall}"
                 Loaded="TaskSurface_Loaded"
                 Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
                 PointerEntered="TaskSurface_PointerEntered"
                 PointerExited="TaskSurface_PointerExited"
                 Tapped="TaskSurface_Tapped"
                 Tag="{x:Bind Id}">
+                <Border.BackgroundTransition>
+                    <BrushTransition Duration="0:0:0.083" />
+                </Border.BackgroundTransition>
                 <Grid ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <CheckBox
-                        MinWidth="0"
                         VerticalAlignment="Center"
-                        IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
+                        IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
+                        Style="{StaticResource CueCircleCheckBoxStyle}" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
-                        <TextBlock FontSize="14" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
                         <StackPanel Orientation="Horizontal" Spacing="10" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
                             <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind PriorityCaption}" Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
@@ -65,26 +60,29 @@
             <StackPanel HorizontalAlignment="Stretch">
                 <Border
                     Margin="4,2"
-                    Padding="10,10"
+                    Padding="12,8"
                     Background="Transparent"
-                    CornerRadius="9"
+                    CornerRadius="{StaticResource CueRadiusRow}"
                     Loaded="TaskSurface_Loaded"
                     Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
                     PointerEntered="TaskSurface_PointerEntered"
                     PointerExited="TaskSurface_PointerExited"
                     Tapped="TaskSurface_Tapped"
                     Tag="{x:Bind Id}">
+                    <Border.BackgroundTransition>
+                        <BrushTransition Duration="0:0:0.083" />
+                    </Border.BackgroundTransition>
                     <Grid ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <CheckBox
-                            MinWidth="0"
                             VerticalAlignment="Center"
-                            IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" />
+                            IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
+                            Style="{StaticResource CueCircleCheckBoxStyle}" />
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                            <TextBlock FontSize="15" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
                             <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind PriorityCaption}" Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
@@ -209,13 +207,12 @@
                 Margin="0,0,4,4"
                 Padding="18,16,6,20"
                 Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BackgroundSizing="InnerBorderEdge"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1"
-                CornerRadius="16"
+                CornerRadius="{StaticResource CueRadiusPanel}"
                 Loaded="DetailPanel_Loaded"
-                Translation="0,0,16"
                 Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                <Border.Shadow><ThemeShadow /></Border.Shadow>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="2,0,16,0" Spacing="13">
                         <Button
@@ -245,20 +242,20 @@
                                 TextWrapping="Wrap" />
                             <HyperlinkButton
                                 Grid.Column="1"
-                                Style="{StaticResource IconActionStyle}"
+                                Style="{StaticResource CueIconButtonStyle}"
                                 Click="SaveDetail_Click"
-                                Foreground="{StaticResource SaveActionBrush}"
+                                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                 PointerEntered="IconAction_PointerEntered"
                                 PointerExited="IconAction_PointerExited"
                                 ToolTipService.ToolTip="저장"
                                 AutomationProperties.Name="저장">
-                                <FontIcon FontSize="19" Glyph="&#xE73E;" />
+                                <FontIcon FontSize="18" Glyph="&#xE73E;" />
                             </HyperlinkButton>
                             <HyperlinkButton
                                 Grid.Column="2"
-                                Style="{StaticResource IconActionStyle}"
+                                Style="{StaticResource CueIconButtonStyle}"
                                 Click="CloseDetail_Click"
-                                Foreground="{StaticResource CloseActionBrush}"
+                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                 PointerEntered="IconAction_PointerEntered"
                                 PointerExited="IconAction_PointerExited"
                                 ToolTipService.ToolTip="닫기"
@@ -267,8 +264,7 @@
                             </HyperlinkButton>
                         </Grid>
 
-                        <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
-                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                        <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
                                 <TextBlock FontWeight="SemiBold" Text="작업 정보" />
                                 <TextBox AcceptsReturn="True" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
@@ -287,8 +283,7 @@
                             Content="+ 예정 추가"
                             Visibility="{x:Bind ViewModel.Detail.CanAddWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                             <StackPanel Spacing="11">
                                 <Grid>
                                     <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="예정" />
@@ -311,8 +306,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
-                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
                                 <TextBlock FontWeight="SemiBold" Text="마감" />
                                 <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
@@ -327,8 +321,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
-                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="10">
                                 <Grid><TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" /></Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
@@ -338,8 +331,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="12" Translation="0,0,12">
-                            <Border.Shadow><ThemeShadow /></Border.Shadow>
+                        <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
                                 <TextBlock FontWeight="SemiBold" Text="서브태스크" />
                                 <Grid ColumnSpacing="8">
