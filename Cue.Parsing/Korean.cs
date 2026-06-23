@@ -119,20 +119,25 @@ internal static class Korean
     /// <summary>Right boundary: nothing Hangul may follow (so "내일로", "오늘의집" don't match "내일"/"오늘").</summary>
     public const string RightEdge = @"(?![가-힣])";
 
+    /// <summary>A Korean weekday token: long form ("금요일") or colloquial short form ("금욜").</summary>
+    public const string WeekdayToken = @"[월화수목금토일](?:요일|욜)";
+
     /// <summary>A date expression. Alternatives are ordered most-specific first.</summary>
     public const string Date =
         @"(?:" +
-        @"(?<rel>오늘|내일모레|낼모레|모레|글피|내일|낼)" +
+        @"(?<rel>오늘|내일모레|낼모레|모레|글피|내일|낼|이따)" +
         @"|(?<weekend>이번\s*주말|주말)" +
-        @"|(?:다음\s*주|다음|담주)\s*(?<nwwd>[월화수목금토일])요일" +
+        @"|(?:다음\s*달|담달)\s*(?<nmdom>\d{1,2})\s*일" +
+        @"|(?:다음|담)\s*(?<nextdom>\d{1,2})\s*일" +
+        @"|(?:다음\s*주|다음|담주|담)\s*(?<nwwd>[월화수목금토일])(?:요일|욜)" +
         @"|(?<nextweek>다음\s*주|담주)" +
         @"|(?<nextmonth>다음\s*달|담달)" +
         @"|(?<endmonth>이번\s*달\s*말일|이번\s*달\s*말)" +
         @"|(?<mon>\d{1,2})\s*월\s*(?<domd>\d{1,2})\s*일" +
-        @"|(?<wd>[월화수목금토일])요일" +
+        @"|(?<wd>[월화수목금토일])(?:요일|욜)" +
         @"|(?<ndays>\d+)\s*일\s*(?:후|뒤|이따|있다가|지나서)" +
         @"|(?<nweeks>\d+)\s*주\s*(?:후|뒤)" +
-        @"|(?<oneweek>일주일)\s*(?:후|뒤)" +
+        @"|(?:한\s*)?(?<oneweek>일주일)\s*(?:후|뒤)" +
         @"|(?<nmonths>\d+)\s*(?:개월|달)\s*(?:후|뒤)" +
         @"|(?<domonly>\d{1,2})\s*일" +
         @")";
@@ -171,11 +176,26 @@ internal static class Korean
                     "내일" or "낼" => 1,
                     "모레" or "내일모레" or "낼모레" => 2,
                     "글피" => 3,
+                    "이따" => 0,
                     _ => 0,
                 });
                 return true;
             }
             if (m.Groups["weekend"].Success) { date = ctx.UpcomingWeekday(DayOfWeek.Saturday); return true; }
+            if (m.Groups["nmdom"].Success)
+            {
+                if (!int.TryParse(m.Groups["nmdom"].Value, out var dom) || dom is < 1 or > 31)
+                    return false;
+                date = ctx.NextMonthDay(dom);
+                return true;
+            }
+            if (m.Groups["nextdom"].Success)
+            {
+                if (!int.TryParse(m.Groups["nextdom"].Value, out var dom) || dom is < 1 or > 31)
+                    return false;
+                date = ctx.UpcomingDayOfMonth(dom);
+                return true;
+            }
             if (m.Groups["nwwd"].Success) { date = ctx.NextWeekWeekday(Weekdays[m.Groups["nwwd"].Value[0]]); return true; }
             if (m.Groups["nextweek"].Success) { date = ctx.Today.AddDays(7); return true; }
             if (m.Groups["nextmonth"].Success) { date = ctx.NextMonthSameDay(); return true; }

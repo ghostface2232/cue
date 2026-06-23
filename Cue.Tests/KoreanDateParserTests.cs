@@ -236,6 +236,76 @@ public sealed class KoreanDateParserTests
     }
 
     [Theory]
+    [InlineData("금욜에 미용실 예약", "미용실 예약", 2026, 6, 26)]
+    [InlineData("화욜 회의 자료 미리 만들어두기", "회의 자료 미리 만들어두기", 2026, 6, 23)]
+    [InlineData("담주 월욜 출근할 때 우산 챙기기", "출근할 때 우산 챙기기", 2026, 6, 29)]
+    [InlineData("담주 목욜 엄마 모시고 병원 가야 함", "엄마 모시고 병원 가야 함", 2026, 7, 2)]
+    [InlineData("담 목욜 모임 가기", "모임 가기", 2026, 7, 2)]
+    public void ColloquialWeekdayShortForm_IsParsed(string input, string title, int y, int mo, int d)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(new DateOnly(y, mo, d), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void ColloquialWeekdayShortForm_ComposesWithDayPart()
+    {
+        var r = Parse("토욜 아침에 한강 뛰러 가기");
+        Assert.Equal("한강 뛰러 가기", r.Title);
+        Assert.Equal(new DateOnly(2026, 6, 27), WhenDate(r.When));
+        Assert.Equal(8, WhenHour(r.When));
+    }
+
+    [Theory]
+    [InlineData("담달 보험 갱신하는 거 까먹지 말기", "보험 갱신하는 거 까먹지 말기", 2026, 7, 23)]
+    [InlineData("담달 10일 카드값 정산", "카드값 정산", 2026, 7, 10)]
+    [InlineData("다음 10일 카드값 정산", "카드값 정산", 2026, 7, 10)]
+    [InlineData("담 10일 카드값 정산", "카드값 정산", 2026, 7, 10)]
+    public void NextOrDamBeforeDateToken_IsDateNotSomeday(string input, string title, int y, int mo, int d)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(y, mo, d), WhenDate(r.When));
+    }
+
+    [Theory]
+    [InlineData("다음에 만나서 회포 풀기", "만나서 회포 풀기")]
+    [InlineData("담에 영화 보기", "영화 보기")]
+    public void NextOrDamWithEParticle_RemainsSomeday(string input, string title)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.True(r.WhenAssigned);
+    }
+
+    [Theory]
+    [InlineData("이따 저녁에 운동 가야지", "운동 가야지", 18)]
+    [InlineData("이따 저녁 7시 약속 있음", "약속 있음", 19)]
+    [InlineData("이따 7시 약속 끝나고 마트 들러서 우유 사오기", "약속 끝나고 마트 들러서 우유 사오기", 19)]
+    public void LaterToday_ComposesWithTime(string input, string title, int hour)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(hour, WhenHour(r.When));
+    }
+
+    [Theory]
+    [InlineData("3일 이따 점검하기", "점검하기", 3)]
+    [InlineData("2주뒤 건강검진 예약하기", "건강검진 예약하기", 14)]
+    [InlineData("한 일주일 뒤에 전세 연장 문의해보기", "전세 연장 문의해보기", 7)]
+    [InlineData("글피 치과 예약 확인 좀", "치과 예약 확인 좀", 3)]
+    public void ColloquialRelativeDateVariants_AreParsed(string input, string title, int offsetDays)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
+    }
+
+    [Theory]
     [InlineData("내일 세시 미팅", 1, 15)]      // native hour, bare → afternoon
     [InlineData("오늘 오후네시 미팅", 0, 16)]   // native hour with an explicit 오후
     public void NativeHourNumber_IsParsed(string input, int offsetDays, int hour)
@@ -334,6 +404,10 @@ public sealed class KoreanDateParserTests
     [InlineData("평일 아침 7시 기상", "기상", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")]
     [InlineData("매년 어머니 생신 챙기기", "어머니 생신 챙기기", "FREQ=YEARLY")]
     [InlineData("30분마다 일어나서 스트레칭", "일어나서 스트레칭", "FREQ=MINUTELY;INTERVAL=30")]
+    [InlineData("해마다 엄마 생신 챙기기", "엄마 생신 챙기기", "FREQ=YEARLY")]
+    [InlineData("30분에 한 번씩 스트레칭하기", "스트레칭하기", "FREQ=MINUTELY;INTERVAL=30")]
+    [InlineData("매주 월욜마다 운동 가기", "운동 가기", "FREQ=WEEKLY;BYDAY=MO")]
+    [InlineData("평일엔 7시에 일어나기", "일어나기", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")]
     public void Recurrence_BecomesRRule_WithCleanTitle(string input, string title, string rrule)
     {
         var r = Parse(input);
@@ -344,6 +418,18 @@ public sealed class KoreanDateParserTests
         Assert.True(r.WhenAssigned);
         Assert.Equal(WhenKind.OnDate, r.When.Kind);
         Assert.Equal(ZonedDate(r.Recurrence.Anchor), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void LunchMealAfter_UsesTheSameRepresentativeTimeAsLunchDayPart()
+    {
+        var r = Parse("점심 먹고 약 챙겨먹기");
+        Assert.Equal("약 챙겨먹기", r.Title);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(12, WhenHour(r.When));
+
+        var bare = Parse("점심때 약 챙겨먹기");
+        Assert.Equal(12, WhenHour(bare.When));
     }
 
     // ---- 7/8. Unscheduled & "언젠가" markers ---------------------------------

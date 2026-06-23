@@ -52,6 +52,7 @@ public sealed class KoreanDateParser : IDateParser
         new RelativeHourRule(),
         new DeadlineRule(),
         new WhenDateRule(),
+        new MealAfterRule(),
         new TimeOfDayRule(),
     };
 

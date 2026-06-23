@@ -119,6 +119,14 @@ public sealed class ParseContext
         return new DateOnly(y, m, Math.Min(Today.Day, DateTime.DaysInMonth(y, m)));
     }
 
+    /// <summary>The requested day-of-month in the next calendar month (clamped to that month's length).</summary>
+    public DateOnly NextMonthDay(int day)
+    {
+        var (y, m) = (Today.Year, Today.Month + 1);
+        if (m > 12) { m = 1; y++; }
+        return new DateOnly(y, m, Math.Min(day, DateTime.DaysInMonth(y, m)));
+    }
+
     /// <summary><paramref name="months"/> calendar months out, same day-of-month (clamped).</summary>
     public DateOnly AddMonths(int months)
     {

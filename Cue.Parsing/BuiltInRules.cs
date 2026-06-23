@@ -52,21 +52,25 @@ public sealed class RelativeHourRule : IQuickAddRule
 /// <summary>매일 / 매주(요일) / 매월(N일) / 매년 / 격주 / 평일 / N분마다 → a <see cref="RecurrenceRule"/>.</summary>
 public sealed class RecurrenceQuickAddRule : IQuickAddRule
 {
+    private const string TimeWithParticle =
+        @"(?:" + Korean.Time + "|" + Korean.DayPart + @")(?:\s*(?:에는|에도|엔|에|은|는|도|부터|쯤|즈음|경))?";
+
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
         @"(?:" +
-        @"(?<weekly_wd>매주|매\s*주)\s*(?<rwd>[월화수목금토일])요일" +
-        @"|(?<biweekly>격주|이주마다|2주마다)\s*(?:(?<bwd>[월화수목금토일])요일)?" +
-        @"|(?<weekdays>평일)" +
+        @"(?<weekly_wd>매주|매\s*주)\s*(?<rwd>[월화수목금토일])(?:요일|욜)(?:마다)?" +
+        @"|(?<biweekly>격주|이주마다|2주마다)\s*(?:(?<bwd>[월화수목금토일])(?:요일|욜))?" +
+        @"|(?<weekdays>평일)(?:에는|에도|엔|에|은|는|도)?" +
         @"|(?<daily>매일|매\s*일)" +
         @"|(?<weekly>매주|매\s*주)" +
         @"|(?<monthly_dom>매월|매달)\s*(?<mdom>\d{1,2})\s*일" +
         @"|(?<monthly>매월|매달)" +
-        @"|(?<yearly>매년|매해)" +
+        @"|(?<yearly>매년|매해|해마다)" +
+        @"|(?<minutely_once>\d+)\s*분\s*에\s*한\s*번\s*씩" +
         @"|(?<minutely>\d+)\s*분\s*마다" +
         @"|(?<hourly>\d+)\s*시간\s*마다" +
         @")" +
-        @"(?:\s*(?:" + Korean.Time + "|" + Korean.DayPart + "))?", Opt.Flags);
+        @"(?:\s*" + TimeWithParticle + ")?", Opt.Flags);
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
     {
@@ -129,6 +133,13 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         {
             rule = "FREQ=YEARLY";
             anchor = AnchorOn(context, context.Today, hasTime, h, min);
+        }
+        else if (match.Groups["minutely_once"].Success)
+        {
+            if (!int.TryParse(match.Groups["minutely_once"].Value, out var interval) || interval < 1)
+                return false;
+            rule = $"FREQ=MINUTELY;INTERVAL={interval}";
+            anchor = context.ZonedNow;
         }
         else if (match.Groups["minutely"].Success)
         {
@@ -211,6 +222,8 @@ public sealed class WhenDateRule : IQuickAddRule
         if (!Korean.TryResolveDate(match, context, out var date))
             return false; // out-of-range date ("99일", "13월 40일") — leave it in the title
         Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
+        if (match.Groups["rel"].Success && match.Groups["rel"].Value == "이따" && hasTime && !meridiemGiven && h is >= 7 and <= 11)
+            h += 12;
         if (hasTime)
             h = context.DisambiguateBareHour(date, h, min, meridiemGiven);
         var when = hasTime
@@ -226,6 +239,7 @@ public sealed class TimeOfDayRule : IQuickAddRule
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
         @"(?:" + Korean.Time + "|" + Korean.DayPart + ")" +
+        @"(?:\s*(?:에는|에도|엔|에|은|는|도|부터|쯤|즈음|경))?" +
         Korean.RightEdge, Opt.Flags);
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
@@ -236,5 +250,26 @@ public sealed class TimeOfDayRule : IQuickAddRule
             return false; // nothing concrete to schedule
         h = context.DisambiguateBareHour(context.Today, h, min, meridiemGiven);
         return result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, h, min)));
+    }
+}
+
+/// <summary>점심 먹고 → the same representative time as the bare lunch day-part.</summary>
+public sealed class MealAfterRule : IQuickAddRule
+{
+    public Regex Pattern { get; } = new(
+        Korean.LeftEdge +
+        @"(?<meal>아침|점심|저녁)\s*(?:먹고|먹은\s*뒤|식사\s*후)" +
+        Korean.RightEdge, Opt.Flags);
+
+    public bool Extract(Match match, ParseContext context, QuickAddResult result)
+    {
+        var hour = match.Groups["meal"].Value switch
+        {
+            "아침" => 9,
+            "점심" => 12,
+            "저녁" => 19,
+            _ => 0,
+        };
+        return hour > 0 && result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, hour, 0)));
     }
 }
