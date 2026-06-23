@@ -459,6 +459,44 @@ public sealed partial class TaskListPage : Page
         return false;
     }
 
+    private void FadeText_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBlock text)
+            UpdateTextFade(text);
+    }
+
+    private void FadeText_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is TextBlock text)
+            UpdateTextFade(text);
+    }
+
+    private static void UpdateTextFade(TextBlock text)
+    {
+        if (VisualTreeHelper.GetParent(text) is not DependencyObject parent)
+            return;
+        var fade = FindDescendant<Microsoft.UI.Xaml.Shapes.Rectangle>(parent, "LabelNameFade");
+        if (fade is null)
+            return;
+
+        text.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        fade.Opacity = text.DesiredSize.Width > text.ActualWidth + 1 ? 1 : 0;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T element && element.Name == name)
+                return element;
+            if (FindDescendant<T>(child, name) is { } match)
+                return match;
+        }
+        return null;
+    }
+
     private async void CloseDetail_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await CloseDetailWithAnimationAsync();
 

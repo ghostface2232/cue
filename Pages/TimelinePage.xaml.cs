@@ -251,9 +251,34 @@ public sealed partial class TimelinePage : Page
             GradientStops =
             {
                 new GradientStop { Offset = 0, Color = Microsoft.UI.Colors.Transparent },
+                new GradientStop { Offset = 0.58, Color = brush.Color },
                 new GradientStop { Offset = 1, Color = brush.Color },
             },
         };
+    }
+
+    private void FadeText_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBlock text)
+            UpdateTextFade(text);
+    }
+
+    private void FadeText_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is TextBlock text)
+            UpdateTextFade(text);
+    }
+
+    private static void UpdateTextFade(TextBlock text)
+    {
+        if (VisualTreeHelper.GetParent(text) is not DependencyObject parent)
+            return;
+        var fadeName = text.Name == "TimelineTitleText" ? "TimelineTitleFade" : "LabelNameFade";
+        if (FindDescendant<Rectangle>(parent, fadeName) is not { } fade)
+            return;
+
+        text.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        fade.Opacity = text.DesiredSize.Width > text.ActualWidth + 1 ? 1 : 0;
     }
 
     private static T? FindDescendant<T>(DependencyObject root, string name) where T : FrameworkElement

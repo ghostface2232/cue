@@ -84,18 +84,23 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Grid MaxWidth="142" VerticalAlignment="Center">
                                         <TextBlock
+                                            x:Name="TimelineTitleText"
                                             FontSize="{StaticResource CueFontRow}"
+                                            Loaded="FadeText_Loaded"
                                             MaxLines="1"
+                                            SizeChanged="FadeText_SizeChanged"
                                             Text="{x:Bind Title}"
                                             TextTrimming="Clip" />
                                         <Rectangle
                                             x:Name="TimelineTitleFade"
-                                            Width="28"
+                                            Width="48"
                                             HorizontalAlignment="Right"
-                                            IsHitTestVisible="False">
+                                            IsHitTestVisible="False"
+                                            Opacity="0">
                                             <Rectangle.Fill>
                                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                                     <GradientStop Offset="0" Color="Transparent" />
+                                                    <GradientStop Offset="0.58" Color="{ThemeResource CardBackgroundFillColorDefault}" />
                                                     <GradientStop Offset="1" Color="{ThemeResource CardBackgroundFillColorDefault}" />
                                                 </LinearGradientBrush>
                                             </Rectangle.Fill>
@@ -449,14 +454,17 @@
                                                     </Grid.ColumnDefinitions>
                                                     <FontIcon VerticalAlignment="Center" FontSize="15" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
                                                     <Grid Grid.Column="1" VerticalAlignment="Center">
-                                                        <TextBlock Text="{x:Bind Name}" TextTrimming="Clip" />
+                                                        <TextBlock x:Name="LabelNameText" Loaded="FadeText_Loaded" SizeChanged="FadeText_SizeChanged" Text="{x:Bind Name}" TextTrimming="Clip" />
                                                         <Rectangle
+                                                            x:Name="LabelNameFade"
                                                             Width="24"
                                                             HorizontalAlignment="Right"
-                                                            IsHitTestVisible="False">
+                                                            IsHitTestVisible="False"
+                                                            Opacity="0">
                                                             <Rectangle.Fill>
                                                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                                                     <GradientStop Offset="0" Color="Transparent" />
+                                                                    <GradientStop Offset="0.55" Color="{ThemeResource CardBackgroundFillColorDefault}" />
                                                                     <GradientStop Offset="1" Color="{ThemeResource CardBackgroundFillColorDefault}" />
                                                                 </LinearGradientBrush>
                                                             </Rectangle.Fill>
@@ -495,17 +503,6 @@
                         </Border>
                         </StackPanel>
                     </ScrollViewer>
-                    <Rectangle
-                        Height="26"
-                        VerticalAlignment="Bottom"
-                        IsHitTestVisible="False">
-                        <Rectangle.Fill>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                <GradientStop Offset="0" Color="Transparent" />
-                                <GradientStop Offset="1" Color="{ThemeResource LayerFillColorDefault}" />
-                            </LinearGradientBrush>
-                        </Rectangle.Fill>
-                    </Rectangle>
                 </Grid>
             </Border>
         </Grid>
