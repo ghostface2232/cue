@@ -194,9 +194,9 @@
                 PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
                 Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                 <TextBox.Resources>
-                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource CardBackgroundFillColorSecondary}" />
-                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource CardBackgroundFillColorDefault}" />
-                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{ThemeResource AccentFillColorDefault}" />
+                    <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="CardBackgroundFillColorSecondaryBrush" />
+                    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="CardBackgroundFillColorDefaultBrush" />
+                    <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
                 </TextBox.Resources>
             </TextBox>
             <FontIcon

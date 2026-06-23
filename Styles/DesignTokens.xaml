@@ -57,17 +57,17 @@
 
     <!-- ===== Flatten text inputs: remove the Fluent bottom "accent bar" (the focused 2px bottom
          border and the resting gradient) so all input fields read as calm, uniform 1px boxes.
-         Brush Color is a ThemeResource so it still flips light/dark. ===== -->
+         Alias the stock Brush resources directly; TextBox visual states consume Brush values. ===== -->
     <Thickness x:Key="TextControlBorderThemeThickness">1</Thickness>
     <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
-    <SolidColorBrush x:Key="TextControlBorderBrush" Color="{ThemeResource ControlStrokeColorDefault}" />
-    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{ThemeResource ControlStrokeColorDefault}" />
-    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{ThemeResource ControlStrokeColorDefault}" />
+    <StaticResource x:Key="TextControlBorderBrush" ResourceKey="ControlStrokeColorDefaultBrush" />
+    <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="ControlStrokeColorDefaultBrush" />
+    <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="ControlStrokeColorDefaultBrush" />
     <!-- A persistent tone so inputs read as distinct from the page/cards, one step deeper on hover.
          Focused keeps the tone instead of the default bright white-out. -->
-    <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
-    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource ControlFillColorSecondary}" />
-    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource ControlFillColorDefault}" />
+    <StaticResource x:Key="TextControlBackground" ResourceKey="ControlFillColorDefaultBrush" />
+    <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="ControlFillColorSecondaryBrush" />
+    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
 
     <!-- ===== NavigationView: flatten the selected-item text to primary (calmer, Things-3-like).
          Mirrors Files/Settings NavigationViewItemButtonStyle. Overrides the stock keys app-wide;
