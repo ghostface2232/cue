@@ -15,6 +15,7 @@ namespace Cue.Pages;
 public sealed partial class TimelinePage : Page
 {
     private const double KeyboardScrollStep = 440;
+    private const double WheelScrollMultiplier = 2.0;
 
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private bool _isPointerPanning;
@@ -125,6 +126,16 @@ public sealed partial class TimelinePage : Page
 
     private void TimelineScrollViewer_PointerCanceled(object sender, PointerRoutedEventArgs e)
         => EndPointerPan(e);
+
+    private void TimelineScrollViewer_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+    {
+        var delta = e.GetCurrentPoint(TimelineScrollViewer).Properties.MouseWheelDelta;
+        if (delta == 0)
+            return;
+
+        e.Handled = true;
+        ScrollBy(-delta * WheelScrollMultiplier, 0, disableAnimation: false);
+    }
 
     private void EndPointerPan(PointerRoutedEventArgs e)
     {

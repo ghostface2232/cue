@@ -144,7 +144,7 @@ public sealed partial class MainWindow : Window
     {
         ("today", "", "오늘 할 일"),
         ("upcoming", "", "앞으로 할 일"),
-        ("timeline", "", "타임라인"),
+        ("timeline", "\uE9D2", "타임라인"),
         ("anytime", "", "언제든 할 일"),
         ("someday", "", "나중에 할 일"),
         ("logbook", "", "완료한 일"),

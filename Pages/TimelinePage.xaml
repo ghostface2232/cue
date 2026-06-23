@@ -182,6 +182,7 @@
                     PointerMoved="TimelineScrollViewer_PointerMoved"
                     PointerPressed="TimelineScrollViewer_PointerPressed"
                     PointerReleased="TimelineScrollViewer_PointerReleased"
+                    PointerWheelChanged="TimelineScrollViewer_PointerWheelChanged"
                     VerticalScrollBarVisibility="Auto"
                     VerticalScrollMode="Enabled"
                     ZoomMode="Disabled">
