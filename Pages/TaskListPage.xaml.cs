@@ -32,7 +32,6 @@ public sealed partial class TaskListPage : Page
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
-    private readonly ConditionalWeakTable<FrameworkElement, DropShadow> _iconGlows = new();
     private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
     private Visual? _detailPanelVisual;
     private bool _isResizingDetail;
@@ -246,32 +245,6 @@ public sealed partial class TaskListPage : Page
         if (sender is not Border border) return;
         border.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
         ElementCompositionPreview.GetElementVisual(border).Scale = Vector3.One;
-    }
-
-    private void IconAction_PointerEntered(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement element) return;
-        ConfigureImplicitAnimations(element);
-        UpdateCenterPoint(element);
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        visual.Scale = new Vector3(1.1f, 1.1f, 1f);
-        visual.Opacity = 0.82f;
-        var glow = EnsureIconGlow(element);
-        glow.BlurRadius = 12f;
-        glow.Opacity = 0.28f;
-    }
-
-    private void IconAction_PointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement element) return;
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        visual.Scale = Vector3.One;
-        visual.Opacity = 1f;
-        if (_iconGlows.TryGetValue(element, out var glow))
-        {
-            glow.BlurRadius = 0f;
-            glow.Opacity = 0f;
-        }
     }
 
     private void DetailPanel_Loaded(object sender, RoutedEventArgs e)
@@ -546,49 +519,6 @@ public sealed partial class TaskListPage : Page
     {
         var visual = ElementCompositionPreview.GetElementVisual(element);
         visual.CenterPoint = new Vector3((float)element.ActualWidth / 2f, (float)element.ActualHeight / 2f, 0f);
-    }
-
-    private DropShadow EnsureIconGlow(FrameworkElement element)
-    {
-        if (_iconGlows.TryGetValue(element, out var existing)) return existing;
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        var compositor = visual.Compositor;
-        var glowVisual = compositor.CreateSpriteVisual();
-        glowVisual.Size = new Vector2(18f, 18f);
-        glowVisual.Offset = new Vector3(
-            Math.Max(0f, ((float)element.ActualWidth - 18f) / 2f),
-            Math.Max(0f, ((float)element.ActualHeight - 18f) / 2f),
-            0f);
-        glowVisual.Brush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(1, 255, 255, 255));
-
-        var shadow = compositor.CreateDropShadow();
-        shadow.Color = element is Control { Foreground: Microsoft.UI.Xaml.Media.SolidColorBrush brush }
-            ? brush.Color
-            : Microsoft.UI.Colors.Gray;
-        shadow.BlurRadius = 0f;
-        shadow.Opacity = 0f;
-        glowVisual.Shadow = shadow;
-
-        if (_animationsEnabled)
-        {
-            var easing = compositor.CreateCubicBezierEasingFunction(new Vector2(0.2f, 0.8f), new Vector2(0.2f, 1f));
-            var implicitAnimations = compositor.CreateImplicitAnimationCollection();
-            var blur = compositor.CreateScalarKeyFrameAnimation();
-            blur.Target = "BlurRadius";
-            blur.InsertExpressionKeyFrame(1f, "this.FinalValue", easing);
-            blur.Duration = TimeSpan.FromMilliseconds(160);
-            implicitAnimations["BlurRadius"] = blur;
-            var opacity = compositor.CreateScalarKeyFrameAnimation();
-            opacity.Target = "Opacity";
-            opacity.InsertExpressionKeyFrame(1f, "this.FinalValue", easing);
-            opacity.Duration = TimeSpan.FromMilliseconds(140);
-            implicitAnimations["Opacity"] = opacity;
-            shadow.ImplicitAnimations = implicitAnimations;
-        }
-
-        ElementCompositionPreview.SetElementChildVisual(element, glowVisual);
-        _iconGlows.Add(element, shadow);
-        return shadow;
     }
 
     private void EnableWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.EnableWhenEditor();
