@@ -403,6 +403,9 @@ public partial class TaskListViewModel : ObservableObject
     {
         if (Detail.IsOpen && Detail.CurrentTaskId != id)
         {
+            // Persist and drain the outgoing task's pending edits before tearing the panel down, so a
+            // queued autosave can't resume against the next task's freshly loaded fields.
+            await Detail.FlushAsync();
             Detail.Close();
             await Task.Delay(90);
         }
