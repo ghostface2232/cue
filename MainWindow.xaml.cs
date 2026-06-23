@@ -103,6 +103,8 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(TaskListMode.Project, project.Id, project.Name, project.DeadlineDate),
             Icon = new FontIcon { Glyph = "\uE8B7" },
         };
+        if (ViewModel.ProjectTaskCounts.TryGetValue(project.Id, out var count) && count > 0)
+            item.InfoBadge = new InfoBadge { Value = count };
         item.ContextFlyout = CreateRecordMenu(project, isProject: true);
         return item;
     }
@@ -115,6 +117,8 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(TaskListMode.Label, label.Id, label.Name),
             Icon = new FontIcon { Glyph = "\uE8EC" },
         };
+        if (ViewModel.LabelTaskCounts.TryGetValue(label.Id, out var count) && count > 0)
+            item.InfoBadge = new InfoBadge { Value = count };
         item.ContextFlyout = CreateRecordMenu(label, isProject: false);
         return item;
     }

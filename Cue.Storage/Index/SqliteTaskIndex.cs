@@ -387,6 +387,21 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             r => new LabelListItem(Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3)),
             cancellationToken);
 
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByProjectAsync(CancellationToken cancellationToken = default)
+        => QueryCountsAsync(
+            "SELECT project_id, COUNT(*) FROM tasks " +
+            "WHERE deleted_at IS NULL AND completed_at IS NULL AND project_id IS NOT NULL " +
+            "GROUP BY project_id;",
+            cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default)
+        => QueryCountsAsync(
+            "SELECT tl.label_id, COUNT(*) FROM task_labels tl " +
+            "INNER JOIN tasks t ON t.id = tl.task_id " +
+            "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            "GROUP BY tl.label_id;",
+            cancellationToken);
+
     internal Task<IReadOnlyList<Guid>> GetTaskIdsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
         => QueryIdsAsync(
             "SELECT id FROM tasks WHERE project_id = $id AND deleted_at IS NULL;",
@@ -536,6 +551,25 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     private Task<IReadOnlyList<Guid>> QueryIdsAsync(
         string sql, Action<SqliteCommand> bind, CancellationToken cancellationToken)
         => QueryRecordsAsync(sql, bind, r => Guid.Parse(r.GetString(0)), cancellationToken);
+
+    private async Task<IReadOnlyDictionary<Guid, int>> QueryCountsAsync(string sql, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var cmd = _connection.CreateCommand();
+            cmd.CommandText = sql;
+            var results = new Dictionary<Guid, int>();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                results[Guid.Parse(reader.GetString(0))] = (int)reader.GetInt64(1);
+            return results;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     private static TaskListItem Map(SqliteDataReader r) => new(
         Id: Guid.Parse(r.GetString(0)),

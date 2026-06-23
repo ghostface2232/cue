@@ -18,6 +18,11 @@ public partial class ShellViewModel : ObservableObject
     public ObservableCollection<ProjectListItem> Projects { get; } = new();
     public ObservableCollection<LabelListItem> Labels { get; } = new();
 
+    /// <summary>Open-task counts per project / label, refreshed on each <see cref="LoadAsync"/>.
+    /// Read by the shell after a load to stamp navigation count badges.</summary>
+    public IReadOnlyDictionary<Guid, int> ProjectTaskCounts { get; private set; } = new Dictionary<Guid, int>();
+    public IReadOnlyDictionary<Guid, int> LabelTaskCounts { get; private set; } = new Dictionary<Guid, int>();
+
     public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder)
     {
         _store = store;
@@ -30,6 +35,8 @@ public partial class ShellViewModel : ObservableObject
     {
         var projects = await _index.GetProjectsAsync();
         var labels = await _index.GetLabelsAsync();
+        ProjectTaskCounts = await _index.GetOpenTaskCountsByProjectAsync();
+        LabelTaskCounts = await _index.GetOpenTaskCountsByLabelAsync();
         Replace(Projects, projects);
         Replace(Labels, labels);
     }

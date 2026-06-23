@@ -36,6 +36,15 @@ public interface ITaskIndex
     /// <summary>Active labels, excluding tombstones.</summary>
     Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Open (non-deleted, non-completed) task count per project, keyed by project id. Projects with
+    /// no open tasks are simply absent from the map. Drives the navigation count badges.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByProjectAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Open (non-deleted, non-completed) task count per label, keyed by label id.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default);
+
     // ---- Classification axis -------------------------------------------------
 
     /// <summary>Open tasks with no owning project — the unclassified Inbox / Home list.</summary>

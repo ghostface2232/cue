@@ -266,6 +266,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public Task<IReadOnlyList<LabelListItem>> GetLabelsAsync(CancellationToken cancellationToken = default)
         => _index.GetLabelsAsync(cancellationToken);
 
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByProjectAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountsByProjectAsync(cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByLabelAsync(CancellationToken cancellationToken = default)
+        => _index.GetOpenTaskCountsByLabelAsync(cancellationToken);
+
     public Task<IReadOnlyList<TaskListItem>> GetInboxAsync(CancellationToken cancellationToken = default)
         => _index.GetInboxAsync(cancellationToken);
 
