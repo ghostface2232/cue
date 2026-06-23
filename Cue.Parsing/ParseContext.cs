@@ -40,17 +40,22 @@ public sealed class ParseContext
     public ZonedDateTime ZonedNow => ZonedDateTime.FromUtc(Now, TimeZoneId);
 
     /// <summary>
-    /// Disambiguates a bare clock hour — one typed with no AM/PM word, e.g. "오늘 3시". Korean
-    /// speakers usually mean the next such time of day, so when the morning reading on
-    /// <paramref name="date"/> has already passed "now", they mean the afternoon: 1–11 o'clock is
-    /// bumped by 12 hours. Hours typed with an explicit meridiem, plus noon, midnight, and the
-    /// already-unambiguous afternoon hours (12–23) are returned unchanged. For a future date the
-    /// morning reading is never past, so it is left alone (e.g. "내일 3시" stays 03:00).
+    /// Disambiguates a bare clock hour — one typed with no AM/PM word, e.g. "오늘 3시". A to-do is
+    /// rarely scheduled before dawn (a genuine early task gets written "새벽 3시"/"오전 3시"), so:
+    /// <list type="bullet">
+    /// <item>1–6 o'clock defaults to the afternoon (13:00–18:00) on any date.</item>
+    /// <item>7–11 o'clock is a plausible morning slot (a 9am meeting), so it stays AM — unless its
+    /// morning reading has already passed today, in which case it flips to PM.</item>
+    /// </list>
+    /// Hours with an explicit meridiem, plus noon, midnight, and the already-unambiguous afternoon
+    /// hours (12–23), are returned unchanged.
     /// </summary>
     public int DisambiguateBareHour(DateOnly date, int hour, int minute, bool meridiemGiven)
     {
         if (meridiemGiven || hour is < 1 or > 11)
             return hour;
+        if (hour <= 6)
+            return hour + 12;
         return Zoned(date, hour, minute).Utc < Now ? hour + 12 : hour;
     }
 

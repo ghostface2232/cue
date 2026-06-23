@@ -118,49 +118,62 @@ public sealed class KoreanDateParserTests
         Assert.True(r.When.IsEvening);
     }
 
-    [Fact]
-    public void BareHour_WhenMorningReadingHasPassed_IsTakenAsAfternoon()
+    [Theory]
+    [InlineData("오늘", 0)]
+    [InlineData("내일", 1)]
+    [InlineData("모레", 2)]
+    public void BareEarlyHour_DefaultsToAfternoon_OnAnyDate(string rel, int offsetDays)
     {
-        // It's 10:00; a bare "3시" today is ambiguous, but 3am is already gone, so it means 3pm.
+        // 1–6 o'clock with no 오전/오후 is almost always afternoon for a to-do, regardless of the date.
         var at10 = new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero);
-        var r = _parser.Parse("오늘 3시 미팅", at10, Tz);
+        var r = _parser.Parse($"{rel} 3시 미팅", at10, Tz);
         Assert.Equal("미팅", r.Title);
-        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
         Assert.Equal(15, WhenHour(r.When));
     }
 
     [Fact]
-    public void BareHour_WhenMorningReadingStillAhead_StaysMorning()
+    public void BareEarlyHour_IsAfternoon_EvenBeforeDawn()
     {
-        // It's 01:00; 3am is still ahead today, so a bare "3시" keeps its morning reading.
+        // Even at 01:00, "오늘 3시" means 3pm — a real dawn task would be written "새벽/오전 3시".
         var at1 = new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero);
         var r = _parser.Parse("오늘 3시 미팅", at1, Tz);
-        Assert.Equal(3, WhenHour(r.When));
+        Assert.Equal(15, WhenHour(r.When));
     }
 
     [Fact]
-    public void BareHour_OnAFutureDate_StaysMorning()
+    public void BareLateMorningHour_OnFutureDate_StaysMorning()
     {
-        // Tomorrow's 3am is never "past now", so a bare hour on a future date is left as morning.
+        // 7–11 o'clock is a plausible morning slot (a 9am meeting), so a future bare hour keeps AM.
         var at10 = new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero);
-        var r = _parser.Parse("내일 3시 미팅", at10, Tz);
+        var r = _parser.Parse("내일 9시 회의", at10, Tz);
         Assert.Equal(Today.AddDays(1), WhenDate(r.When));
-        Assert.Equal(3, WhenHour(r.When));
+        Assert.Equal(9, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void BareLateMorningHour_Today_FlipsToPmOnlyOnceMorningHasPassed()
+    {
+        var before = _parser.Parse("오늘 9시 회의", new DateTimeOffset(2026, 6, 23, 8, 0, 0, TimeSpan.Zero), Tz);
+        Assert.Equal(9, WhenHour(before.When));   // 08:00: 9am still ahead → morning
+
+        var after = _parser.Parse("오늘 9시 회의", new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero), Tz);
+        Assert.Equal(21, WhenHour(after.When));   // 10:00: 9am gone → 9pm
     }
 
     [Fact]
     public void ExplicitMeridiem_IsNeverBumped()
     {
-        // "오전 3시" stays 3am even after 3am has passed — an explicit meridiem is authoritative.
+        // "오전 3시" stays 3am — an explicit meridiem is authoritative.
         var at10 = new DateTimeOffset(2026, 6, 23, 10, 0, 0, TimeSpan.Zero);
         var r = _parser.Parse("오늘 오전 3시 미팅", at10, Tz);
         Assert.Equal(3, WhenHour(r.When));
     }
 
     [Fact]
-    public void BareTimeWithoutDate_AlsoDisambiguatesAgainstNow()
+    public void BareTimeWithoutDate_AlsoDisambiguates()
     {
-        // The date-less rule resolves to today; the same morning-passed bump applies.
+        // The date-less rule resolves to today and disambiguates the same way.
         var at14 = new DateTimeOffset(2026, 6, 23, 14, 0, 0, TimeSpan.Zero);
         var r = _parser.Parse("3시 미팅", at14, Tz);
         Assert.Equal(Today, WhenDate(r.When));
