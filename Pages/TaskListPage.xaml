@@ -55,15 +55,14 @@
                         IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                         Style="{StaticResource CueCircleCheckBoxStyle}" />
                     <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
-                        <Grid>
+                        <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Center" FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock MaxWidth="420" VerticalAlignment="Center" FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
                             <Border
                                 Grid.Column="1"
-                                Margin="8,0,0,0"
                                 Padding="6,1"
                                 VerticalAlignment="Center"
                                 Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}}"
@@ -119,15 +118,14 @@
                             IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                             Style="{StaticResource CueCircleCheckBoxStyle}" />
                         <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4">
-                            <Grid>
+                            <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock VerticalAlignment="Center" FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock MaxWidth="520" VerticalAlignment="Center" FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
                                 <Border
                                     Grid.Column="1"
-                                    Margin="10,0,0,0"
                                     Padding="7,1"
                                     VerticalAlignment="Center"
                                     Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}}"
