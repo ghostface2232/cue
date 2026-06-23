@@ -92,7 +92,7 @@
     <!-- The accent selection bar + content sit inside PresenterContentRootGrid, which the NavigationView
          indents on its own — leaving a gap between the highlight's left edge and the accent bar. This is
          that gap (0 = bar flush to the highlight's left edge). -->
-    <x:Double x:Key="CueNavBarInset">4</x:Double>
+    <x:Double x:Key="CueNavBarInset">2</x:Double>
     <x:Double x:Key="CueNavIconLeft">4</x:Double>
     <x:Double x:Key="CueNavLabelLeft">4</x:Double>
 
