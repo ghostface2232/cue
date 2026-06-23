@@ -73,6 +73,11 @@
                     <Border.BackgroundTransition>
                         <BrushTransition Duration="0:0:0.083" />
                     </Border.BackgroundTransition>
+                    <Border.Transitions>
+                        <TransitionCollection>
+                            <RepositionThemeTransition />
+                        </TransitionCollection>
+                    </Border.Transitions>
                     <Grid ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -139,6 +144,9 @@
         <TextBox
             Grid.Row="2"
             Margin="4,0,4,12"
+            Padding="14,8,8,8"
+            MinHeight="40"
+            CornerRadius="20"
             IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
             KeyDown="QuickAdd_KeyDown"
             PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
