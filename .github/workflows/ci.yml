@@ -1,0 +1,61 @@
+name: CI
+
+# Runs the cross-platform test suite (Cue.Tests + its net10.0 project
+# references). The WinUI app project (Cue.csproj) targets net10.0-windows and is
+# intentionally not built here — only the testable, cross-platform layers are.
+on:
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  # Allow manual runs from the Actions tab.
+  workflow_dispatch:
+
+# Cancel superseded runs on the same PR branch to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (net10.0)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Cue.Tests/Cue.Tests.csproj
+
+      - name: Build
+        run: dotnet build Cue.Tests/Cue.Tests.csproj --configuration Release --no-restore
+
+      - name: Test
+        run: >-
+          dotnet test Cue.Tests/Cue.Tests.csproj
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+          --collect:"XPlat Code Coverage"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults
+          if-no-files-found: ignore
