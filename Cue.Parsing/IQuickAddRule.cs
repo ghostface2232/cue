@@ -37,18 +37,27 @@ public sealed class QuickAddResult
     /// <summary>Whether a scheduled <see cref="When"/> has been set.</summary>
     public bool WhenAssigned { get; private set; }
 
+    /// <summary>
+    /// Whether the recognized <see cref="When"/> carried an explicit time-of-day (e.g. "3시"), as
+    /// opposed to a date only (e.g. "3월 15일"). A date-only result is treated as an all-day event by
+    /// the quick-add path. Meaningless when <see cref="WhenAssigned"/> is false.
+    /// </summary>
+    public bool WhenHasTime { get; private set; }
+
     /// <summary>The scheduled date, if recognized.</summary>
     public ScheduledWhen When { get; private set; } = ScheduledWhen.Unscheduled;
 
     /// <summary>The recurrence, if a "매일/매주/…" expression was recognized.</summary>
     public RecurrenceRule? Recurrence { get; private set; }
 
-    /// <summary>Sets <see cref="When"/> once; returns false if it was already set.</summary>
-    public bool TrySetWhen(ScheduledWhen when)
+    /// <summary>Sets <see cref="When"/> once; returns false if it was already set.
+    /// <paramref name="hasTime"/> records whether an explicit clock time was part of the recognition.</summary>
+    public bool TrySetWhen(ScheduledWhen when, bool hasTime = false)
     {
         if (WhenAssigned)
             return false;
         When = when;
+        WhenHasTime = hasTime;
         WhenAssigned = true;
         return true;
     }

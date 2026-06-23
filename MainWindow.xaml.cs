@@ -97,21 +97,6 @@ public sealed partial class MainWindow : Window
         if (args.SelectedItem is not NavigationViewItem item)
             return;
 
-        if (item.Tag is string action && action is "create-group" or "create-tag")
-        {
-            var isGroup = action == "create-group";
-            var name = await PromptNameAsync(isGroup ? "새 그룹" : "새 태그", isGroup ? "그룹 이름" : "태그 이름");
-            if (name is not null)
-            {
-                if (isGroup) await ViewModel.CreateTaskGroupCommand.ExecuteAsync(name);
-                else await ViewModel.CreateTagCommand.ExecuteAsync(name);
-            }
-            // Recreate the action row even after cancel so it does not remain selected/dead.
-            RebuildLiveNavigation();
-            NavView.SelectedItem = null;
-            return;
-        }
-
         if (item.Tag is string fixedView && fixedView == "timeline")
         {
             _currentNavigation = null;
@@ -134,17 +119,29 @@ public sealed partial class MainWindow : Window
         NavFrame.BackStack.Clear(); // flat navigation — no back history between lists
     }
 
+    // The + buttons on the 그룹 / 태그 section headers (immediately left of the expand/collapse chevron).
+    private async void AddGroup_Click(object sender, RoutedEventArgs e) => await CreateRecordAsync(isGroup: true);
+    private async void AddTag_Click(object sender, RoutedEventArgs e) => await CreateRecordAsync(isGroup: false);
+
+    private Task CreateRecordAsync(bool isGroup)
+        => RunSafelyAsync(async () =>
+        {
+            var name = await PromptNameAsync(isGroup ? "새 그룹" : "새 태그", isGroup ? "그룹 이름" : "태그 이름");
+            if (name is null) return;
+            if (isGroup) await ViewModel.CreateTaskGroupCommand.ExecuteAsync(name);
+            else await ViewModel.CreateTagCommand.ExecuteAsync(name);
+            RebuildLiveNavigation();
+        });
+
     private void RebuildLiveNavigation()
     {
         GroupsSection.MenuItems.Clear();
-        GroupsSection.MenuItems.Add(new NavigationViewItem { Content = "+ 새 그룹", Tag = "create-group" });
         GroupsSection.MenuItems.Add(CreateUnfiledItem(
             "그룹 없음", TaskListMode.NoTaskGroup, ViewModel.NoTaskGroupTaskCount));
         foreach (var taskGroup in ViewModel.TaskGroups)
             GroupsSection.MenuItems.Add(CreateTaskGroupItem(taskGroup));
 
         TagsSection.MenuItems.Clear();
-        TagsSection.MenuItems.Add(new NavigationViewItem { Content = "+ 새 태그", Tag = "create-tag" });
         TagsSection.MenuItems.Add(CreateUnfiledItem(
             "태그 없음", TaskListMode.NoTag, ViewModel.NoTagTaskCount));
         foreach (var tag in ViewModel.Tags)
@@ -173,10 +170,10 @@ public sealed partial class MainWindow : Window
     {
         ("today", "", "오늘 할 일"),
         ("upcoming", "", "앞으로 할 일"),
-        ("timeline", "\uE9D2", "타임라인"),
         ("anytime", "", "언젠가 할 일"),
         ("logbook", "", "완료한 일"),
         ("priority", "", "중요도"),
+        ("timeline", "\uE9D2", "타임라인"),
     };
 
     private NavigationViewItem NavItemFor(string key) => key switch
@@ -190,10 +187,16 @@ public sealed partial class MainWindow : Window
         _ => throw new ArgumentOutOfRangeException(nameof(key)),
     };
 
+    // Lists that start hidden until the user opts to show them from the sidebar context menu.
+    private static readonly HashSet<string> DefaultHiddenNav = new() { "upcoming", "anytime" };
+
+    private static bool NavIsVisible(string key)
+        => NavPreferences.IsVisible(key, !DefaultHiddenNav.Contains(key));
+
     private void ApplyNavVisibility()
     {
         foreach (var (key, _, _) in ToggleableNav)
-            NavItemFor(key).Visibility = NavPreferences.IsVisible(key) ? Visibility.Visible : Visibility.Collapsed;
+            NavItemFor(key).Visibility = NavIsVisible(key) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Right-click anywhere in the sidebar pane opens a checkable list of the fixed views to
@@ -227,7 +230,7 @@ public sealed partial class MainWindow : Window
             Glyph = "",
             FontSize = 14,
             VerticalAlignment = VerticalAlignment.Center,
-            Visibility = NavPreferences.IsVisible(key) ? Visibility.Visible : Visibility.Collapsed,
+            Visibility = NavIsVisible(key) ? Visibility.Visible : Visibility.Collapsed,
         };
         if (AccentBrush() is { } accent) check.Foreground = accent;
 
@@ -255,7 +258,7 @@ public sealed partial class MainWindow : Window
         };
         button.Click += (_, _) =>
         {
-            var visible = !NavPreferences.IsVisible(key);
+            var visible = !NavIsVisible(key);
             NavPreferences.SetVisible(key, visible);
             check.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
             var item = NavItemFor(key);

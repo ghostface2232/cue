@@ -183,6 +183,12 @@ public partial class TaskListViewModel : ObservableObject
         // list placement; Today pins it to today and other lists leave it Unscheduled.
         var when = QuickAddContext.Apply(parsed.When, parsed.WhenAssigned, _mode, _clock.GetUtcNow(), _timeZone);
 
+        // A task given only a date with no explicit time is registered as an all-day (종일) event,
+        // pinned to the end of the day (23:59) — the same marker the detail panel reads back as 종일.
+        // Recurrence anchors keep their own time and are left untouched.
+        if (when.Kind == WhenKind.OnDate && !parsed.WhenHasTime && parsed.Recurrence is null)
+            when = AllDay(when);
+
         var task = new TaskItem
         {
             Title = parsed.Title,
@@ -325,6 +331,14 @@ public partial class TaskListViewModel : ObservableObject
             yield return sub;
             foreach (var deeper in Descendants(sub)) yield return deeper;
         }
+    }
+
+    /// <summary>Re-pins a dated When to the end of its day (23:59 local) — the all-day (종일) marker.</summary>
+    private ScheduledWhen AllDay(ScheduledWhen when)
+    {
+        if (when.Date is not { } zoned) return when;
+        var localDate = zoned.ToLocal().Date;
+        return ScheduledWhen.On(ZonedDateTime.FromLocal(localDate.AddHours(23).AddMinutes(59), _timeZoneId));
     }
 
     private Guid RequiredFilterId()

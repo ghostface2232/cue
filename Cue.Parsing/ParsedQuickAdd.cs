@@ -24,6 +24,13 @@ public sealed record ParsedQuickAdd(
     /// </summary>
     public bool WhenAssigned { get; init; }
 
+    /// <summary>
+    /// True when <see cref="When"/> was recognized with an explicit time-of-day (e.g. "내일 3시"),
+    /// false for a date-only recognition (e.g. "내일"). The quick-add path registers a date-only
+    /// task as an all-day event. Meaningless when <see cref="WhenAssigned"/> is false.
+    /// </summary>
+    public bool WhenHasTime { get; init; }
+
     /// <summary>A result that carries only a title — nothing was scheduled.</summary>
     public static ParsedQuickAdd TitleOnly(string title)
         => new(title, ScheduledWhen.Unscheduled, null);

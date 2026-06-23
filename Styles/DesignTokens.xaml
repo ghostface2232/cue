@@ -114,33 +114,31 @@
     </Style>
 
     <!-- ===== Nav count badge =====
-         The app forces Pretendard JP as the default content font, whose line box carries a tall ascent;
-         inside the InfoBadge's fixed 16px height the digit then sits visibly high. Retemplate the value
-         badge with a TextBlock using TextLineBounds="Tight" so the glyph's own ink box (not its padded
-         line box) is what gets vertically centered. Numeric value only — Dot/Icon states are unused. -->
+         The group/tag/unfiled open-task counts read as a quiet number, not an alert: no colored pill or
+         circle, just tertiary digits aligned to the right of the row. (An attention-tinted pill made the
+         counts look like unread-notification badges.) Retemplated with a TextBlock using
+         TextLineBounds="Tight" so Pretendard's tall ascent doesn't sit the digit high. Numeric only. -->
     <Style x:Key="CueCountInfoBadgeStyle" TargetType="InfoBadge">
-        <Setter Property="Background" Value="{ThemeResource SystemFillColorAttentionBrush}" />
-        <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Height" Value="16" />
-        <Setter Property="MinWidth" Value="16" />
-        <Setter Property="FontSize" Value="11" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="MinWidth" Value="12" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="InfoBadge">
                     <Border
                         Background="{TemplateBinding Background}"
-                        CornerRadius="{TemplateBinding CornerRadius}"
                         Height="{TemplateBinding Height}"
                         MinWidth="{TemplateBinding MinWidth}"
-                        Padding="4,0">
+                        Padding="2,0">
                         <!-- Value (Int32) → Text (String) needs a converting binding: TemplateBinding does
                              no type coercion, so it would silently render blank. A TemplatedParent Binding
                              coerces to string (ToString) and shows the number. -->
                         <TextBlock
-                            HorizontalAlignment="Center"
+                            HorizontalAlignment="Right"
                             VerticalAlignment="Center"
                             FontSize="{TemplateBinding FontSize}"
                             Foreground="{TemplateBinding Foreground}"

@@ -26,6 +26,7 @@ public sealed record TaskListItem(
     Guid? ParentTaskId,
     WhenKind WhenKind,
     DateOnly? WhenDate,
+    TimeOnly? WhenTime,
     bool IsCompleted,
     Priority Priority,
     string SortOrder);

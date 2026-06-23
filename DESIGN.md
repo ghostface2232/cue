@@ -305,7 +305,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 
 ### Detail panel
 - Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in and slides out on close (see "Motion").
-- A vertical stack of cards (radius 8, 1px stroke, no shadow): task info (notes · importance · group) / date (the single When, + optional time / 종일) / tags / checklist.
+- A vertical stack of cards (radius 8, 1px stroke, no shadow): task info (notes · importance · group) / **일시 (the single When, + optional time / 종일)** / tags / checklist. The date card is titled **일시** (date + time); a date added with no explicit time defaults to 종일 (all-day). In the one-column (compact) layout the time dropdowns stretch to the card width instead of staying fixed-width.
 - **Resizable.** A 10px transparent grab strip on the panel's left edge drag-resizes it. Width is clamped to 320–680px (absolute min 260px) and further capped so the primary list keeps ≥340px — the panel never starves the list. On hover or while dragging, the strip reveals a slim vertical pill handle (4×58, radius 2, tertiary text brush at ~72% opacity) with the standard 83ms opacity transition.
 - **Responsive.** Below a compact width (~390px), paired side-by-side fields (importance + group, date + time) reflow to stack vertically so nothing is squeezed.
 - **Conditional text fade for clipped content** (see "Elevation & Depth"): only overflowing inline text inside padded content, such as long tag names, fades at the right edge instead of hard-clipping. The panel scroll body itself does not get a bottom fade because it clips at the panel boundary.
@@ -352,8 +352,8 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## Components
 
 ### Task row
-- Columns: `[3px selection bar][circular check][title … priority pill]`, with a one-line metadata row (schedule) below.
-- Selected → left 3px accent bar (`selection-bar`, radius 1.5, a dedicated column so it never shifts content). Background hover transitions over 83ms. Radius `{rounded.md}`.
+- Columns: `[3px selection bar][circular check][title … priority pill]`, with a one-line metadata row (schedule) below. The schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time; an all-day (종일) task shows the date alone.
+- Selected → left 3px accent bar (`selection-bar`, radius 1.5, a dedicated column so it never shifts content) **plus a persistent row fill in the hover tone** (`{colors.hover-fill}`), so the open task reads as selected even when the pointer is elsewhere. Background hover transitions over 83ms. Radius `{rounded.md}`.
 - Subtasks render as an indented nested list under the parent (with a 1px divider). Their presence is self-evident, so there is no "N subtasks" caption. Child rows reuse the same circular check, row-sub font, and spacing.
 
 ### Completion state
@@ -387,11 +387,11 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### Sidebar / navigation
 - Stock `NavigationView` + thin override. Selected text is flattened to `TextFillColorPrimary` (calm, not accent); selection reads from the fill + the stock left accent pill.
-- Fixed items: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · **타임라인 (Timeline)** · 언젠가 할 일 (Anytime) · 완료한 일 (Logbook) · 중요도 (Priority). Below them: **그룹 (TaskGroup)** and **태그 (Tag)** sections.
-- Group/Tag headers are 12 SemiBold `TextFillColorTertiary` (quiet hierarchy).
-- An `InfoBadge` with the open-task count sits at the end of each item (restrained).
+- Fixed items, in order: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · 언젠가 할 일 (Anytime) · 완료한 일 (Logbook) · 중요도 (Priority) · **타임라인 (Timeline)**. Below them: **그룹 (TaskGroup)** and **태그 (Tag)** sections. **앞으로 할 일 (Upcoming)** and **언젠가 할 일 (Anytime)** start hidden by default (shown via the right-click show/hide menu).
+- Group/Tag headers are 12 SemiBold `TextFillColorTertiary` (quiet hierarchy). The **new group / new tag action is a `+` icon button on the section header**, immediately left of the expand/collapse chevron — not a list row.
+- The per-group / per-tag open-task count is a **plain number** at the end of the row (`TextFillColorTertiary`, no pill/circle background) — a quiet count, not an alert badge.
 - **Glyph click = instant picker.** Clicking a group glyph opens the icon picker; clicking a tag glyph opens the color picker — directly, no depth (right-click context menu is the fallback).
-- **Sidebar right-click = show/hide menu.** A checkable list toggles the fixed views (오늘 / 앞으로 / 타임라인 / 언젠가 / 완료 / 중요도) on and off (name left, accent check right). Saved to app-local settings. "모든 할 일" is always shown.
+- **Sidebar right-click = show/hide menu.** A checkable list toggles the fixed views (오늘 / 앞으로 / 언젠가 / 완료 / 중요도 / 타임라인) on and off (name left, accent check right). Saved to app-local settings. "모든 할 일" is always shown.
 
 ### Selection popup (icon / color)
 - Icon/color only, no names; a 4-column grid flyout anchored to the nav item.

@@ -45,7 +45,7 @@ public sealed class RelativeHourRule : IQuickAddRule
             return false;
         var target = context.LocalNow.AddHours(n);
         var date = DateOnly.FromDateTime(target.DateTime);
-        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(date, target.Hour, target.Minute)));
+        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(date, target.Hour, target.Minute)), hasTime: true);
     }
 }
 
@@ -202,7 +202,7 @@ public sealed class DeadlineRule : IQuickAddRule
         var when = hasTime
             ? ScheduledWhen.On(context.Zoned(date, h, min))
             : ScheduledWhen.On(context.Zoned(date));
-        return result.TrySetWhen(when);
+        return result.TrySetWhen(when, hasTime);
     }
 }
 
@@ -229,7 +229,7 @@ public sealed class WhenDateRule : IQuickAddRule
         var when = hasTime
             ? ScheduledWhen.On(context.Zoned(date, h, min))
             : ScheduledWhen.On(context.Zoned(date));
-        return result.TrySetWhen(when);
+        return result.TrySetWhen(when, hasTime);
     }
 }
 
@@ -249,7 +249,7 @@ public sealed class TimeOfDayRule : IQuickAddRule
         if (!hasTime)
             return false; // nothing concrete to schedule
         h = context.DisambiguateBareHour(context.Today, h, min, meridiemGiven);
-        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, h, min)));
+        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, h, min)), hasTime: true);
     }
 }
 
@@ -270,6 +270,6 @@ public sealed class MealAfterRule : IQuickAddRule
             "저녁" => 19,
             _ => 0,
         };
-        return hour > 0 && result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, hour, 0)));
+        return hour > 0 && result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, hour, 0)), hasTime: true);
     }
 }

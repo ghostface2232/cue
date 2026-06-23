@@ -59,11 +59,6 @@
                         <FontIcon Glyph="&#xE823;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem x:Name="TimelineItem" Content="타임라인" Tag="timeline">
-                    <NavigationViewItem.Icon>
-                        <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE9D2;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
                 <NavigationViewItem x:Name="AnytimeItem" Content="언젠가 할 일" Tag="anytime">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8FD;" />
@@ -79,36 +74,87 @@
                         <FontIcon Glyph="&#xE7C1;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem x:Name="TimelineItem" Content="타임라인" Tag="timeline">
+                    <NavigationViewItem.Icon>
+                        <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE9D2;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItemSeparator />
                 <NavigationViewItem
                     x:Name="GroupsSection"
-                    Content="그룹"
-                    FontFamily="{StaticResource CueFontFamilySemiBold}"
-                    FontSize="12"
-                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                    HorizontalContentAlignment="Stretch"
                     IsExpanded="True"
                     SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8B7;" />
                     </NavigationViewItem.Icon>
-                    <NavigationViewItem.MenuItems>
-                        <NavigationViewItem Content="+ 새 그룹" Tag="create-group" />
-                    </NavigationViewItem.MenuItems>
+                    <!-- The "new group" action is a + button on the section header, immediately left of the
+                         expand/collapse chevron — not a list row. -->
+                    <NavigationViewItem.Content>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Text="그룹" />
+                            <Button
+                                Grid.Column="1"
+                                Width="26"
+                                Height="26"
+                                Margin="0,0,4,0"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Click="AddGroup_Click"
+                                CornerRadius="{StaticResource CueRadiusSmall}"
+                                AutomationProperties.Name="새 그룹"
+                                ToolTipService.ToolTip="새 그룹">
+                                <FontIcon FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE710;" />
+                            </Button>
+                        </Grid>
+                    </NavigationViewItem.Content>
                 </NavigationViewItem>
                 <NavigationViewItem
                     x:Name="TagsSection"
-                    Content="태그"
-                    FontFamily="{StaticResource CueFontFamilySemiBold}"
-                    FontSize="12"
-                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                    HorizontalContentAlignment="Stretch"
                     IsExpanded="True"
                     SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8EC;" />
                     </NavigationViewItem.Icon>
-                    <NavigationViewItem.MenuItems>
-                        <NavigationViewItem Content="+ 새 태그" Tag="create-tag" />
-                    </NavigationViewItem.MenuItems>
+                    <NavigationViewItem.Content>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Text="태그" />
+                            <Button
+                                Grid.Column="1"
+                                Width="26"
+                                Height="26"
+                                Margin="0,0,4,0"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Click="AddTag_Click"
+                                CornerRadius="{StaticResource CueRadiusSmall}"
+                                AutomationProperties.Name="새 태그"
+                                ToolTipService.ToolTip="새 태그">
+                                <FontIcon FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE710;" />
+                            </Button>
+                        </Grid>
+                    </NavigationViewItem.Content>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>

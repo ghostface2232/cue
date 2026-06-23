@@ -367,6 +367,14 @@ public sealed partial class TaskListPage : Page
         var compact = width < DetailCompactBreakpoint;
         SetResponsivePair(DetailMetaGrid, DetailGroupField, compact, new GridLength(1, GridUnitType.Star));
         SetResponsivePair(WhenDateTimeGrid, WhenTimePanel, compact, GridLength.Auto);
+
+        // In one-column (compact) mode the time dropdowns own the full card width, so let their columns
+        // go star and drop the fixed width; in two-column mode they hug the date at a fixed 72px.
+        var star = new GridLength(1, GridUnitType.Star);
+        WhenHourCol.Width = compact ? star : GridLength.Auto;
+        WhenMinuteCol.Width = compact ? star : GridLength.Auto;
+        WhenHourCombo.Width = compact ? double.NaN : 72;
+        WhenMinuteCombo.Width = compact ? double.NaN : 72;
     }
 
     private static void SetResponsivePair(Grid grid, FrameworkElement second, bool compact, GridLength normalSecondWidth)
