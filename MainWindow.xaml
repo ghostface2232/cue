@@ -33,6 +33,7 @@
         <NavigationView
             x:Name="NavView"
             Grid.Row="1"
+            FontFamily="{StaticResource CueFontFamily}"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"
             IsSettingsVisible="False"
@@ -76,8 +77,8 @@
                 <NavigationViewItem
                     x:Name="ProjectsGroup"
                     Content="Projects"
+                    FontFamily="{StaticResource CueFontFamilySemiBold}"
                     FontSize="12"
-                    FontWeight="SemiBold"
                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                     IsExpanded="True"
                     SelectsOnInvoked="False">
@@ -91,8 +92,8 @@
                 <NavigationViewItem
                     x:Name="LabelsGroup"
                     Content="Labels"
+                    FontFamily="{StaticResource CueFontFamilySemiBold}"
                     FontSize="12"
-                    FontWeight="SemiBold"
                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                     IsExpanded="True"
                     SelectsOnInvoked="False">

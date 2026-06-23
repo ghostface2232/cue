@@ -8,6 +8,31 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!-- ===== Typeface: Pretendard JP (Korean-first). Static OTFs ship as two families — true
+         SemiBold lives in its own family, so weight hierarchy switches family, not FontWeight. ===== -->
+    <FontFamily x:Key="CueFontFamily">ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP</FontFamily>
+    <FontFamily x:Key="CueFontFamilySemiBold">ms-appx:///Assets/Fonts/PretendardJP-SemiBold.otf#Pretendard JP SemiBold</FontFamily>
+    <!-- Make Pretendard the default for templated controls (buttons, list items, text boxes, nav…).
+         Plain TextBlocks inherit it via FontFamily set on the window root in MainWindow.xaml. -->
+    <FontFamily x:Key="ContentControlThemeFontFamily">ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP</FontFamily>
+
+    <!-- ===== Text hierarchy: family(weight) + size + color in one style each ===== -->
+    <Style x:Key="CuePageTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
+        <Setter Property="FontSize" Value="28" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="CueSectionHeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
+        <Setter Property="FontSize" Value="{StaticResource CueFontSection}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="CueCardHeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+
     <!-- ===== Radius scale (4 / 8 / 12, mirroring Files' ControlCornerRadius / OverlayCornerRadius) ===== -->
     <CornerRadius x:Key="CueRadiusSmall">4</CornerRadius>
     <CornerRadius x:Key="CueRadiusRow">8</CornerRadius>

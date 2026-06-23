@@ -7,6 +7,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:Cue.ViewModels"
     Background="{ThemeResource LayerFillColorDefaultBrush}"
+    FontFamily="{StaticResource CueFontFamily}"
     mc:Ignorable="d">
 
     <Page.Resources>
@@ -123,7 +124,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+                <TextBlock Style="{StaticResource CuePageTitleTextStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
                 <TextBlock
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Style="{StaticResource CaptionTextBlockStyle}"
@@ -159,7 +160,7 @@
                             ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
                             Loaded="ReorderRepeater_Loaded" />
                         <StackPanel Margin="0,18,0,0" Visibility="{x:Bind ViewModel.HasEveningTasks, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Margin="14,0,0,7" FontSize="{StaticResource CueFontSection}" Style="{StaticResource SubtitleTextBlockStyle}" Text="오늘 저녁" />
+                            <TextBlock Margin="14,0,0,7" Style="{StaticResource CueSectionHeaderTextStyle}" Text="오늘 저녁" />
                             <ItemsRepeater
                                 ElementClearing="TaskRepeater_ElementClearing"
                                 ElementPrepared="TaskRepeater_ElementPrepared"
@@ -183,7 +184,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock FontSize="{StaticResource CueFontSection}" Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Name}" />
+                                        <TextBlock Style="{StaticResource CueSectionHeaderTextStyle}" Text="{x:Bind Name}" />
                                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DeadlineCaption}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="{x:Bind CanEdit, Converter={StaticResource BoolToVisibility}}">
@@ -242,8 +243,8 @@
                                 VerticalAlignment="Center"
                                 Background="Transparent"
                                 BorderThickness="0"
+                                FontFamily="{StaticResource CueFontFamilySemiBold}"
                                 FontSize="27"
-                                FontWeight="SemiBold"
                                 PlaceholderText="작업 제목"
                                 Text="{x:Bind ViewModel.Detail.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 TextWrapping="Wrap" />
@@ -273,7 +274,7 @@
 
                         <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
-                                <TextBlock FontWeight="SemiBold" Text="작업 정보" />
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="작업 정보" />
                                 <TextBox AcceptsReturn="True" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -294,7 +295,7 @@
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                             <StackPanel Spacing="11">
                                 <Grid>
-                                    <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="예정" />
+                                    <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="예정" />
                                     <Button HorizontalAlignment="Right" Padding="8,3" Background="Transparent" BorderThickness="0" Click="ClearWhen_Click" Content="제거" />
                                 </Grid>
                                 <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.WhenDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
@@ -316,7 +317,7 @@
 
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
-                                <TextBlock FontWeight="SemiBold" Text="마감" />
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="마감" />
                                 <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.DeadlineDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
                                 <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.Detail.HasDeadline, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock Text="시각" />
@@ -331,7 +332,7 @@
 
                         <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="10">
-                                <Grid><TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
+                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="라벨" /><Button HorizontalAlignment="Right" Click="AddLabel_Click" Content="+ 새 라벨" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Labels}">
                                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:LabelEditorOption"><CheckBox Margin="0,0,14,7" Content="{x:Bind Name}" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" /></DataTemplate></ItemsControl.ItemTemplate>
@@ -341,7 +342,7 @@
 
                         <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="11">
-                                <TextBlock FontWeight="SemiBold" Text="서브태스크" />
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="서브태스크" />
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <TextBox PlaceholderText="서브태스크 제목" Text="{x:Bind ViewModel.Detail.NewSubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
