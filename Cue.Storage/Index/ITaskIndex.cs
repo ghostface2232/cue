@@ -92,4 +92,11 @@ public interface ITaskIndex
 
     /// <summary>Completed tasks, most-recently-completed first — the Logbook.</summary>
     Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tasks that carry a priority flag (P1–P4), for the 중요도 view. Ordered by priority (P1 first),
+    /// then completed-last, then rank — the view model groups them into per-priority sections.
+    /// Includes completed tasks (shown dimmed) so finished work stays visible until navigation.
+    /// </summary>
+    Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default);
 }

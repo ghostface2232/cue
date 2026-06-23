@@ -8,6 +8,28 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!-- ===== Input field tone: theme-split. Light keeps the standard control fill (and holds that
+         tone on focus instead of the default bright white-out). Dark uses a subtle recessed (darker)
+         well rather than the framework's translucent-white fill, which read as too bright on the dark
+         cards. Consumed by TextBox visual states. ===== -->
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource ControlFillColorSecondary}" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource ControlFillColorDefault}" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource ControlFillColorSecondary}" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource ControlFillColorDefault}" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="TextControlBackground" Color="#18000000" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#24000000" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#18000000" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
     <!-- ===== Typeface: Pretendard JP (Korean-first). Static OTFs ship as two families — true
          SemiBold lives in its own family, so weight hierarchy switches family, not FontWeight. ===== -->
     <FontFamily x:Key="CueFontFamily">ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP</FontFamily>
@@ -63,11 +85,9 @@
     <StaticResource x:Key="TextControlBorderBrush" ResourceKey="ControlStrokeColorDefaultBrush" />
     <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="ControlStrokeColorDefaultBrush" />
     <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="ControlStrokeColorDefaultBrush" />
-    <!-- A persistent tone so inputs read as distinct from the page/cards, one step deeper on hover.
-         Focused keeps the tone instead of the default bright white-out. -->
-    <StaticResource x:Key="TextControlBackground" ResourceKey="ControlFillColorDefaultBrush" />
-    <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="ControlFillColorSecondaryBrush" />
-    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
+    <!-- A persistent tone so inputs read as distinct from the page/cards, one step deeper on hover,
+         holding the tone on focus instead of the default bright white-out. The actual background
+         brushes are theme-split in the ThemeDictionaries at the top of this file. -->
 
     <!-- ===== NavigationView: flatten the selected-item text to primary (calmer, Things-3-like).
          Mirrors Files/Settings NavigationViewItemButtonStyle. Overrides the stock keys app-wide;

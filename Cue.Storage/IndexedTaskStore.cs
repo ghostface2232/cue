@@ -305,5 +305,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IAsyncDisposable
     public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
         => _index.GetLogbookAsync(cancellationToken);
 
+    public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
+        => _index.GetByPriorityAsync(cancellationToken);
+
     public ValueTask DisposeAsync() => _index.DisposeAsync();
 }

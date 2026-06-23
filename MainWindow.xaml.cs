@@ -139,6 +139,7 @@ public sealed partial class MainWindow : Window
         ("anytime", "", "언제든 할 일"),
         ("someday", "", "나중에 할 일"),
         ("logbook", "", "완료한 일"),
+        ("priority", "", "중요도"),
     };
 
     private NavigationViewItem NavItemFor(string key) => key switch
@@ -148,6 +149,7 @@ public sealed partial class MainWindow : Window
         "anytime" => AnytimeItem,
         "someday" => SomedayItem,
         "logbook" => LogbookItem,
+        "priority" => PriorityItem,
         _ => throw new ArgumentOutOfRangeException(nameof(key)),
     };
 

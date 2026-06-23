@@ -177,7 +177,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Null((await store.GetAsync<TaskItem>(open.Id))!.SectionId);
         Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.ProjectId);
         Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.SectionId);
-        Assert.Equal(open.Id, Assert.Single(await store.GetInboxAsync()).Id);
+        // Both tasks move to the Inbox; the completed one stays (dimmed) and sinks below the open one.
+        Assert.Equal(new[] { open.Id, done.Id }, (await store.GetInboxAsync()).Select(t => t.Id));
         Assert.NotNull((await store.GetAsync<Project>(project.Id))!.DeletedAt);
         Assert.NotNull((await store.GetAsync<Section>(section.Id))!.DeletedAt);
         Assert.Empty(await store.GetProjectsAsync());
@@ -403,7 +404,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         var today = (await store.GetTodayAsync()).Select(t => t.Id).ToHashSet();
         Assert.Contains(evening.Id, today);
-        Assert.DoesNotContain(done.Id, today);          // completed never shows in Today
+        Assert.Contains(done.Id, today);                // completed stays in its time bucket (dimmed)
         Assert.DoesNotContain(future.Id, today);        // future When
         Assert.DoesNotContain(deadlineOnly.Id, today);  // no When ⇒ not a Today item
 
@@ -412,6 +413,25 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Contains(deadlineOnly.Id, upcoming);  // future Deadline, no When
 
         Assert.Equal(new[] { done.Id }, (await store.GetLogbookAsync()).Select(t => t.Id));
+    }
+
+    [Fact]
+    public async Task GetByPriority_ReturnsFlaggedTasksOrderedByPriority_OpenBeforeCompleted()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var p2 = new TaskItem { Title = "중요", Priority = Priority.P2 };
+        var p1 = new TaskItem { Title = "매우 중요", Priority = Priority.P1 };
+        var none = new TaskItem { Title = "중요도 없음" };
+        var p1done = new TaskItem { Title = "완료한 P1", Priority = Priority.P1, CompletedAt = Now };
+        foreach (var t in new[] { p2, p1, none, p1done })
+            await store.SaveAsync(t);
+
+        var ids = (await store.GetByPriorityAsync()).Select(t => t.Id).ToList();
+
+        // Unflagged tasks are excluded; results run P1 → P4, with completed sinking within each level.
+        Assert.DoesNotContain(none.Id, ids);
+        Assert.Equal(new[] { p1.Id, p1done.Id, p2.Id }, ids);
     }
 
     [Fact]

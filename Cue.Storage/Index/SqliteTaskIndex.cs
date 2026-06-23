@@ -446,30 +446,33 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // ---- Classification axis -------------------------------------------------
 
+    // Active lists keep completed tasks (shown dimmed) rather than dropping them on the next load, so
+    // finishing an item doesn't make it vanish; they sink below the open rows via the completed-last
+    // ordering. Open-task counts (badges) still exclude completed — see GetOpenTaskCounts*.
     public Task<IReadOnlyList<TaskListItem>> GetInboxAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL " +
-            "AND project_id IS NULL ORDER BY sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND project_id IS NULL ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL " +
-            "AND project_id = $project ORDER BY sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND project_id = $project ORDER BY completed_at IS NOT NULL, sort_order;",
             cmd => Bind(cmd, "$project", projectId.ToString()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetBySectionAsync(Guid sectionId, CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL " +
-            "AND section_id = $section ORDER BY sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND section_id = $section ORDER BY completed_at IS NOT NULL, sort_order;",
             cmd => Bind(cmd, "$section", sectionId.ToString()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Prefixed("t")} FROM tasks t " +
             "INNER JOIN task_labels tl ON tl.task_id = t.id " +
-            "WHERE tl.label_id = $label AND t.deleted_at IS NULL AND t.completed_at IS NULL " +
-            "ORDER BY t.sort_order;",
+            "WHERE tl.label_id = $label AND t.deleted_at IS NULL " +
+            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             cmd => Bind(cmd, "$label", labelId.ToString()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
@@ -482,43 +485,49 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL AND ( " +
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND ( " +
             "(when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today) OR " +
             "(deadline_date IS NOT NULL AND deadline_date <= $today) ) " +
-            "ORDER BY COALESCE(when_date, deadline_date), sort_order;",
+            "ORDER BY completed_at IS NOT NULL, COALESCE(when_date, deadline_date), sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetThisEveningAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL " +
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
             "AND when_kind = 'OnDate' AND when_date IS NOT NULL AND when_date <= $today " +
-            "AND when_is_evening = 1 ORDER BY when_date, sort_order;",
+            "AND when_is_evening = 1 ORDER BY completed_at IS NOT NULL, when_date, sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL AND ( " +
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND ( " +
             "(when_kind = 'OnDate' AND when_date > $today) OR " +
             "(deadline_date IS NOT NULL AND deadline_date > $today) ) " +
-            "ORDER BY COALESCE(when_date, deadline_date), sort_order;",
+            "ORDER BY completed_at IS NOT NULL, COALESCE(when_date, deadline_date), sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL " +
-            "AND when_kind = 'Unscheduled' ORDER BY sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND when_kind = 'Unscheduled' ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetSomedayAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL " +
-            "AND when_kind = 'SomeDay' ORDER BY sort_order;",
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND when_kind = 'SomeDay' ORDER BY completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
             $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND completed_at IS NOT NULL " +
             "ORDER BY completed_at DESC;",
+            _ => { }, cancellationToken);
+
+    public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
+        => QueryAsync(
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND priority <> 0 " +
+            "ORDER BY priority, completed_at IS NOT NULL, sort_order;",
             _ => { }, cancellationToken);
 
     // ---- Plumbing ------------------------------------------------------------

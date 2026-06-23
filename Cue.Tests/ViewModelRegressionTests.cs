@@ -90,7 +90,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task CompletionKeepsRowVisibleAndDimmedUntilNextReload()
+    public async Task CompletionKeepsRowVisibleAndDimmedAcrossReloads()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -111,8 +111,36 @@ public sealed class ViewModelRegressionTests
         Assert.Equal(0.48, row.VisualOpacity);
         Assert.True((await store.GetAsync<TaskItem>(task.Id))!.IsCompleted);
 
+        // Completed items stay in the list (dimmed) across reloads instead of vanishing.
         await vm.LoadCommand.ExecuteAsync(null);
-        Assert.Empty(vm.Tasks);
+        var reloaded = Assert.Single(vm.Tasks);
+        Assert.True(reloaded.IsCompleted);
+        Assert.Equal(0.48, reloaded.VisualOpacity);
+    }
+
+    [Fact]
+    public async Task CompletingParentCascadesCompletionToItsSubtasks()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var parent = new TaskItem { Title = "parent" };
+        await store.SaveAsync(parent);
+        var child = new TaskItem { Title = "child", ParentTaskId = parent.Id };
+        await store.SaveAsync(child);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+
+        // Completing the parent pulls its checklist down with it — no orphaned open subtask.
+        Assert.True((await store.GetAsync<TaskItem>(parent.Id))!.IsCompleted);
+        Assert.True((await store.GetAsync<TaskItem>(child.Id))!.IsCompleted);
     }
 
     [Fact]

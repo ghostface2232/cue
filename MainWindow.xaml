@@ -42,7 +42,7 @@
             <NavigationView.MenuItems>
                 <NavigationViewItem
                     x:Name="CueItem"
-                    Content="Cue"
+                    Content="모든 할 일"
                     IsSelected="True"
                     Tag="inbox">
                     <NavigationViewItem.Icon>
@@ -72,6 +72,11 @@
                 <NavigationViewItem x:Name="LogbookItem" Content="완료한 일" Tag="logbook">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE73E;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="PriorityItem" Content="중요도" Tag="priority">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7C1;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItemSeparator />

@@ -31,6 +31,9 @@ public enum TaskListMode
     /// <summary>Completed tasks.</summary>
     Logbook,
 
+    /// <summary>Prioritized tasks (P1–P4), grouped by priority.</summary>
+    Priority,
+
     /// <summary>Open tasks belonging to one project.</summary>
     Project,
 
@@ -91,11 +94,16 @@ public partial class TaskListViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsProjectMode { get; set; }
 
+    /// <summary>True when the list is rendered as grouped sections (a project's sections, or the
+    /// 중요도 view's P1–P4 buckets) rather than one flat list.</summary>
+    [ObservableProperty]
+    public partial bool IsGroupedList { get; set; }
+
     [ObservableProperty]
     public partial string TitleCaption { get; set; } = string.Empty;
 
     public bool HasTitleCaption => TitleCaption.Length > 0;
-    public bool CanQuickAdd => _mode != TaskListMode.Logbook;
+    public bool CanQuickAdd => _mode is not (TaskListMode.Logbook or TaskListMode.Priority);
 
     public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone)
     {
@@ -142,12 +150,13 @@ public partial class TaskListViewModel : ObservableObject
         _filterId = navigation.FilterId;
         Title = navigation.Title ?? navigation.Mode switch
         {
-            TaskListMode.Inbox => "Cue",
+            TaskListMode.Inbox => "모든 할 일",
             TaskListMode.Today => "오늘 할 일",
             TaskListMode.Upcoming => "앞으로 할 일",
             TaskListMode.Anytime => "언제든 할 일",
             TaskListMode.Someday => "나중에 할 일",
             TaskListMode.Logbook => "완료한 일",
+            TaskListMode.Priority => "중요도",
             TaskListMode.Project => "그룹",
             TaskListMode.Label => "태그",
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
@@ -157,7 +166,8 @@ public partial class TaskListViewModel : ObservableObject
             : string.Empty;
         OnPropertyChanged(nameof(HasTitleCaption));
         IsProjectMode = _mode == TaskListMode.Project;
-        IsStandardList = !IsProjectMode;
+        IsGroupedList = _mode is TaskListMode.Project or TaskListMode.Priority;
+        IsStandardList = !IsGroupedList;
         OnPropertyChanged(nameof(CanQuickAdd));
     }
 
@@ -231,6 +241,9 @@ public partial class TaskListViewModel : ObservableObject
             case TaskListMode.Logbook:
                 items = await _index.GetLogbookAsync();
                 break;
+            case TaskListMode.Priority:
+                items = await _index.GetByPriorityAsync();
+                break;
             case TaskListMode.Project:
                 items = await _index.GetByProjectAsync(RequiredFilterId());
                 break;
@@ -258,7 +271,7 @@ public partial class TaskListViewModel : ObservableObject
         {
             var sections = await _index.GetSectionsByProjectAsync(RequiredFilterId());
             var groups = sections.ToDictionary(section => section.Id, section => new TaskSectionGroupViewModel(section));
-            var unsectioned = new TaskSectionGroupViewModel(null);
+            var unsectioned = new TaskSectionGroupViewModel((SectionListItem?)null);
             foreach (var row in Tasks)
             {
                 var item = items.First(item => item.Id == row.Id);
@@ -271,8 +284,26 @@ public partial class TaskListViewModel : ObservableObject
             foreach (var section in sections) ProjectGroups.Add(groups[section.Id]);
             if (unsectioned.Tasks.Count > 0) ProjectGroups.Add(unsectioned);
         }
+        else if (_mode == TaskListMode.Priority)
+        {
+            // One group per priority that has rows, P1 → P4. Rows arrive already ordered by priority.
+            (Priority Priority, string Name)[] buckets =
+            [
+                (Priority.P1, "매우 중요"), (Priority.P2, "중요"), (Priority.P3, "보통"), (Priority.P4, "사소"),
+            ];
+            var byPriority = Tasks.ToLookup(row => row.Priority);
+            Tasks.Clear();
+            foreach (var (priority, name) in buckets)
+            {
+                var rows = byPriority[priority].ToList();
+                if (rows.Count == 0) continue;
+                var group = new TaskSectionGroupViewModel(name);
+                foreach (var row in rows) group.Tasks.Add(row);
+                ProjectGroups.Add(group);
+            }
+        }
 
-        IsEmpty = IsProjectMode
+        IsEmpty = IsGroupedList
             ? ProjectGroups.Count == 0
             : Tasks.Count == 0 && !HasEveningTasks;
 
@@ -351,6 +382,30 @@ public partial class TaskListViewModel : ObservableObject
             foreach (var row in group.Tasks) yield return row.SortOrder;
     }
 
+    /// <summary>Marks every open descendant (the full checklist subtree) of a completed task done.</summary>
+    private async Task CompleteDescendantsAsync(Guid parentId, DateTimeOffset at)
+    {
+        foreach (var child in await _index.GetSubtasksAsync(parentId))
+        {
+            if (child.IsCompleted) continue;
+            var task = await _store.GetAsync<TaskItem>(child.Id);
+            if (task is null || task.IsDeleted) continue;
+            task.CompletedAt = at;
+            await _store.SaveAsync(task);
+            await CompleteDescendantsAsync(child.Id, at);
+        }
+    }
+
+    /// <summary>Every row beneath this one, depth-first — its subtasks and their subtasks.</summary>
+    private static IEnumerable<TaskRowViewModel> Descendants(TaskRowViewModel row)
+    {
+        foreach (var sub in row.Subtasks)
+        {
+            yield return sub;
+            foreach (var deeper in Descendants(sub)) yield return deeper;
+        }
+    }
+
     private Guid RequiredFilterId()
         => _filterId ?? throw new InvalidOperationException($"{_mode} navigation requires an id.");
 
@@ -404,7 +459,17 @@ public partial class TaskListViewModel : ObservableObject
             {
                 // Completion runs through the recurrence service: a repeating task leaves a completed
                 // Logbook copy and advances to its next cycle, a one-off is simply stamped done.
-                await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
+                var now = _clock.GetUtcNow();
+                await _recurrence.CompleteAsync(row.Id, now);
+                // If the task was truly completed (not a recurring task that advanced to its next
+                // cycle), pull its whole checklist down with it — a parent is never "done" while its
+                // subtasks linger open.
+                var parent = await _store.GetAsync<TaskItem>(row.Id);
+                if (parent is { CompletedAt: not null })
+                {
+                    await CompleteDescendantsAsync(row.Id, now);
+                    foreach (var descendant in Descendants(row)) descendant.SetCompletedSilently(true);
+                }
             }
             else
             {

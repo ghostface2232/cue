@@ -57,17 +57,20 @@
                     <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Ellipse
-                                Width="7"
-                                Height="7"
-                                Margin="0,0,7,0"
+                            <TextBlock VerticalAlignment="Center" FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                            <Border
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Padding="6,1"
                                 VerticalAlignment="Center"
-                                Fill="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}"
-                                Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
-                            <TextBlock Grid.Column="1" FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}}"
+                                CornerRadius="9"
+                                Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock FontSize="11" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}}" />
+                            </Border>
                         </Grid>
                         <StackPanel Orientation="Horizontal" Spacing="10" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
@@ -118,17 +121,20 @@
                         <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Ellipse
-                                    Width="8"
-                                    Height="8"
-                                    Margin="0,0,8,0"
+                                <TextBlock VerticalAlignment="Center" FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                <Border
+                                    Grid.Column="1"
+                                    Margin="10,0,0,0"
+                                    Padding="7,1"
                                     VerticalAlignment="Center"
-                                    Fill="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}"
-                                    Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}" />
-                                <TextBlock Grid.Column="1" FontSize="{StaticResource CueFontRow}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                    Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}}"
+                                    CornerRadius="9"
+                                    Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock FontSize="11" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}}" />
+                                </Border>
                             </Grid>
                             <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}}" />
@@ -245,7 +251,7 @@
                 <ListView
                     ItemsSource="{x:Bind ViewModel.ProjectGroups, Mode=OneWay}"
                     SelectionMode="None"
-                    Visibility="{x:Bind ViewModel.IsProjectMode, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                    Visibility="{x:Bind ViewModel.IsGroupedList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="vm:TaskSectionGroupViewModel">
                             <StackPanel Margin="0,0,0,16">

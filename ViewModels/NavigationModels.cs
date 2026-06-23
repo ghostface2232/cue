@@ -33,4 +33,12 @@ public sealed class TaskSectionGroupViewModel
             ? $"마감일 {deadline.Month}월 {deadline.Day}일"
             : string.Empty;
     }
+
+    /// <summary>A synthetic, non-editable group heading (e.g. a 중요도 bucket) with no backing section.</summary>
+    public TaskSectionGroupViewModel(string name)
+    {
+        Id = null;
+        Name = name;
+        DeadlineCaption = string.Empty;
+    }
 }
