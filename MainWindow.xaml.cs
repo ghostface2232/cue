@@ -253,7 +253,7 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(mode, null, title),
             Icon = new FontIcon { Glyph = "" },
         };
-        item.Margin = NavSubItemInset();
+        ApplyNavRowInset(item);
         if (openCount > 0)
             item.InfoBadge = CreateCountBadge(openCount);
         return item;
@@ -383,7 +383,7 @@ public sealed partial class MainWindow : Window
         // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
         // tap from also navigating into the group.
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTaskGroupIconPicker((FrameworkElement)sender, taskGroup.Id, taskGroup.Icon); };
-        item.Margin = NavSubItemInset();
+        ApplyNavRowInset(item);
         if (ViewModel.TaskGroupTaskCounts.TryGetValue(taskGroup.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(taskGroup, isGroup: true, item);
@@ -403,7 +403,7 @@ public sealed partial class MainWindow : Window
         };
         // Tapping the glyph opens the color picker directly (no right-click depth).
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTagColorPicker((FrameworkElement)sender, tag.Id, tag.Color); };
-        item.Margin = NavSubItemInset();
+        ApplyNavRowInset(item);
         if (ViewModel.TagTaskCounts.TryGetValue(tag.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(tag, isGroup: false, item);
@@ -426,12 +426,13 @@ public sealed partial class MainWindow : Window
         catch { return null; }
     }
 
-    /// <summary>Left inset for the nested group/tag rows so their hover/selection fill leaves a small
-    /// gap at the pane's left edge (the CueNavSubItemInset token), instead of bleeding to the edge.</summary>
-    private static Thickness NavSubItemInset()
+    /// <summary>Insets a group/tag row's hover/selection pill (and its icon+text, kept inside the pill)
+    /// to the right — like the main list's subtasks — by overriding the pill's margin
+    /// (NavigationViewItemButtonMargin, the LayoutRoot Margin) on this item only via its Resources.</summary>
+    private static void ApplyNavRowInset(NavigationViewItem item)
     {
-        try { return (Thickness)Application.Current.Resources["CueNavSubItemInset"]; }
-        catch { return new Thickness(36, 0, 0, 0); }
+        try { item.Resources["NavigationViewItemButtonMargin"] = (Thickness)Application.Current.Resources["CueNavRowPillMargin"]; }
+        catch { /* fall back to the stock pill margin */ }
     }
 
     private MenuFlyout CreateRecordMenu(object record, bool isGroup, NavigationViewItem owner)
