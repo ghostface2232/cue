@@ -4,7 +4,7 @@ namespace Cue.Domain;
 /// A project — a top-level container that groups <see cref="TaskItem"/>s and, optionally,
 /// <see cref="Section"/>s.
 /// </summary>
-public sealed class Project : RecordBase
+public sealed class Project : RecordBase, ISortable
 {
     /// <summary>Display name.</summary>
     public string Name { get; set; } = string.Empty;

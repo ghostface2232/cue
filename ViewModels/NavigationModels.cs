@@ -13,6 +13,9 @@ public sealed record TaskListNavigation(
 /// <summary>Input for a record rename command.</summary>
 public sealed record RenameRecordRequest(Guid Id, string Name);
 
+/// <summary>A drag-reorder move within a list, by source and destination position.</summary>
+public sealed record ReorderRequest(int OldIndex, int NewIndex);
+
 /// <summary>A section heading and its indexed task rows on a project page.</summary>
 public sealed class TaskSectionGroupViewModel
 {

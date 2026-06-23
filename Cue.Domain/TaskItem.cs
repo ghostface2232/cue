@@ -13,7 +13,7 @@ namespace Cue.Domain;
 /// carry its own dates, labels, priority, and recurrence.
 /// </para>
 /// </remarks>
-public sealed class TaskItem : RecordBase
+public sealed class TaskItem : RecordBase, ISortable
 {
     /// <summary>Short title — the text the user types on the quick-add line.</summary>
     public string Title { get; set; } = string.Empty;

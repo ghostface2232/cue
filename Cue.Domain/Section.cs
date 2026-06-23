@@ -10,7 +10,7 @@ namespace Cue.Domain;
 /// and reordering, soft-delete tombstones, and their own last-write-wins update granularity for
 /// folder sync. A task points at its section via <see cref="TaskItem.SectionId"/>.
 /// </remarks>
-public sealed class Section : RecordBase
+public sealed class Section : RecordBase, ISortable
 {
     /// <summary>The project this section belongs to.</summary>
     public Guid ProjectId { get; set; }

@@ -4,7 +4,7 @@ namespace Cue.Domain;
 /// A cross-cutting tag. Unlike the Project → Task containment hierarchy, a label can be
 /// applied to tasks anywhere via <see cref="TaskItem.LabelIds"/>.
 /// </summary>
-public sealed class Label : RecordBase
+public sealed class Label : RecordBase, ISortable
 {
     /// <summary>Display name.</summary>
     public string Name { get; set; } = string.Empty;

@@ -158,14 +158,16 @@
                             ElementClearing="TaskRepeater_ElementClearing"
                             ElementPrepared="TaskRepeater_ElementPrepared"
                             ItemTemplate="{StaticResource TaskRowTemplate}"
-                            ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}" />
+                            ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
+                            Loaded="ReorderRepeater_Loaded" />
                         <StackPanel Margin="0,18,0,0" Visibility="{x:Bind ViewModel.HasEveningTasks, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Margin="14,0,0,7" Style="{StaticResource SubtitleTextBlockStyle}" Text="오늘 저녁" />
                             <ItemsRepeater
                                 ElementClearing="TaskRepeater_ElementClearing"
                                 ElementPrepared="TaskRepeater_ElementPrepared"
                                 ItemTemplate="{StaticResource TaskRowTemplate}"
-                                ItemsSource="{x:Bind ViewModel.EveningTasks, Mode=OneWay}" />
+                                ItemsSource="{x:Bind ViewModel.EveningTasks, Mode=OneWay}"
+                                Loaded="ReorderRepeater_Loaded" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -191,7 +193,7 @@
                                         <Button Click="DeleteSection_Click" Content="삭제" Tag="{x:Bind Id}" />
                                     </StackPanel>
                                 </Grid>
-                                <ItemsRepeater ElementClearing="TaskRepeater_ElementClearing" ElementPrepared="TaskRepeater_ElementPrepared" ItemTemplate="{StaticResource TaskRowTemplate}" ItemsSource="{x:Bind Tasks}" />
+                                <ItemsRepeater ElementClearing="TaskRepeater_ElementClearing" ElementPrepared="TaskRepeater_ElementPrepared" ItemTemplate="{StaticResource TaskRowTemplate}" ItemsSource="{x:Bind Tasks}" Loaded="ReorderRepeater_Loaded" />
                             </StackPanel>
                         </DataTemplate>
                     </ListView.ItemTemplate>

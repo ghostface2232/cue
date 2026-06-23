@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Cue.Domain;
 using Cue.Storage;
 using Cue.Storage.Index;
+using Cue.Storage.Ranking;
 
 namespace Cue.ViewModels;
 
@@ -12,14 +13,16 @@ public partial class ShellViewModel : ObservableObject
 {
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
+    private readonly IReorderService _reorder;
 
     public ObservableCollection<ProjectListItem> Projects { get; } = new();
     public ObservableCollection<LabelListItem> Labels { get; } = new();
 
-    public ShellViewModel(ITaskStore store, ITaskIndex index)
+    public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder)
     {
         _store = store;
         _index = index;
+        _reorder = reorder;
     }
 
     [RelayCommand]
@@ -35,8 +38,40 @@ public partial class ShellViewModel : ObservableObject
     private async Task CreateProjectAsync(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
-        await _store.SaveAsync(new Project { Name = name.Trim() });
+        await _store.SaveAsync(new Project
+        {
+            Name = name.Trim(),
+            SortOrder = _reorder.AppendRank(Projects.Select(project => project.SortOrder)),
+        });
         await LoadAsync();
+    }
+
+    /// <summary>
+    /// Reorders a project in the pane: moves it optimistically, persists the moved record's new rank
+    /// through the rank service (only that record save for a rare rebalance), then reloads from the
+    /// index so the persisted order — the source of truth — drives the pane.
+    /// </summary>
+    [RelayCommand]
+    public async Task ReorderProjectAsync(ReorderRequest request)
+    {
+        if (request.OldIndex == request.NewIndex || (uint)request.NewIndex >= Projects.Count) return;
+        Projects.Move(request.OldIndex, request.NewIndex);
+        var moved = Projects[request.NewIndex];
+        var ordered = Projects.Select(project => new RankedItem(project.Id, project.SortOrder)).ToList();
+        try { await _reorder.MoveAsync<Project>(moved.Id, ordered); }
+        finally { await LoadAsync(); }
+    }
+
+    /// <summary>Reorders a label in the pane. Mirrors <see cref="ReorderProjectAsync"/>.</summary>
+    [RelayCommand]
+    public async Task ReorderLabelAsync(ReorderRequest request)
+    {
+        if (request.OldIndex == request.NewIndex || (uint)request.NewIndex >= Labels.Count) return;
+        Labels.Move(request.OldIndex, request.NewIndex);
+        var moved = Labels[request.NewIndex];
+        var ordered = Labels.Select(label => new RankedItem(label.Id, label.SortOrder)).ToList();
+        try { await _reorder.MoveAsync<Label>(moved.Id, ordered); }
+        finally { await LoadAsync(); }
     }
 
     [RelayCommand]
@@ -61,7 +96,11 @@ public partial class ShellViewModel : ObservableObject
     private async Task CreateLabelAsync(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
-        await _store.SaveAsync(new Label { Name = name.Trim() });
+        await _store.SaveAsync(new Label
+        {
+            Name = name.Trim(),
+            SortOrder = _reorder.AppendRank(Labels.Select(label => label.SortOrder)),
+        });
         await LoadAsync();
     }
 

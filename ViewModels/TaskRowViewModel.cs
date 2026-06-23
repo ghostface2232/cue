@@ -23,6 +23,14 @@ public partial class TaskRowViewModel : ObservableObject
 
     public Guid Id { get; }
     public string Title { get; }
+
+    /// <summary>
+    /// The row's current LexoRank ordering key, mirrored from the index. Kept up to date as the
+    /// reorder service re-ranks the moved row (and, on a rare rebalance, its neighbors) so a chain of
+    /// drags computes each "between" against fresh neighbor ranks.
+    /// </summary>
+    public string SortOrder { get; set; }
+
     public string Schedule { get; }
     public bool HasSchedule => Schedule.Length > 0;
     public Priority Priority { get; }
@@ -42,6 +50,7 @@ public partial class TaskRowViewModel : ObservableObject
         _onUserToggled = onUserToggled;
         Id = item.Id;
         Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
+        SortOrder = item.SortOrder;
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
 

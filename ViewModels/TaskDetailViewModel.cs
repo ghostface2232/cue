@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Cue.Domain;
 using Cue.Storage;
 using Cue.Storage.Index;
+using Cue.Storage.Ranking;
 
 namespace Cue.ViewModels;
 
@@ -81,6 +82,7 @@ public partial class TaskDetailViewModel : ObservableObject
 {
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
+    private readonly IReorderService _reorder;
     private readonly TimeProvider _clock;
     private readonly TimeZoneInfo _zone;
     private readonly Func<Task> _refreshOwner;
@@ -177,6 +179,7 @@ public partial class TaskDetailViewModel : ObservableObject
     public TaskDetailViewModel(
         ITaskStore store,
         ITaskIndex index,
+        IReorderService reorder,
         TimeProvider clock,
         TimeZoneInfo zone,
         Func<Task> refreshOwner,
@@ -184,6 +187,7 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         _store = store;
         _index = index;
+        _reorder = reorder;
         _clock = clock;
         _zone = zone;
         _refreshOwner = refreshOwner;
@@ -359,12 +363,14 @@ public partial class TaskDetailViewModel : ObservableObject
         var parent = await _store.GetAsync<TaskItem>(parentId);
         if (parent is null || parent.IsDeleted) return;
 
+        var siblings = await _index.GetSubtasksAsync(parent.Id);
         var child = new TaskItem
         {
             Title = NewSubtaskTitle.Trim(),
             ParentTaskId = parent.Id,
             ProjectId = parent.ProjectId,
             SectionId = parent.SectionId,
+            SortOrder = _reorder.AppendRank(siblings.Select(item => item.SortOrder)),
         };
         await _store.SaveAsync(child);
         NewSubtaskTitle = string.Empty;
@@ -376,7 +382,12 @@ public partial class TaskDetailViewModel : ObservableObject
     private async Task AddLabelAsync(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
-        var label = new Label { Name = name.Trim() };
+        var existing = await _index.GetLabelsAsync();
+        var label = new Label
+        {
+            Name = name.Trim(),
+            SortOrder = _reorder.AppendRank(existing.Select(item => item.SortOrder)),
+        };
         await _store.SaveAsync(label);
         var selected = Labels.Where(item => item.IsSelected).Select(item => item.Id).Append(label.Id);
         await LoadLabelsAsync(selected);
