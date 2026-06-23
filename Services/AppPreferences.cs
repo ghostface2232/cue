@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Windows.Foundation.Collections;
 using Windows.Storage;
+using Windows.UI.ViewManagement;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -122,31 +123,49 @@ public sealed class AppPreferences
 
     private static void ApplyAccent(string accent)
     {
-        string[] keys =
-        [
-            "SystemAccentColor",
-            "AccentFillColorDefault",
-            "AccentFillColorSecondary",
-            "AccentFillColorTertiary",
-            "AccentTextFillColorPrimary",
-        ];
-        string[] brushKeys =
-        [
-            "AccentFillColorDefaultBrush",
-            "AccentTextFillColorPrimaryBrush",
-        ];
+        var color = string.Equals(accent, "System", StringComparison.OrdinalIgnoreCase) || !TryParseHex(accent, out var parsed)
+            ? SystemAccentColor()
+            : parsed;
+        var onAccent = ReadableOnAccent(color);
 
-        if (string.Equals(accent, "System", StringComparison.OrdinalIgnoreCase) || !TryParseHex(accent, out var color))
+        SetColorResource("SystemAccentColor", color);
+        SetColorResource("AccentFillColorDefault", color);
+        SetColorResource("AccentFillColorSecondary", color);
+        SetColorResource("AccentFillColorTertiary", color);
+        SetColorResource("AccentTextFillColorPrimary", onAccent);
+        SetColorResource("TextOnAccentFillColorPrimary", onAccent);
+
+        SetBrushResource("AccentFillColorDefaultBrush", color);
+        SetBrushResource("AccentFillColorSecondaryBrush", color);
+        SetBrushResource("AccentFillColorTertiaryBrush", color);
+        SetBrushResource("AccentTextFillColorPrimaryBrush", onAccent);
+        SetBrushResource("TextOnAccentFillColorPrimaryBrush", onAccent);
+        SetBrushResource("CuePriorityP3Brush", color);
+    }
+
+    private static void SetColorResource(string key, Windows.UI.Color color)
+        => Application.Current.Resources[key] = color;
+
+    private static void SetBrushResource(string key, Windows.UI.Color color)
+    {
+        if (Application.Current.Resources.TryGetValue(key, out var existing) && existing is SolidColorBrush brush)
         {
-            foreach (var key in keys.Concat(brushKeys))
-                Application.Current.Resources.Remove(key);
+            brush.Color = color;
             return;
         }
 
-        foreach (var key in keys)
-            Application.Current.Resources[key] = color;
-        foreach (var key in brushKeys)
-            Application.Current.Resources[key] = new SolidColorBrush(color);
+        Application.Current.Resources[key] = new SolidColorBrush(color);
+    }
+
+    private static Windows.UI.Color SystemAccentColor()
+        => new UISettings().GetColorValue(UIColorType.Accent);
+
+    private static Windows.UI.Color ReadableOnAccent(Windows.UI.Color color)
+    {
+        var luminance = (0.2126 * color.R) + (0.7152 * color.G) + (0.0722 * color.B);
+        return luminance > 150
+            ? ColorHelper.FromArgb(0xFF, 0x00, 0x00, 0x00)
+            : ColorHelper.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
     }
 
     private void EnsureDefaultCustomDateMeanings()
