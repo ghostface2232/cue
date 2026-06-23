@@ -7,9 +7,10 @@ namespace Cue.Domain;
 /// A task's container is a single optional <see cref="TaskGroupId"/>: it either belongs to one
 /// group or, when null, has no group. Either way it appears in the home 모든 할 일 (AllTasks) view.
 /// <para>
-/// Sub-tasks are <i>not</i> a lightweight checklist: each is its own <see cref="TaskItem"/>
-/// record (own file) pointing at its parent via <see cref="ParentTaskId"/>, so a sub-task can
-/// carry its own dates, tags, priority, and recurrence.
+/// A task carries an embedded <see cref="Checklist"/> of lightweight <see cref="ChecklistItem"/>s —
+/// each just a title, a checked flag, and an optional memo. Checklist items are not records: they
+/// have no own file, no dates/tags/priority/recurrence, and cannot nest. They are persisted as part
+/// of this task's single JSON file.
 /// </para>
 /// </remarks>
 public sealed class TaskItem : RecordBase, ISortable
@@ -56,8 +57,11 @@ public sealed class TaskItem : RecordBase, ISortable
     /// <summary>Owning group, if any. <c>null</c> means the task has no group (still shown in 모든 할 일).</summary>
     public Guid? TaskGroupId { get; set; }
 
-    /// <summary>Parent task when this is a sub-task; <c>null</c> for a top-level task.</summary>
-    public Guid? ParentTaskId { get; set; }
+    /// <summary>
+    /// Embedded checklist — an ordered list of lightweight items (title + checked + memo). Order is
+    /// the list position; there is no nesting and each item is not a record of its own.
+    /// </summary>
+    public List<ChecklistItem> Checklist { get; set; } = new();
 
     /// <summary>Cross-cutting tags applied to this task.</summary>
     public List<Guid> TagIds { get; set; } = new();

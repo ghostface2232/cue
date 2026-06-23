@@ -16,7 +16,9 @@ namespace Cue.Domain;
 public abstract class RecordBase : IEquatable<RecordBase>
 {
     /// <summary>Schema version written by the current build. Bump when the shape changes.</summary>
-    public const int CurrentSchemaVersion = 1;
+    /// <remarks>v2 replaced per-record sub-tasks (linked by a former <c>ParentTaskId</c>) with an
+    /// embedded <see cref="TaskItem.Checklist"/>.</remarks>
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>
     /// Stable identity. The persistence layer uses this as the file name ({Id}.json). Init-only:

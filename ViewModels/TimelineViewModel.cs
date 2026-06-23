@@ -6,7 +6,6 @@ using Cue.Domain;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.Storage.Ranking;
-using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
@@ -44,7 +43,6 @@ public partial class TimelineViewModel : ObservableObject
         ITaskStore store,
         ITaskIndex index,
         IReorderService reorder,
-        IRecurringTaskService recurrence,
         TimeProvider clock,
         TimeZoneInfo zone,
         INavDataChangeNotifier navNotifier)
@@ -56,7 +54,7 @@ public partial class TimelineViewModel : ObservableObject
         var today = Today();
         _visibleMonth = new DateOnly(today.Year, today.Month, 1);
         RebuildDays();
-        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, SelectTaskAsync, navNotifier);
+        Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, navNotifier);
     }
 
     [RelayCommand]

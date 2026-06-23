@@ -92,7 +92,7 @@ typography:
     fontWeight: 400
 
 rounded:
-  sm: 4px   # buttons, checks, child rows, small surfaces
+  sm: 4px   # buttons, checks, checklist rows, small surfaces
   md: 8px   # task rows, detail inner cards, timeline bars
   lg: 12px  # detail panel, timeline canvas
   pill: 9999px
@@ -247,7 +247,7 @@ Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-bas
 - **Tertiary** (`{colors.text-tertiary}` → `TextFillColorTertiary`): the quietest labels (group/tag headers, unchecked check outline).
 
 ### Interaction
-- Transparent at rest → hover `{colors.hover-fill}` (`SubtleFillColorSecondary`) → press `{colors.pressed-fill}` (`SubtleFillColorTertiary`). This **one shared recipe** is used by main list rows, child rows, timeline bars, subtle buttons, and detail-panel controls alike, so Light mode never drifts between surfaces.
+- Transparent at rest → hover `{colors.hover-fill}` (`SubtleFillColorSecondary`) → press `{colors.pressed-fill}` (`SubtleFillColorTertiary`). This **one shared recipe** is used by main list rows, checklist rows, timeline bars, subtle buttons, and detail-panel controls alike, so Light mode never drifts between surfaces.
 
   > Implementation note: hover/press is unified through `CueHoverFillBrush` / `CuePressedFillBrush`. The detail panel previously used a one-step-stronger custom overlay; it now aliases the same shared brushes for both themes.
 
@@ -280,7 +280,7 @@ The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship a
 | `{typography.section-header}` | SemiBold | 16 | Group / priority-bucket headers (`CueSectionHeaderTextStyle`) |
 | `{typography.row}` | Regular | 15 | Task-row title |
 | `{typography.card-header}` | SemiBold | 14 | Detail card headers (`CueCardHeaderTextStyle`) |
-| `{typography.row-sub}` | Regular | 14 | Child task rows, checklist items |
+| `{typography.row-sub}` | Regular | 14 | Checklist item rows |
 | `{typography.secondary}` | Regular | 12 | Metadata, secondary labels (`MetadataTextStyle`) |
 | `{typography.pill}` | Regular | 11 | Priority pill label |
 
@@ -344,7 +344,7 @@ Use only `{rounded.sm}` (4) / `{rounded.md}` (8) / `{rounded.lg}` (12) plus pill
 
 | Token | Value | Use |
 |---|---|---|
-| `{rounded.sm}` | 4px | Buttons, checks, child rows, small surfaces |
+| `{rounded.sm}` | 4px | Buttons, checks, checklist rows, small surfaces |
 | `{rounded.md}` | 8px | Task rows, detail inner cards, timeline bars |
 | `{rounded.lg}` | 12px | Detail panel, timeline canvas |
 | `{rounded.pill}` | height/2 | Pills |
@@ -362,11 +362,11 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 - Columns: `[3px selection bar][circular check][title … priority pill][group · tags]`, with a one-line metadata row (schedule) below. The trailing right-edge column shows the task's group (tertiary glyph + secondary name) and its tags (8px color dot + secondary name each); each chunk hides itself when the task has no group / no tags. The schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time; an all-day (종일) task shows the date alone.
 - Selected → left 3px accent bar (`selection-bar`, radius 1.5, a dedicated column so it never shifts content) **plus a persistent row fill in the hover tone** (`{colors.hover-fill}`), so the open task reads as selected even when the pointer is elsewhere. Background hover transitions over 83ms. Radius `{rounded.md}`.
 - Rows are generously tall (12px vertical padding) with a larger, clearer title (`{typography.list-title}`, 16.5) and meta line (`{typography.list-meta}`, 13). A thin 1px `DividerStrokeColorDefault` separator sits between rows for clear row-to-row division.
-- Subtasks render as an indented nested list under the parent (with a 1px divider). Their presence is self-evident, so there is no "N subtasks" caption. Child rows reuse the same circular check, row-sub font, and spacing.
+- A task's checklist items render as an indented nested list under it (with a 1px divider). Their presence is self-evident, so there is no "N items" caption. These rows reuse the same circular check and row-sub font; they are not tasks, so they cannot be opened, dragged, or carry a date/priority/group — just a checkbox and a title.
 
 ### Completion state
 - Completing does not remove the row: it stays in place at **opacity 0.48** and sinks to the bottom of the list. This persists across views (the active query includes completed items, sorted last). Only the sidebar count badge counts open tasks.
-- **Completing a parent completes its whole checklist (subtasks).** A parent is never left complete with open subtasks — except a repeating task that has rolled to its next cycle (the work continues).
+- **Checklist items are independent of the task's completion.** Completing a task leaves its checklist as-is; an item's checked state is its own. A repeating task resets all its checklist items to unchecked when it rolls to the next cycle (the procedure repeats), while the cycle just finished keeps its ticked state on the Logbook copy.
 
 ### Priority pill
 - Rendered **directly beside** the row title as a text pill (not a leading dot). The title is width-capped and truncates, so the pill hugs the title's trailing edge rather than being pushed to the far right. Labels: 매우 중요 / 중요 / 보통 / 사소.
@@ -449,7 +449,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## UX Writing
 
 - **Korean-first.** Write natural Korean where intent lands immediately.
-- **Domain term mapping:** TaskGroup → **그룹 (Group)**, Tag → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), Subtask → **체크리스트 (Checklist)**, the task's single date → **일시 (When)** (the detail card is titled 일시; the picker placeholder reads 날짜 선택), Parent task → **할 일 (Task)**. (There is no separate deadline; a task has one date.)
+- **Domain term mapping:** TaskGroup → **그룹 (Group)**, Tag → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), ChecklistItem → **체크리스트 항목 (Checklist item)** (an embedded title + check + memo on a 할 일), the task's single date → **일시 (When)** (the detail card is titled 일시; the picker placeholder reads 날짜 선택). (There is no separate deadline; a task has one date.)
 - **Time views:** 오늘 할 일 (Today) / 앞으로 할 일 (Upcoming) / 언젠가 할 일 (Anytime) / 완료한 일 (Logbook).
 - Drop redundant labels (e.g. omit self-evident card titles).
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Cue.Domain;
 using Microsoft.Data.Sqlite;
 
@@ -23,10 +24,15 @@ namespace Cue.Storage.Index;
 /// </remarks>
 public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 {
+    // The contract for the derived `checklist` JSON column. Shared by the serialize (UpsertCore) and
+    // deserialize (ChecklistFrom) sides so the index's PascalCase shape stays in lockstep — changing one
+    // side without the other (e.g. switching to camelCase) would silently break the round-trip.
+    private static readonly JsonSerializerOptions ChecklistJson = new();
+
     // Base task columns, aliased to the tasks table (t) so list queries can left-join the group and
     // correlate the tag set without column ambiguity.
     private const string TaskColumns =
-        "t.id, t.title, t.group_id, t.parent_task_id, t.when_kind, t.when_date, t.when_time, " +
+        "t.id, t.title, t.group_id, t.checklist, t.when_kind, t.when_date, t.when_time, " +
         "t.completed_at, t.priority, t.sort_order";
 
     // The list projection: base columns + the row's group (name and icon, null when unfiled or the
@@ -77,7 +83,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 5;
+    private const long SchemaVersion = 6;
 
     private void EnsureSchema()
     {
@@ -105,7 +111,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 id              TEXT PRIMARY KEY,
                 title           TEXT NOT NULL,
                 group_id        TEXT NULL,
-                parent_task_id  TEXT NULL,
+                checklist       TEXT NULL,
                 when_kind       TEXT NOT NULL,
                 when_date       TEXT NULL,
                 when_time       TEXT NULL,
@@ -139,7 +145,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE INDEX IF NOT EXISTS ix_task_tags_tag ON task_tags(tag_id);
             CREATE INDEX IF NOT EXISTS ix_task_groups_active ON task_groups(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_tags_active ON tags(deleted_at);
-            PRAGMA user_version = 5;
+            PRAGMA user_version = 6;
             """;
         cmd.ExecuteNonQuery();
     }
@@ -246,15 +252,15 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             cmd.CommandText =
                 """
                 INSERT INTO tasks
-                    (id, title, group_id, parent_task_id, when_kind, when_date, when_time,
+                    (id, title, group_id, checklist, when_kind, when_date, when_time,
                      completed_at, deleted_at, priority, sort_order)
                 VALUES
-                    ($id, $title, $group, $parent, $whenKind, $whenDate, $whenTime,
+                    ($id, $title, $group, $checklist, $whenKind, $whenDate, $whenTime,
                      $completed, $deleted, $priority, $sort)
                 ON CONFLICT(id) DO UPDATE SET
                     title           = excluded.title,
                     group_id        = excluded.group_id,
-                    parent_task_id  = excluded.parent_task_id,
+                    checklist       = excluded.checklist,
                     when_kind       = excluded.when_kind,
                     when_date       = excluded.when_date,
                     when_time       = excluded.when_time,
@@ -266,7 +272,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             Bind(cmd, "$id", task.Id.ToString());
             Bind(cmd, "$title", task.Title);
             Bind(cmd, "$group", task.TaskGroupId?.ToString());
-            Bind(cmd, "$parent", task.ParentTaskId?.ToString());
+            // The embedded checklist is mirrored as a JSON blob so the list can render its nested
+            // rows without a per-row follow-up read; it stays fully rebuildable from the file.
+            Bind(cmd, "$checklist", JsonSerializer.Serialize(task.Checklist, ChecklistJson));
             Bind(cmd, "$whenKind", task.When.Kind.ToString());
             Bind(cmd, "$whenDate", task.When.Kind == WhenKind.OnDate ? LocalDate(task.When.Date) : null);
             Bind(cmd, "$whenTime", task.When.Kind == WhenKind.OnDate ? LocalTime(task.When.Date) : null);
@@ -399,7 +407,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     // finishing an item doesn't make it vanish; they sink below the open rows via the completed-last
     // ordering. Open-task counts (badges) still exclude completed — see GetOpenTaskCounts*.
     // The home "모든 할 일" (AllTasks) list spans every group — no group filter — so a task in a group
-    // still surfaces here. Subtasks are included; the view nests them under their parents.
+    // still surfaces here. Each row carries its embedded checklist for the nested rows under it.
     public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
             SelectRows + "WHERE t.deleted_at IS NULL " +
@@ -435,12 +443,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "AND t.id NOT IN (SELECT task_id FROM task_tags) " +
             "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
-
-    public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
-        => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL " +
-            "AND t.parent_task_id = $parent ORDER BY t.sort_order;",
-            cmd => Bind(cmd, "$parent", parentTaskId.ToString()), cancellationToken);
 
     // ---- Time axis (computed against the current day) ------------------------
 
@@ -599,7 +601,6 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         Id: Guid.Parse(r.GetString(0)),
         Title: r.GetString(1),
         TaskGroupId: GuidOrNull(r, 2),
-        ParentTaskId: GuidOrNull(r, 3),
         WhenKind: Enum.Parse<WhenKind>(r.GetString(4)),
         WhenDate: DateOrNull(r, 5),
         WhenTime: TimeOrNull(r, 6),
@@ -608,7 +609,22 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         SortOrder: r.GetString(9),
         TaskGroupName: r.IsDBNull(10) ? null : r.GetString(10),
         TaskGroupIcon: r.IsDBNull(11) ? null : r.GetString(11),
-        Tags: TagsFrom(r, 12));
+        Tags: TagsFrom(r, 12),
+        Checklist: ChecklistFrom(r, 3));
+
+    // Deserializes the checklist JSON blob mirrored in the tasks.checklist column (column 3, where
+    // the former parent_task_id lived — kept at that ordinal so the rest of Map is unchanged). Only
+    // the fields a nested list row needs are projected; the memo is left to the detail view.
+    private static IReadOnlyList<TaskListChecklistItem> ChecklistFrom(SqliteDataReader r, int i)
+    {
+        if (r.IsDBNull(i))
+            return Array.Empty<TaskListChecklistItem>();
+        var json = r.GetString(i);
+        if (json.Length == 0)
+            return Array.Empty<TaskListChecklistItem>();
+        return JsonSerializer.Deserialize<List<TaskListChecklistItem>>(json, ChecklistJson)
+            ?? (IReadOnlyList<TaskListChecklistItem>)Array.Empty<TaskListChecklistItem>();
+    }
 
     // Unpacks the group_concat tag column produced by SelectRows: records split on <RS> (char 30),
     // each "name<US>color" split on <US> (char 31); an empty color field means the tag uses no color.

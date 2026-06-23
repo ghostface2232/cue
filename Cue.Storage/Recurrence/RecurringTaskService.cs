@@ -70,9 +70,12 @@ public sealed class RecurringTaskService : IRecurringTaskService
 
         // Method B, step 2: advance the original to the next cycle and keep it open (alive as the
         // next instance). Only When changes; the rank is preserved and the store stamps UpdatedAt
-        // (invariants 4 and 8).
+        // (invariants 4 and 8). The checklist is the recurring procedure for the cycle, so it resets
+        // to unchecked here — last cycle's ticked state was frozen on the Logbook copy above. This is
+        // part of the same idempotent save, so a crash-retry re-resets an already-reset list (a no-op).
         task.When = ScheduledWhen.On(next.Value);
         task.CompletedAt = null;
+        foreach (var item in task.Checklist) item.IsChecked = false;
         await _store.SaveAsync(task, cancellationToken).ConfigureAwait(false);
     }
 
@@ -91,7 +94,11 @@ public sealed class RecurringTaskService : IRecurringTaskService
         When = original.When, // the instance's own date, frozen as the historical record
         Priority = original.Priority,
         TaskGroupId = original.TaskGroupId,
-        ParentTaskId = original.ParentTaskId,
+        // Deep-copy the checklist as it was checked at completion, so the Logbook keeps an accurate
+        // record of what was ticked off this cycle (new item instances — the original's reset below).
+        Checklist = original.Checklist
+            .Select(item => new ChecklistItem { Id = item.Id, Title = item.Title, IsChecked = item.IsChecked, Note = item.Note })
+            .ToList(),
         TagIds = new List<Guid>(original.TagIds),
 
         // No recurrence on the copy: it is a frozen completion record, it does not advance.

@@ -22,71 +22,26 @@
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
-        <DataTemplate x:Key="ChildTaskRowTemplate" x:DataType="vm:TaskRowViewModel">
-            <Border
-                Margin="0,1,4,1"
-                Padding="12,6"
-                Background="Transparent"
-                CornerRadius="{StaticResource CueRadiusSmall}"
-                IsTabStop="True"
-                KeyDown="TaskSurface_KeyDown"
-                Loaded="TaskSurface_Loaded"
-                Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
-                PointerEntered="TaskSurface_PointerEntered"
-                PointerExited="TaskSurface_PointerExited"
-                RightTapped="TaskSurface_RightTapped"
-                Tapped="TaskSurface_Tapped"
-                Tag="{x:Bind Id}">
-                <Border.BackgroundTransition>
-                    <BrushTransition Duration="0:0:0.083" />
-                </Border.BackgroundTransition>
+        <!-- A nested checklist item under a task: a checkbox and its (non-interactive) title only. It
+             is not a task — it cannot be opened, dragged, or carry a date/priority/group. -->
+        <DataTemplate x:Key="ChecklistRowTemplate" x:DataType="vm:ChecklistRowViewModel">
+            <Border Margin="0,1,4,1" Padding="12,4" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
                 <Grid ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="3" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <!-- Selected row gets a persistent fill (the hover tone) in addition to the accent
-                         bar, so the open task reads as selected even while the pointer is elsewhere. -->
-                    <Rectangle
-                        Grid.ColumnSpan="3"
-                        Margin="-12,-6"
-                        Fill="{StaticResource TaskHoverBrush}"
-                        RadiusX="4"
-                        RadiusY="4"
-                        Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                    <Rectangle
-                        VerticalAlignment="Stretch"
-                        Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                        RadiusX="1.5"
-                        RadiusY="1.5"
-                        Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                     <CheckBox
-                        Grid.Column="1"
                         VerticalAlignment="Center"
-                        IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
+                        IsChecked="{x:Bind IsChecked, Mode=TwoWay}"
                         Style="{StaticResource CueCircleCheckBoxStyle}" />
-                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
-                        <Grid ColumnSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock MaxWidth="420" VerticalAlignment="Center" FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Title, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                            <Border
-                                Grid.Column="1"
-                                Padding="6,1"
-                                VerticalAlignment="Center"
-                                Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}, Mode=OneWay}"
-                                CornerRadius="9"
-                                Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                                <TextBlock FontSize="11" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}" />
-                            </Border>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="10" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                            <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
-                        </StackPanel>
-                    </StackPanel>
+                    <TextBlock
+                        Grid.Column="1"
+                        MaxWidth="420"
+                        VerticalAlignment="Center"
+                        FontSize="{StaticResource CueFontRowSub}"
+                        Text="{x:Bind Title}"
+                        TextTrimming="CharacterEllipsis" />
                 </Grid>
             </Border>
         </DataTemplate>
@@ -197,7 +152,7 @@
                         </StackPanel>
                     </Grid>
                 </Border>
-                <Grid Margin="31,0,0,7" Visibility="{x:Bind HasSubtasks, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                <Grid Margin="31,0,0,7" Visibility="{x:Bind HasChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1" />
                         <ColumnDefinition Width="*" />
@@ -208,8 +163,8 @@
                         Margin="6,0,0,0"
                         ElementClearing="TaskRepeater_ElementClearing"
                         ElementPrepared="TaskRepeater_ElementPrepared"
-                        ItemTemplate="{StaticResource ChildTaskRowTemplate}"
-                        ItemsSource="{x:Bind Subtasks}" />
+                        ItemTemplate="{StaticResource ChecklistRowTemplate}"
+                        ItemsSource="{x:Bind ChecklistItems}" />
                 </Grid>
                 <!-- Thin separator between list rows for clear row-to-row division. -->
                 <Rectangle Height="1" Margin="8,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
@@ -389,15 +344,6 @@
                     </Border>
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="2,0,16,0" Spacing="13">
-                        <Button
-                            HorizontalAlignment="Left"
-                            Padding="2,0"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Click="OpenParent_Click"
-                            Content="← 할 일로 돌아가기"
-                            Visibility="{x:Bind ViewModel.Detail.HasParentTask, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-
                         <Grid ColumnSpacing="7">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -565,17 +511,20 @@
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="체크리스트" />
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewSubtaskTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <Button Grid.Column="1" Click="AddSubtask_Click" Content="추가" />
+                                    <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewChecklistItemTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Grid.Column="1" Click="AddChecklistItem_Click" Content="추가" />
                                 </Grid>
-                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Subtasks}">
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Checklist}">
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:SubtaskRowViewModel">
-                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="10" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+                                        <DataTemplate x:DataType="vm:ChecklistItemViewModel">
+                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="10">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                                <CheckBox VerticalAlignment="Center" IsChecked="{x:Bind IsCompleted, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
-                                                <Button Grid.Column="1" Padding="6,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Click="OpenSubtask_Click" Content="{x:Bind Title}" CornerRadius="{StaticResource CueRadiusSmall}" FontSize="{StaticResource CueFontRowSub}" Tag="{x:Bind Id}" />
-                                                <Button Grid.Column="2" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteSubtask_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
+                                                <CheckBox VerticalAlignment="Top" Margin="0,5,0,0" IsChecked="{x:Bind IsChecked, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
+                                                <StackPanel Grid.Column="1" Spacing="3" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+                                                    <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
+                                                    <TextBox PlaceholderText="메모" Text="{x:Bind Note, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteChecklistItem_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

@@ -98,6 +98,40 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CompletingRecurring_FreezesChecklistOnCopy_AndResetsOriginalForNextCycle()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem
+        {
+            Title = "매일 점검",
+            When = OnDay(Today),
+            Recurrence = Daily(Today),
+            Checklist =
+            {
+                new ChecklistItem { Title = "물 챙기기", IsChecked = true },
+                new ChecklistItem { Title = "스트레칭", IsChecked = false },
+            },
+        };
+        await store.SaveAsync(task);
+
+        await service.CompleteAsync(task.Id, Now);
+
+        // The advanced original keeps its checklist items but resets them all to unchecked for next cycle.
+        var original = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(2, original!.Checklist.Count);
+        Assert.All(original.Checklist, item => Assert.False(item.IsChecked));
+
+        // The Logbook copy freezes the checklist exactly as it was ticked at completion.
+        var copy = (await store.GetAllAsync<TaskItem>()).Single(t => t.Id != task.Id);
+        Assert.Equal(2, copy.Checklist.Count);
+        Assert.True(copy.Checklist[0].IsChecked);
+        Assert.False(copy.Checklist[1].IsChecked);
+    }
+
+    [Fact]
     public async Task CompletingRecurring_IsIdempotent_WhenAdvanceCrashedAfterLogbookCopy()
     {
         var root = NewRoot();

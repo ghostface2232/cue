@@ -68,12 +68,15 @@ public partial class TaskRowViewModel : ObservableObject
 
     // Matches the sidebar's default group glyph (Segoe Fluent folder) when a group carries no icon.
     private const string DefaultGroupGlyph = "";
-    // Subtasks are rendered as their own indented sub-list, so their presence is already obvious —
-    // they intentionally do not add a "하위 작업 N" caption to the parent row's metadata line.
+    // Checklist items are rendered as their own indented sub-list, so their presence is already obvious —
+    // they intentionally do not add a "체크리스트 N" caption to the parent row's metadata line.
     public bool HasMetadata => HasSchedule || HasPriority;
     public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
-    public ObservableCollection<TaskRowViewModel> Subtasks { get; } = new();
-    public bool HasSubtasks => Subtasks.Count > 0;
+
+    /// <summary>The task's embedded checklist items as nested rows under it (read + toggle only). The
+    /// owning list populates and reconciles this collection.</summary>
+    public ObservableCollection<ChecklistRowViewModel> ChecklistItems { get; } = new();
+    public bool HasChecklist => ChecklistItems.Count > 0;
 
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
@@ -88,10 +91,10 @@ public partial class TaskRowViewModel : ObservableObject
     public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled)
     {
         _onUserToggled = onUserToggled;
-        // The in-place list reconcile (SyncRows) mutates Subtasks directly rather than through AddSubtask,
-        // so notify HasSubtasks from the collection itself — that's what flips the nested-list divider
-        // live when a row's first subtask appears (or its last is removed).
-        Subtasks.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSubtasks));
+        // The in-place list reconcile mutates ChecklistItems directly, so notify HasChecklist from the
+        // collection itself — that's what flips the nested-list divider live when a row's first
+        // checklist item appears (or its last is removed).
+        ChecklistItems.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasChecklist));
         Id = item.Id;
         Title = FormatTitle(item.Title);
         SortOrder = item.SortOrder;
@@ -147,10 +150,10 @@ public partial class TaskRowViewModel : ObservableObject
         _suppressToggle = false;
     }
 
-    public void AddSubtask(TaskRowViewModel subtask)
+    public void AddChecklistItem(ChecklistRowViewModel item)
     {
-        Subtasks.Add(subtask);
-        OnPropertyChanged(nameof(HasSubtasks));
+        ChecklistItems.Add(item);
+        OnPropertyChanged(nameof(HasChecklist));
     }
 
     private static string FormatTitle(string title)

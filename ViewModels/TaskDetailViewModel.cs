@@ -5,7 +5,6 @@ using Cue.Domain;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.Storage.Ranking;
-using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
@@ -55,59 +54,84 @@ public partial class TagEditorOption : ObservableObject
     }
 }
 
-public partial class SubtaskRowViewModel : ObservableObject
+/// <summary>
+/// One editable checklist item in the detail panel: a checkbox, an editable title, and an editable
+/// memo. Any change (tick, title edit, memo edit) invokes a single callback the detail view model owns,
+/// which rebuilds the parent task's <see cref="ChecklistItem"/> list and saves it.
+/// </summary>
+public partial class ChecklistItemViewModel : ObservableObject
 {
-    private readonly Action<SubtaskRowViewModel> _onToggled;
-    private bool _suppressToggle;
+    private readonly Action<ChecklistItemViewModel> _onChanged;
+    private bool _suppress;
 
     public Guid Id { get; }
-    public string Title { get; }
-    public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
+    public double VisualOpacity => IsChecked ? 0.48 : 1.0;
 
     [ObservableProperty]
-    public partial bool IsCompleted { get; set; }
+    public partial bool IsChecked { get; set; }
 
-    public SubtaskRowViewModel(TaskListItem item, Action<SubtaskRowViewModel> onToggled)
+    [ObservableProperty]
+    public partial string Title { get; set; }
+
+    [ObservableProperty]
+    public partial string Note { get; set; }
+
+    public ChecklistItemViewModel(ChecklistItem item, Action<ChecklistItemViewModel> onChanged)
     {
         Id = item.Id;
-        Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
-        _onToggled = onToggled;
-        _suppressToggle = true;
-        IsCompleted = item.IsCompleted;
-        _suppressToggle = false;
+        _onChanged = onChanged;
+        _suppress = true;
+        IsChecked = item.IsChecked;
+        Title = item.Title;
+        Note = item.Note ?? string.Empty;
+        _suppress = false;
     }
 
-    partial void OnIsCompletedChanged(bool value)
+    partial void OnIsCheckedChanged(bool value)
     {
         OnPropertyChanged(nameof(VisualOpacity));
-        if (!_suppressToggle) _onToggled(this);
+        if (!_suppress) _onChanged(this);
     }
 
-    public void SetCompletedSilently(bool value)
+    partial void OnTitleChanged(string value)
     {
-        _suppressToggle = true;
-        IsCompleted = value;
-        _suppressToggle = false;
+        if (!_suppress) _onChanged(this);
+    }
+
+    partial void OnNoteChanged(string value)
+    {
+        if (!_suppress) _onChanged(this);
+    }
+
+    /// <summary>Sets the checkbox without firing the save callback — used to revert a failed toggle.</summary>
+    public void SetCheckedSilently(bool value)
+    {
+        _suppress = true;
+        IsChecked = value;
+        _suppress = false;
     }
 }
 
 /// <summary>
 /// Edits one full <see cref="TaskItem"/>. Detail reads use the file source of truth by id; option
-/// and subtask lists use <see cref="ITaskIndex"/>. Every mutation returns through
-/// <see cref="ITaskStore"/> and then asks the owning list to re-query its current index view.
-/// A task has a single date (When) — there is no separate deadline.
+/// lists use <see cref="ITaskIndex"/>. The embedded checklist is read straight off the loaded task and
+/// edited in place. Every mutation returns through <see cref="ITaskStore"/> and then asks the owning
+/// list to re-query its current index view. A task has a single date (When) — there is no separate
+/// deadline.
 /// </summary>
 public partial class TaskDetailViewModel : ObservableObject
 {
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
     private readonly IReorderService _reorder;
-    private readonly IRecurringTaskService _recurrence;
     private readonly TimeProvider _clock;
     private readonly TimeZoneInfo _zone;
     private readonly Func<Task> _refreshOwner;
-    private readonly Func<Guid, Task> _openTask;
     private readonly INavDataChangeNotifier _navNotifier;
+
+    // Serializes checklist writes (add/remove/edit/tick) so a fast run of edits can't interleave their
+    // load-modify-save of the parent task.
+    private readonly SemaphoreSlim _checklistGate = new(1, 1);
     private Guid? _taskId;
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
     private WhenEditorMode _loadedWhenMode;
@@ -142,7 +166,7 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public ObservableCollection<TaskGroupEditorOption> TaskGroups { get; } = new();
     public ObservableCollection<TagEditorOption> Tags { get; } = new();
-    public ObservableCollection<SubtaskRowViewModel> Subtasks { get; } = new();
+    public ObservableCollection<ChecklistItemViewModel> Checklist { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
     [ObservableProperty]
@@ -180,10 +204,7 @@ public partial class TaskDetailViewModel : ObservableObject
     public partial TaskGroupEditorOption? SelectedTaskGroup { get; set; }
 
     [ObservableProperty]
-    public partial string NewSubtaskTitle { get; set; } = string.Empty;
-
-    [ObservableProperty]
-    public partial Guid? ParentTaskId { get; set; }
+    public partial string NewChecklistItemTitle { get; set; } = string.Empty;
 
     /// <summary>True while the inline "new tag" field is showing in the tag card (replaces the old modal).</summary>
     [ObservableProperty]
@@ -201,7 +222,6 @@ public partial class TaskDetailViewModel : ObservableObject
     /// <summary>End-of-day time a 종일 (all-day) item is pinned to so it expires at 23:59 local.</summary>
     private static readonly TimeSpan AllDayTime = new(23, 59, 0);
     private TimeSpan? EffectiveWhenTime => IsWhenAllDay ? AllDayTime : WhenTime;
-    public bool HasParentTask => ParentTaskId is not null;
     public bool IsWhenEditorVisible => HasConcreteWhen;
     // The "+ 날짜 추가" button shows only when there is no concrete date.
     public bool CanAddWhen => !IsWhenEditorVisible;
@@ -210,21 +230,17 @@ public partial class TaskDetailViewModel : ObservableObject
         ITaskStore store,
         ITaskIndex index,
         IReorderService reorder,
-        IRecurringTaskService recurrence,
         TimeProvider clock,
         TimeZoneInfo zone,
         Func<Task> refreshOwner,
-        Func<Guid, Task> openTask,
         INavDataChangeNotifier navNotifier)
     {
         _store = store;
         _index = index;
         _reorder = reorder;
-        _recurrence = recurrence;
         _clock = clock;
         _zone = zone;
         _refreshOwner = refreshOwner;
-        _openTask = openTask;
         _navNotifier = navNotifier;
         SelectedWhenOption = WhenOptions[0];
     }
@@ -291,8 +307,6 @@ public partial class TaskDetailViewModel : ObservableObject
 
         _isLoading = true;
         _taskId = task.Id;
-        ParentTaskId = task.ParentTaskId;
-        OnPropertyChanged(nameof(HasParentTask));
         Title = task.Title;
         Notes = task.Notes ?? string.Empty;
         SelectedPriority = task.Priority;
@@ -313,7 +327,7 @@ public partial class TaskDetailViewModel : ObservableObject
         // tag rows below must not trip autosave (no save should fire just from opening a task).
         await LoadTaskGroupsAsync(task.TaskGroupId);
         await LoadTagsAsync(task.TagIds);
-        await LoadSubtasksAsync(task.Id);
+        LoadChecklist(task);
         IsOpen = true;
         _isLoading = false;
     }
@@ -466,25 +480,27 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
+    /// <summary>Appends a checklist item to the open task (title from the inline box), persists the
+    /// parent, and adds the matching row to the panel without a full reload (so focus is undisturbed).</summary>
     [RelayCommand]
-    private async Task AddSubtaskAsync()
+    private async Task AddChecklistItemAsync()
     {
-        if (_taskId is not { } parentId || string.IsNullOrWhiteSpace(NewSubtaskTitle)) return;
-        var parent = await _store.GetAsync<TaskItem>(parentId);
-        if (parent is null || parent.IsDeleted) return;
-
-        var siblings = await _index.GetSubtasksAsync(parent.Id);
-        var child = new TaskItem
+        if (_taskId is not { } id || string.IsNullOrWhiteSpace(NewChecklistItemTitle)) return;
+        await _checklistGate.WaitAsync();
+        try
         {
-            Title = NewSubtaskTitle.Trim(),
-            ParentTaskId = parent.Id,
-            TaskGroupId = parent.TaskGroupId,
-            SortOrder = _reorder.AppendRank(siblings.Select(item => item.SortOrder)),
-        };
-        await _store.SaveAsync(child);
-        NewSubtaskTitle = string.Empty;
-        await _refreshOwner();
-        await LoadSubtasksAsync(parentId);
+            var parent = await _store.GetAsync<TaskItem>(id);
+            if (parent is null || parent.IsDeleted) return;
+
+            var item = new ChecklistItem { Title = NewChecklistItemTitle.Trim() };
+            parent.Checklist.Add(item);
+            await _store.SaveAsync(parent);
+
+            Checklist.Add(CreateChecklistRow(item));
+            NewChecklistItemTitle = string.Empty;
+            await _refreshOwner();
+        }
+        finally { _checklistGate.Release(); }
     }
 
     /// <summary>Reveals the inline "new tag" field in the tag card (the + 새 태그 affordance).</summary>
@@ -554,35 +570,8 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
-    [RelayCommand(AllowConcurrentExecutions = true)]
-    private async Task ToggleSubtaskAsync(SubtaskRowViewModel row)
-    {
-        var completed = row.IsCompleted;
-        try
-        {
-            if (completed)
-            {
-                // Recurring subtasks advance and leave a Logbook copy just like top-level tasks.
-                await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
-            }
-            else
-            {
-                var task = await _store.GetAsync<TaskItem>(row.Id);
-                if (task is null || task.IsDeleted) return;
-                task.CompletedAt = null;
-                await _store.SaveAsync(task);
-            }
-            await _refreshOwner();
-            if (_taskId is { } parentId) await LoadSubtasksAsync(parentId);
-        }
-        catch
-        {
-            row.SetCompletedSilently(!completed);
-        }
-    }
-
-    /// <summary>Soft-deletes the task currently open in the panel (cascading to its subtask subtree,
-    /// handled by the store), closes the panel, and asks the owning list to refresh.</summary>
+    /// <summary>Soft-deletes the task currently open in the panel (its embedded checklist goes with it),
+    /// closes the panel, and asks the owning list to refresh.</summary>
     [RelayCommand]
     private async Task DeleteTaskAsync()
     {
@@ -592,20 +581,58 @@ public partial class TaskDetailViewModel : ObservableObject
         await _refreshOwner();
     }
 
+    /// <summary>Removes one checklist item from the open task, persists the parent, and drops its row
+    /// from the panel. Embedded items have no tombstone — they are removed outright.</summary>
     [RelayCommand]
-    private async Task DeleteSubtaskAsync(Guid id)
+    private async Task DeleteChecklistItemAsync(Guid id)
     {
-        await _store.DeleteAsync<TaskItem>(id);
-        await _refreshOwner();
-        if (_taskId is { } parentId) await LoadSubtasksAsync(parentId);
+        if (_taskId is not { } taskId) return;
+        await _checklistGate.WaitAsync();
+        try
+        {
+            var parent = await _store.GetAsync<TaskItem>(taskId);
+            if (parent is null || parent.IsDeleted) return;
+
+            parent.Checklist.RemoveAll(item => item.Id == id);
+            await _store.SaveAsync(parent);
+
+            if (Checklist.FirstOrDefault(item => item.Id == id) is { } row) Checklist.Remove(row);
+            await _refreshOwner();
+        }
+        finally { _checklistGate.Release(); }
     }
 
-    [RelayCommand]
-    private Task OpenSubtaskAsync(Guid id) => _openTask(id);
+    /// <summary>Persists the checklist after a tick / title / memo edit: rebuilds the parent task's
+    /// checklist from the panel's current rows and saves. Does not reload the rows, so an in-progress
+    /// edit keeps focus. Serialized through the checklist gate; failures are logged, not thrown.</summary>
+    private async Task SaveChecklistAsync()
+    {
+        if (_taskId is not { } id) return;
+        // Snapshot the rows synchronously (before any await), so a task switch that repopulates the
+        // Checklist collection can't make this save write one task's items onto another.
+        var snapshot = Checklist.Select(row => new ChecklistItem
+        {
+            Id = row.Id,
+            Title = row.Title.Trim(),
+            IsChecked = row.IsChecked,
+            Note = string.IsNullOrWhiteSpace(row.Note) ? null : row.Note,
+        }).ToList();
+        await _checklistGate.WaitAsync();
+        try
+        {
+            var parent = await _store.GetAsync<TaskItem>(id);
+            if (parent is null || parent.IsDeleted) return;
 
-    [RelayCommand]
-    private Task OpenParentAsync()
-        => ParentTaskId is { } id ? _openTask(id) : Task.CompletedTask;
+            parent.Checklist = snapshot;
+            await _store.SaveAsync(parent);
+            await _refreshOwner();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Cue] Checklist save failed: {ex.Message}");
+        }
+        finally { _checklistGate.Release(); }
+    }
 
     private ScheduledWhen BuildWhen()
     {
@@ -722,10 +749,17 @@ public partial class TaskDetailViewModel : ObservableObject
             none.IsSelected = Tags.All(tag => tag.Id == Guid.Empty || !tag.IsSelected);
     }
 
-    private async Task LoadSubtasksAsync(Guid parentId)
+    /// <summary>Fills the checklist rows straight from the loaded task (the file source of truth) — the
+    /// embedded list needs no index query.</summary>
+    private void LoadChecklist(TaskItem task)
     {
-        Subtasks.Clear();
-        foreach (var item in await _index.GetSubtasksAsync(parentId))
-            Subtasks.Add(new SubtaskRowViewModel(item, row => ToggleSubtaskCommand.Execute(row)));
+        Checklist.Clear();
+        foreach (var item in task.Checklist)
+            Checklist.Add(CreateChecklistRow(item));
     }
+
+    // The change callback is fire-and-forget; SaveChecklistAsync swallows its own failures, so there is
+    // no unobserved task exception.
+    private ChecklistItemViewModel CreateChecklistRow(ChecklistItem item)
+        => new(item, _ => SaveChecklistAsync());
 }
