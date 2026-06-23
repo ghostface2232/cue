@@ -125,19 +125,48 @@ public sealed partial class TaskListPage : Page
     private void DetailPanel_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement panel) return;
-        ConfigureImplicitAnimations(panel);
-        UpdateCenterPoint(panel);
-        panel.SizeChanged += (_, _) => UpdateCenterPoint(panel);
+        ElementCompositionPreview.SetIsTranslationEnabled(panel, true);
         var visual = ElementCompositionPreview.GetElementVisual(panel);
+        visual.Opacity = panel.Visibility == Visibility.Visible ? 1f : 0f;
+
         panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
         {
-            visual.Opacity = panel.Visibility == Visibility.Visible ? 1f : 0f;
-            visual.Scale = panel.Visibility == Visibility.Visible
-                ? Vector3.One
-                : new Vector3(0.992f, 0.992f, 1f);
+            var shown = panel.Visibility == Visibility.Visible;
+            if (!_animationsEnabled)
+            {
+                visual.Opacity = shown ? 1f : 0f;
+                return;
+            }
+            if (shown)
+                AnimateDetailPanelIn(visual);
+            else
+                visual.Opacity = 0f;
         });
-        visual.Opacity = 1f;
-        visual.Scale = Vector3.One;
+    }
+
+    /// <summary>
+    /// Slides the detail panel in from the right while fading up, using Files' signature pane curve
+    /// (CubicBezier 0.1,0.9 0.2,1.0 over 350ms). Translation runs on the compositor thread.
+    /// </summary>
+    private static void AnimateDetailPanelIn(Visual visual)
+    {
+        var compositor = visual.Compositor;
+        var spline = compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1.0f));
+
+        var slide = compositor.CreateVector3KeyFrameAnimation();
+        slide.Target = "Translation";
+        slide.InsertKeyFrame(0f, new Vector3(28f, 0f, 0f));
+        slide.InsertKeyFrame(1f, Vector3.Zero, spline);
+        slide.Duration = TimeSpan.FromMilliseconds(350);
+
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.Target = "Opacity";
+        fade.InsertKeyFrame(0f, 0f);
+        fade.InsertKeyFrame(1f, 1f, spline);
+        fade.Duration = TimeSpan.FromMilliseconds(280);
+
+        visual.StartAnimation("Translation", slide);
+        visual.StartAnimation("Opacity", fade);
     }
 
     /// <summary>
