@@ -24,6 +24,11 @@ public partial class ShellViewModel : ObservableObject
     public IReadOnlyDictionary<Guid, int> ProjectTaskCounts { get; private set; } = new Dictionary<Guid, int>();
     public IReadOnlyDictionary<Guid, int> LabelTaskCounts { get; private set; } = new Dictionary<Guid, int>();
 
+    /// <summary>Open-task counts for the 그룹 없음 / 태그 없음 collection points, refreshed on each
+    /// <see cref="LoadAsync"/>. Read by the shell to stamp their navigation badges.</summary>
+    public int NoProjectTaskCount { get; private set; }
+    public int NoLabelTaskCount { get; private set; }
+
     public ShellViewModel(ITaskStore store, ITaskIndex index, IReorderService reorder, IContainerDeletionStore containers)
     {
         _store = store;
@@ -39,6 +44,8 @@ public partial class ShellViewModel : ObservableObject
         var labels = await _index.GetLabelsAsync();
         ProjectTaskCounts = await _index.GetOpenTaskCountsByProjectAsync();
         LabelTaskCounts = await _index.GetOpenTaskCountsByLabelAsync();
+        NoProjectTaskCount = await _index.GetOpenTaskCountWithoutProjectAsync();
+        NoLabelTaskCount = await _index.GetOpenTaskCountWithoutLabelAsync();
         Replace(Projects, projects);
         Replace(Labels, labels);
     }

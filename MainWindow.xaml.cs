@@ -138,13 +138,33 @@ public sealed partial class MainWindow : Window
     {
         ProjectsGroup.MenuItems.Clear();
         ProjectsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 그룹", Tag = "create-project" });
+        ProjectsGroup.MenuItems.Add(CreateUnfiledItem(
+            "그룹 없음", TaskListMode.NoProject, ViewModel.NoProjectTaskCount));
         foreach (var project in ViewModel.Projects)
             ProjectsGroup.MenuItems.Add(CreateProjectItem(project));
 
         LabelsGroup.MenuItems.Clear();
         LabelsGroup.MenuItems.Add(new NavigationViewItem { Content = "+ 새 태그", Tag = "create-label" });
+        LabelsGroup.MenuItems.Add(CreateUnfiledItem(
+            "태그 없음", TaskListMode.NoLabel, ViewModel.NoLabelTaskCount));
         foreach (var label in ViewModel.Labels)
             LabelsGroup.MenuItems.Add(CreateLabelItem(label));
+    }
+
+    /// <summary>The 그룹 없음 / 태그 없음 collection points: a fixed entry per section that re-gathers
+    /// unfiled captures, so quick-add → sort-later survives the home list spanning every group. A funnel
+    /// glyph marks them as filtered views rather than real groups/tags.</summary>
+    private NavigationViewItem CreateUnfiledItem(string title, TaskListMode mode, int openCount)
+    {
+        var item = new NavigationViewItem
+        {
+            Content = title,
+            Tag = new TaskListNavigation(mode, null, title),
+            Icon = new FontIcon { Glyph = "" },
+        };
+        if (openCount > 0)
+            item.InfoBadge = CreateCountBadge(openCount);
+        return item;
     }
 
     // The fixed lists the user can show/hide from the sidebar context menu. "모든 할 일" (All) is

@@ -350,6 +350,19 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "GROUP BY tl.label_id;",
             cancellationToken);
 
+    public Task<int> GetOpenTaskCountWithoutProjectAsync(CancellationToken cancellationToken = default)
+        => QueryScalarAsync(
+            "SELECT COUNT(*) FROM tasks " +
+            "WHERE deleted_at IS NULL AND completed_at IS NULL AND project_id IS NULL;",
+            cancellationToken);
+
+    public Task<int> GetOpenTaskCountWithoutLabelAsync(CancellationToken cancellationToken = default)
+        => QueryScalarAsync(
+            "SELECT COUNT(*) FROM tasks " +
+            "WHERE deleted_at IS NULL AND completed_at IS NULL " +
+            "AND id NOT IN (SELECT task_id FROM task_labels);",
+            cancellationToken);
+
     internal Task<IReadOnlyList<Guid>> GetTaskIdsByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
         => QueryIdsAsync(
             "SELECT id FROM tasks WHERE project_id = $id AND deleted_at IS NULL;",
@@ -387,6 +400,22 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "WHERE tl.label_id = $label AND t.deleted_at IS NULL " +
             "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             cmd => Bind(cmd, "$label", labelId.ToString()), cancellationToken);
+
+    // The 그룹 없음 / 태그 없음 lists re-create the quick-capture inbox: the home list spans every group,
+    // so unfiled captures get lost among already-sorted work — these narrow it to just what still needs
+    // filing. project_id IS NULL is the unfiled-group test; the NOT IN sub-select is the no-label test.
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutProjectAsync(CancellationToken cancellationToken = default)
+        => QueryAsync(
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL AND project_id IS NULL " +
+            "ORDER BY completed_at IS NOT NULL, sort_order;",
+            _ => { }, cancellationToken);
+
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutLabelAsync(CancellationToken cancellationToken = default)
+        => QueryAsync(
+            $"SELECT {Columns} FROM tasks WHERE deleted_at IS NULL " +
+            "AND id NOT IN (SELECT task_id FROM task_labels) " +
+            "ORDER BY completed_at IS NOT NULL, sort_order;",
+            _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetSubtasksAsync(Guid parentTaskId, CancellationToken cancellationToken = default)
         => QueryAsync(
@@ -524,6 +553,22 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 results[Guid.Parse(reader.GetString(0))] = (int)reader.GetInt64(1);
             return results;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<int> QueryScalarAsync(string sql, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var cmd = _connection.CreateCommand();
+            cmd.CommandText = sql;
+            var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return result is null or DBNull ? 0 : Convert.ToInt32(result);
         }
         finally
         {
