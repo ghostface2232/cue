@@ -200,6 +200,34 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task QuickAddWithTypedDate_BecomesDeadline_NotSomeday()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc);
+
+        // A typed due date is promoted to a deadline; it must NOT then be parked in Someday.
+        vm.QuickAddText = "다음주 금요일 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var withDate = Assert.Single(await store.GetInboxAsync(), t => t.Title == "회의");
+        Assert.NotEqual(WhenKind.SomeDay, withDate.WhenKind);
+        Assert.NotNull(withDate.DeadlineDate);
+
+        // A genuinely dateless task does park in Someday (default off the Today list).
+        vm.QuickAddText = "장보기";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var dateless = Assert.Single(await store.GetInboxAsync(), t => t.Title == "장보기");
+        Assert.Equal(WhenKind.SomeDay, dateless.WhenKind);
+        Assert.Null(dateless.DeadlineDate);
+    }
+
+    [Fact]
     public async Task DetailSomeday_ClearsAndDisablesDeadline_AndSavesAsSomeDay()
     {
         using var temp = new TempDirectory();

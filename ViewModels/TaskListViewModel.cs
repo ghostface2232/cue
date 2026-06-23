@@ -188,10 +188,17 @@ public partial class TaskListViewModel : ObservableObject
             parsedWhen = ScheduledWhen.Unscheduled;
         }
 
+        // The current list parks a task that carries nothing (Today → today, else Someday). A task
+        // that already has a deadline or recurrence has a target/schedule, so it is never parked —
+        // otherwise a typed due date ("다음주 금요일 회의") would land in Someday with its deadline disabled.
+        var when = deadline is null && parsed.Recurrence is null
+            ? QuickAddContext.Apply(parsedWhen, _mode, _clock.GetUtcNow(), _timeZone)
+            : parsedWhen;
+
         var task = new TaskItem
         {
             Title = parsed.Title,
-            When = QuickAddContext.Apply(parsedWhen, _mode, _clock.GetUtcNow(), _timeZone),
+            When = when,
             Deadline = deadline,
             Recurrence = parsed.Recurrence,
             ProjectId = _mode == TaskListMode.Project ? _filterId : null,
