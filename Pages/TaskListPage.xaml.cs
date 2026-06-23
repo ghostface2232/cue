@@ -175,6 +175,7 @@ public sealed partial class TaskListPage : Page
         _resizeStartX = point.Position.X;
         _resizeStartWidth = DetailPanel.ActualWidth > 0 ? DetailPanel.ActualWidth : DetailPanel.Width;
         handle.CapturePointer(e.Pointer);
+        SetDetailResizeGripVisible(true);
         e.Handled = true;
     }
 
@@ -197,7 +198,22 @@ public sealed partial class TaskListPage : Page
         _isResizingDetail = false;
         if (sender is UIElement handle)
             handle.ReleasePointerCapture(e.Pointer);
+        SetDetailResizeGripVisible(false);
         e.Handled = true;
+    }
+
+    private void DetailResizeHandle_PointerEntered(object sender, PointerRoutedEventArgs e)
+        => SetDetailResizeGripVisible(true);
+
+    private void DetailResizeHandle_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isResizingDetail)
+            SetDetailResizeGripVisible(false);
+    }
+
+    private void SetDetailResizeGripVisible(bool visible)
+    {
+        DetailResizeGrip.Opacity = visible ? 0.72 : 0;
     }
 
     private void ApplyDetailPanelWidth()

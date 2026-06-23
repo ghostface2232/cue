@@ -262,9 +262,27 @@
                         Canvas.ZIndex="3"
                         Fill="Transparent"
                         PointerMoved="DetailResizeHandle_PointerMoved"
+                        PointerEntered="DetailResizeHandle_PointerEntered"
+                        PointerExited="DetailResizeHandle_PointerExited"
                         PointerPressed="DetailResizeHandle_PointerPressed"
                         PointerReleased="DetailResizeHandle_PointerReleased"
                         PointerCanceled="DetailResizeHandle_PointerReleased" />
+                    <Border
+                        x:Name="DetailResizeGrip"
+                        Width="4"
+                        Height="58"
+                        Margin="-15,0,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Canvas.ZIndex="4"
+                        Background="{ThemeResource TextFillColorTertiaryBrush}"
+                        CornerRadius="2"
+                        IsHitTestVisible="False"
+                        Opacity="0">
+                        <Border.OpacityTransition>
+                            <ScalarTransition Duration="0:0:0.083" />
+                        </Border.OpacityTransition>
+                    </Border>
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="2,0,16,0" Spacing="13">
                         <Button
