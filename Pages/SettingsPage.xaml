@@ -274,18 +274,14 @@
                 Padding="0,0,0,8"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-                <!-- A single star column capped at the shared max-width token: the column fills the
-                     available width and the cards stretch to it (so every section reads at the SAME
-                     measure — no section-to-section width drift), but it caps at the token and leaves
-                     the surplus to its right, keeping the content flush beside the nav. This is the
-                     left-anchored alternative to Stretch + MaxWidth, which WinUI CENTERS once capped —
-                     that both opened the nav gap on a wide window and pushed the right cards under the
-                     vertical scrollbar, clipping them. Below the cap the column shrinks uniformly, so
-                     the label column stays bounded and captions wrap instead of running on one line. -->
+                <!-- Fill the whole column (variable width), exactly as the main content area fills the
+                     space beside the sidebar — no max-width cap, so a wider window gives the cards more
+                     room instead of leaving the right side empty. Plain Stretch fills left-to-right, so
+                     there is no centering (which WinUI would do under Stretch + MaxWidth, opening a nav
+                     gap and pushing the right cards under the scrollbar). Each row still reads cleanly:
+                     the label column is width-capped so captions wrap, and the trailing control is a
+                     fixed width flush right, so a wide card just widens the gap between them. -->
                 <Grid HorizontalAlignment="Stretch">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" MaxWidth="{StaticResource CueSettingsContentMaxWidth}" />
-                    </Grid.ColumnDefinitions>
                     <!-- 시간 -->
                     <StackPanel
                         x:Name="TimeSection"

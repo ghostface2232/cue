@@ -98,16 +98,16 @@
 
     <!-- Settings page layout
          The settings screen is the one place with its own section-nav + form rhythm. These tokens
-         pin its column widths, control sizing, and row height so every section reads at the SAME
-         measure (no per-section width drift), captions wrap at a comfortable length instead of
-         running the card too wide, and the form matches the rest of the app's 16/20 spacing.
+         pin its column widths, control sizing, and row height so captions wrap at a comfortable length
+         instead of running the card too wide, and the form matches the rest of the app's 16/20 spacing.
+         The form column itself is NOT capped — it fills the space beside the nav (variable width), the
+         same way the main content area fills the space beside the sidebar; a wider window gives the
+         cards more room rather than leaving the right side empty.
          - NavWidth      : left section list, wide enough to hold the longest label + icon as a pill
-         - ContentMaxWidth: caps the right column so it never sprawls; content centers past this width
          - LabelMaxWidth : caps the label/caption text column so captions wrap, not run on one line
          - ControlWidth  : fixed width of the trailing control (combo/etc.) so all rows align
          - RowMinHeight  : single-line row height, keeping a settled vertical rhythm -->
     <x:Double x:Key="CueSettingsNavWidth">200</x:Double>
-    <x:Double x:Key="CueSettingsContentMaxWidth">720</x:Double>
     <x:Double x:Key="CueSettingsLabelMaxWidth">380</x:Double>
     <x:Double x:Key="CueSettingsControlWidth">200</x:Double>
     <x:Double x:Key="CueSettingsRowMinHeight">52</x:Double>

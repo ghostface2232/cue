@@ -209,7 +209,7 @@ components:
     item-rounded: "{rounded.md}"   # hover/selection pill matches the sidebar
     item-min-height: 38px
   settings-content:            # right column form
-    maxWidth: 720px            # {CueSettingsContentMaxWidth}; stretches, centers past this width
+    width: fill                # fills the space beside the nav (variable, no cap), like the main content area beside the sidebar
   settings-row:                # one label/caption + trailing control row inside a card
     minHeight: 52px            # {CueSettingsRowMinHeight}
     columnGap: 24px
@@ -329,8 +329,8 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 ### Settings page — `SettingsPage.xaml`
 - Body padding is the same uniform `20` as the list and timeline pages; the page title (`CuePageTitleTextStyle`) and the nav/content grid share the `4` inner inset so the screen lines up with the rest of the app.
 - Two columns: a left **section nav** (`settings-nav`, fixed `{CueSettingsNavWidth}` = 200px) listing 시간 / 파싱 / 외관 / 알림, and a right **form column** holding one section's cards at a time (sections are visibility-toggled, with the shared fade+slide entrance — see "Motion").
-- The section nav is a `ListView` thinly overridden to read like the main sidebar: a calm subtle-fill hover/selection **pill** rounded to `{rounded.md}` (icon + label, primary text on selection, no accent text). Items are 38px min-height with a small gap so each pill reads separately.
-- The form column **stretches but is capped** at `{CueSettingsContentMaxWidth}` (720px), centering past that width. This is load-bearing: because the column has a bounded width, every section's cards fill the **same measure** (no per-section width drift) and the label column gets a real width so captions wrap instead of running the card too wide.
+- The section nav is a `ListView` whose item is **retemplated to read exactly like the main sidebar/list**: a calm subtle-fill hover/selection **pill** rounded to `{rounded.md}`, inset 4px so its corners float (icon + label, primary text/glyph on selection, no accent text), with a left **accent bar** marking the selected item. The fill fades on the same `83ms` `BrushTransition` as the main list, and a selected item **deepens** on hover/press (Secondary → Tertiary), following the cross-surface deepen rule. Items are 38px min-height with a small gap so each pill reads separately.
+- The form column **fills the space beside the nav** (variable width, no cap), the same way the main content area fills the space beside the sidebar — a wider window gives the cards more room rather than leaving the right side empty. The per-row measure is held by the row itself, not a column cap: the label column is width-capped (`{CueSettingsLabelMaxWidth}`) so captions wrap, and the trailing control is a fixed width flush right, so a wide card simply widens the gap between label and control.
 - A settings **row** (`settings-row`) is `[label + caption *] [control Auto, flush right]`: the label/caption column is width-capped (`{CueSettingsLabelMaxWidth}`) so captions wrap at a comfortable measure, and the trailing control sits at a shared fixed width (`{CueSettingsControlWidth}`) so controls align across rows. Rows are 52px min-height, separated inside a card by full-bleed `DividerStrokeColorDefault` dividers.
 - Controls consume the shared tokens: combos/inputs round to `{rounded.sm}` (4px, inner ≤ the 8px card), the toggle is stripped of its On/Off content and right-aligned, and list rows (custom date meanings) carry the row-sub font with an even vertical rhythm.
 - Cards, typography (`CueSectionHeaderTextStyle` / `CueCardHeaderTextStyle` / `SettingsCaptionStyle` = `MetadataTextStyle`), strokes, and the accent-swatch picker (ringed current selection, per "Selection popup") all match the rest of the app — the settings screen carries no bespoke look.
@@ -445,7 +445,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### Settings form
 - **Section nav** (`settings-nav`): a `ListView` styled to match the sidebar — a `{rounded.md}` subtle-fill pill on hover/selection, primary text, icon + label. Fixed width `{CueSettingsNavWidth}`.
-- **Form column** (`settings-content`): stretches, capped at `{CueSettingsContentMaxWidth}`, so all sections share one measure (no width drift) and captions wrap rather than over-widening the card.
+- **Form column** (`settings-content`): fills the space beside the nav (variable, no cap), like the main content area beside the sidebar. The per-row measure is held by the width-capped label column + fixed-width control, not a column cap, so captions still wrap rather than over-widening.
 - **Row** (`settings-row`): `[label + caption *][control flush right]`. The label column caps at `{CueSettingsLabelMaxWidth}` (captions wrap); the control sits at `{CueSettingsControlWidth}` and rounds to `{rounded.sm}` (4px inside the 8px card). Dimensions are tokens in `DesignTokens.xaml` (`CueSettings*`), not inline literals.
 
 ## Do's and Don'ts
