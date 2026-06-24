@@ -486,7 +486,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY t.priority, t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
 
-    public Task<IReadOnlyList<TimelineTaskItem>> GetTimelineAsync(
+    public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(
         DateOnly start,
         DateOnly end,
         CancellationToken cancellationToken = default)
@@ -494,27 +494,20 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         if (end < start)
             throw new ArgumentException("Timeline end date must be on or after the start date.", nameof(end));
 
-        return QueryRecordsAsync(
-            $"""
-            SELECT id, title, when_date, completed_at, priority
-            FROM tasks
-            WHERE deleted_at IS NULL
-              AND when_kind = 'OnDate' AND when_date IS NOT NULL
-              AND when_date >= $start
-              AND when_date <= $end
-            ORDER BY when_date, completed_at IS NOT NULL, sort_order;
-            """,
+        // Full list projection (SelectRows) filtered to the range's concrete-When tasks, ordered by
+        // day, then time within the day (a NULL time = all-day sinks after timed items), then sort
+        // order. The view model groups these rows by day for the vertical agenda.
+        return QueryAsync(
+            SelectRows + "WHERE t.deleted_at IS NULL " +
+            "AND t.when_kind = 'OnDate' AND t.when_date IS NOT NULL " +
+            "AND t.when_date >= $start AND t.when_date <= $end " +
+            "ORDER BY t.when_date, t.when_time IS NULL, t.when_time, " +
+            "t.completed_at IS NOT NULL, t.sort_order;",
             cmd =>
             {
                 Bind(cmd, "$start", start.ToString("yyyy-MM-dd"));
                 Bind(cmd, "$end", end.ToString("yyyy-MM-dd"));
             },
-            r => new TimelineTaskItem(
-                Guid.Parse(r.GetString(0)),
-                r.GetString(1),
-                DateOnly.ParseExact(r.GetString(2), "yyyy-MM-dd"),
-                !r.IsDBNull(3),
-                (Priority)r.GetInt64(4)),
             cancellationToken);
     }
 

@@ -577,7 +577,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task TimelineNowLineUsesTimeWithinTheCurrentDay()
+    public async Task TimelineGroupsTasksByDayShowingOnlyDaysWithTasks()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 12, 0, 0, TimeSpan.Zero));
@@ -586,18 +586,32 @@ public sealed class ViewModelRegressionTests
             clock,
             TimeZoneInfo.Utc);
 
+        // Two tasks on today, one on a later day, and a dateless one (must not appear).
+        await store.SaveAsync(new TaskItem { Title = "오전 회의", When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 9, 0, 0), "UTC")) });
+        await store.SaveAsync(new TaskItem { Title = "점심 약속", When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 12, 30, 0), "UTC")) });
+        await store.SaveAsync(new TaskItem { Title = "월말 정리", When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 27, 0, 0, 0), "UTC")) });
+        await store.SaveAsync(new TaskItem { Title = "언젠가", When = ScheduledWhen.Unscheduled });
+
         var vm = new TimelineViewModel(
             store,
             store,
             new ReorderService(store),
+            new RecurringTaskService(store),
             clock,
             TimeZoneInfo.Utc,
             new NavDataChangeNotifier());
         await vm.LoadCommand.ExecuteAsync(null);
 
-        var expected = ((23 - 1) * vm.DayWidth) + (vm.DayWidth / 2);
-        Assert.True(vm.HasTodayInRange);
-        Assert.Equal(expected, vm.TodayLineOffset, precision: 6);
+        // Only the two days that carry tasks, in date order.
+        Assert.Equal(2, vm.Days.Count);
+        Assert.Equal(new DateOnly(2026, 6, 23), vm.Days[0].Date);
+        Assert.True(vm.Days[0].IsToday);
+        Assert.Equal(2, vm.Days[0].Tasks.Count);   // both of today's tasks stack under the same day
+        Assert.Equal("오후 12:30", vm.Days[0].Tasks[1].TimeCaption);
+
+        Assert.Equal(new DateOnly(2026, 6, 27), vm.Days[1].Date);
+        Assert.False(vm.Days[1].IsToday);
+        Assert.Single(vm.Days[1].Tasks);
     }
 
     [Theory]

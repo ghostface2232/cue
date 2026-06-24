@@ -42,6 +42,20 @@ public partial class TaskRowViewModel : ObservableObject
 
     public bool HasSchedule => Schedule.Length > 0;
 
+    /// <summary>The time portion of the schedule only (e.g. "오후 6:00"), empty for an all-day task or
+    /// one with no time. The timeline groups rows by day, so a card shows just the time — the day
+    /// itself is the section header — while the main list shows the full <see cref="Schedule"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasTimeCaption))]
+    [NotifyPropertyChangedFor(nameof(HasTimeOrRecurring))]
+    public partial string TimeCaption { get; set; } = string.Empty;
+
+    public bool HasTimeCaption => TimeCaption.Length > 0;
+
+    /// <summary>Drives the timeline card's meta line (time + repeat glyph): shown when the task has a
+    /// time or repeats, so an all-day recurring task still surfaces its repeat mark.</summary>
+    public bool HasTimeOrRecurring => HasTimeCaption || IsRecurring;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPriority))]
     [NotifyPropertyChangedFor(nameof(PriorityCaption))]
@@ -56,6 +70,7 @@ public partial class TaskRowViewModel : ObservableObject
     /// panel.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasMetadata))]
+    [NotifyPropertyChangedFor(nameof(HasTimeOrRecurring))]
     public partial bool IsRecurring { get; set; }
 
     /// <summary>The row's group name, shown as a chip at the right edge; empty when the task is unfiled.</summary>
@@ -128,6 +143,7 @@ public partial class TaskRowViewModel : ObservableObject
         Title = FormatTitle(item.Title);
         SortOrder = item.SortOrder;
         Schedule = BuildSchedule(item);
+        TimeCaption = BuildTimeCaption(item);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
         ApplyGroupAndTags(item);
@@ -148,6 +164,7 @@ public partial class TaskRowViewModel : ObservableObject
     {
         Title = FormatTitle(item.Title);
         Schedule = BuildSchedule(item);
+        TimeCaption = BuildTimeCaption(item);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
         SortOrder = item.SortOrder;
@@ -200,6 +217,11 @@ public partial class TaskRowViewModel : ObservableObject
             ? $"{Day(when)} {Time(time)}"
             : Day(when);
     }
+
+    // The time alone (empty for all-day / no time) — used by the timeline card where the day is already
+    // the section header.
+    private static string BuildTimeCaption(TaskListItem item)
+        => item.WhenDate is not null && item.WhenTime is { } time ? Time(time) : string.Empty;
 
     private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
 

@@ -120,20 +120,6 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <!-- Left accent bar marking the open/selected task (an overlay, not a layout column,
-                             so it never shifts the checkbox). -->
-                        <Rectangle
-                            Grid.ColumnSpan="3"
-                            Width="3"
-                            Height="22"
-                            Margin="-8,0,0,0"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Center"
-                            Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                            RadiusX="1.5"
-                            RadiusY="1.5"
-                            Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-
                         <CheckBox
                             behaviors:CircleCheckBoxPop.IsEnabled="True"
                             VerticalAlignment="Center"

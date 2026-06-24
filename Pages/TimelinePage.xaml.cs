@@ -15,7 +15,8 @@ using Cue.ViewModels;
 
 namespace Cue.Pages;
 
-/// <summary>A horizontally scrolling month timeline over the index-backed task date projection.</summary>
+/// <summary>A vertically scrolling month timeline (agenda): tasks grouped by day, newest day at the
+/// top, over the index-backed task date projection.</summary>
 public sealed partial class TimelinePage : Page
 {
     private const double DetailDefaultWidth = 460;
@@ -28,17 +29,8 @@ public sealed partial class TimelinePage : Page
     // overlay over the timeline (matching TaskListPage). The hysteresis band prevents edge chatter.
     private const double SideBySideMinWidth = 600;
     private const double LayoutHysteresis = 24;
-    private const double KeyboardScrollStep = 440;
-    private const double WheelScrollMultiplier = 2.0;
 
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
-    private bool _isPointerPanning;
-    private uint _panPointerId;
-    private double _panStartX;
-    private double _panStartY;
-    private double _panStartHorizontalOffset;
-    private double _panStartVerticalOffset;
-    private bool _panMoved;
     private Visual? _detailPanelVisual;
     private bool _isResizingDetail;
     private double _detailPreferredWidth = DetailDefaultWidth;
@@ -74,11 +66,7 @@ public sealed partial class TimelinePage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        await RunSafelyAsync(async () =>
-        {
-            await ViewModel.LoadCommand.ExecuteAsync(null);
-            CenterTodayInView();
-        });
+        await RunSafelyAsync(() => ViewModel.LoadCommand.ExecuteAsync(null));
     }
 
     private async void PreviousMonth_Click(object sender, RoutedEventArgs e)
@@ -92,7 +80,7 @@ public sealed partial class TimelinePage : Page
         => await RunSafelyAsync(async () =>
         {
             await ViewModel.GoTodayCommand.ExecuteAsync(null);
-            CenterTodayInView();
+            FocusTimeline();
         });
 
     private async void NextMonth_Click(object sender, RoutedEventArgs e)
@@ -103,135 +91,20 @@ public sealed partial class TimelinePage : Page
         });
 
     private void TimelineScrollViewer_Loaded(object sender, RoutedEventArgs e)
-    {
-        FocusTimeline();
-        CenterTodayInView();
-    }
-
-    private void TimelineScrollViewer_KeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        var delta = e.Key switch
-        {
-            VirtualKey.Left => -KeyboardScrollStep,
-            VirtualKey.Right => KeyboardScrollStep,
-            _ => 0,
-        };
-        if (delta == 0) return;
-
-        e.Handled = true;
-        ScrollBy(delta, 0, disableAnimation: false);
-    }
-
-    private void TimelineScrollViewer_PointerPressed(object sender, PointerRoutedEventArgs e)
-    {
-        var point = e.GetCurrentPoint(TimelineScrollViewer);
-        if (!point.Properties.IsLeftButtonPressed)
-            return;
-
-        _isPointerPanning = true;
-        _panPointerId = point.PointerId;
-        _panStartX = point.Position.X;
-        _panStartY = point.Position.Y;
-        _panStartHorizontalOffset = TimelineScrollViewer.HorizontalOffset;
-        _panStartVerticalOffset = TimelineScrollViewer.VerticalOffset;
-        _panMoved = false;
-        TimelineScrollViewer.CapturePointer(e.Pointer);
-        FocusTimeline();
-        e.Handled = true;
-    }
-
-    private void TimelineScrollViewer_PointerMoved(object sender, PointerRoutedEventArgs e)
-    {
-        if (!_isPointerPanning)
-            return;
-
-        var point = e.GetCurrentPoint(TimelineScrollViewer);
-        if (point.PointerId != _panPointerId || !point.Properties.IsLeftButtonPressed)
-        {
-            EndPointerPan(e);
-            return;
-        }
-
-        var deltaX = point.Position.X - _panStartX;
-        var deltaY = point.Position.Y - _panStartY;
-        if (Math.Abs(deltaX) > 4 || Math.Abs(deltaY) > 4)
-            _panMoved = true;
-
-        TimelineScrollViewer.ChangeView(
-            ClampOffset(_panStartHorizontalOffset - deltaX, TimelineScrollViewer.ScrollableWidth),
-            ClampOffset(_panStartVerticalOffset - deltaY, TimelineScrollViewer.ScrollableHeight),
-            null,
-            disableAnimation: true);
-        e.Handled = true;
-    }
-
-    private void TimelineScrollViewer_PointerReleased(object sender, PointerRoutedEventArgs e)
-        => EndPointerPan(e);
-
-    private void TimelineScrollViewer_PointerCanceled(object sender, PointerRoutedEventArgs e)
-        => EndPointerPan(e);
-
-    private void TimelineScrollViewer_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
-    {
-        var delta = e.GetCurrentPoint(TimelineScrollViewer).Properties.MouseWheelDelta;
-        if (delta == 0)
-            return;
-
-        e.Handled = true;
-        ScrollBy(-delta * WheelScrollMultiplier, 0, disableAnimation: false);
-    }
-
-    private void EndPointerPan(PointerRoutedEventArgs e)
-    {
-        if (!_isPointerPanning)
-            return;
-
-        _isPointerPanning = false;
-        TimelineScrollViewer.ReleasePointerCapture(e.Pointer);
-        e.Handled = true;
-    }
-
-    private void CenterTodayInView()
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            TimelineScrollViewer.UpdateLayout();
-            FocusTimeline();
-            if (!ViewModel.HasTodayInRange)
-                return;
-
-            var target = ViewModel.TodayLineOffset - (TimelineScrollViewer.ViewportWidth / 2);
-            TimelineScrollViewer.ChangeView(
-                ClampOffset(target, TimelineScrollViewer.ScrollableWidth),
-                null,
-                null,
-                disableAnimation: false);
-        });
-    }
+        => FocusTimeline();
 
     private void FocusTimeline()
         => TimelineScrollViewer.Focus(FocusState.Programmatic);
 
-    private void ScrollBy(double horizontalDelta, double verticalDelta, bool disableAnimation)
+    // Scroll the agenda so today's section lands at the top of the viewport when its row realizes.
+    private void DayRoot_Loaded(object sender, RoutedEventArgs e)
     {
-        TimelineScrollViewer.ChangeView(
-            ClampOffset(TimelineScrollViewer.HorizontalOffset + horizontalDelta, TimelineScrollViewer.ScrollableWidth),
-            ClampOffset(TimelineScrollViewer.VerticalOffset + verticalDelta, TimelineScrollViewer.ScrollableHeight),
-            null,
-            disableAnimation);
+        if (sender is FrameworkElement { DataContext: TimelineDayViewModel { IsToday: true } } day)
+            day.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0, AnimationDesired = false });
     }
-
-    private static double ClampOffset(double value, double maximum)
-        => Math.Min(Math.Max(0, value), Math.Max(0, maximum));
 
     private async void TimelineBar_Tapped(object sender, TappedRoutedEventArgs e)
     {
-        if (_panMoved)
-        {
-            _panMoved = false;
-            return;
-        }
-
         if (sender is not FrameworkElement { Tag: Guid id })
             return;
 
@@ -241,40 +114,14 @@ public sealed partial class TimelinePage : Page
 
     private void TimelineBar_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
-        if (sender is not Border border) return;
-        border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TimelineRowHoverBrush"];
-        SetTitleFadeBrush(border, "TimelineRowHoverBrush");
-        if (!_animationsEnabled) return;
-        var visual = ElementCompositionPreview.GetElementVisual(border);
-        visual.Scale = new Vector3(1.0025f, 1.0025f, 1f);
+        if (sender is Border border)
+            border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TimelineRowHoverBrush"];
     }
 
     private void TimelineBar_PointerExited(object sender, PointerRoutedEventArgs e)
     {
-        if (sender is not Border border) return;
-        border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TimelineBarBrush"];
-        SetTitleFadeBrush(border, "TimelineBarBrush");
-        ElementCompositionPreview.GetElementVisual(border).Scale = Vector3.One;
-    }
-
-    private void SetTitleFadeBrush(DependencyObject root, string brushKey)
-    {
-        if (FindDescendant<Rectangle>(root, "TimelineTitleFade") is not { } fade)
-            return;
-        if (Resources[brushKey] is not SolidColorBrush brush)
-            return;
-
-        fade.Fill = new LinearGradientBrush
-        {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 0),
-            GradientStops =
-            {
-                new GradientStop { Offset = 0, Color = Microsoft.UI.Colors.Transparent },
-                new GradientStop { Offset = 0.58, Color = brush.Color },
-                new GradientStop { Offset = 1, Color = brush.Color },
-            },
-        };
+        if (sender is Border border)
+            border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TimelineBarBrush"];
     }
 
     private void FadeText_Loaded(object sender, RoutedEventArgs e)
@@ -293,8 +140,9 @@ public sealed partial class TimelinePage : Page
     {
         if (VisualTreeHelper.GetParent(text) is not DependencyObject parent)
             return;
-        var fadeName = text.Name == "TimelineTitleText" ? "TimelineTitleFade" : "TagNameFade";
-        if (FindDescendant<Rectangle>(parent, fadeName) is not { } fade)
+        // Only the detail panel's tag rows use the edge fade now (the timeline card trims with an
+        // ellipsis like the main list).
+        if (FindDescendant<Rectangle>(parent, "TagNameFade") is not { } fade)
             return;
 
         text.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));

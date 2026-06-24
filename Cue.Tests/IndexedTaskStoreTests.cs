@@ -527,7 +527,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         foreach (var task in new[] { insideRange, onStartEdge, beforeRange, afterRange, dateless })
             await store.SaveAsync(task);
 
-        var timeline = await store.GetTimelineAsync(rangeStart, rangeEnd);
+        var timeline = await store.GetTimelineRowsAsync(rangeStart, rangeEnd);
         var ids = timeline.Select(item => item.Id).ToHashSet();
 
         Assert.Contains(insideRange.Id, ids);
@@ -538,7 +538,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         // The timeline is single-point: each task sits on its one When date.
         var row = Assert.Single(timeline, item => item.Id == insideRange.Id);
-        Assert.Equal(new DateOnly(2026, 6, 12), row.Date);
+        Assert.Equal(new DateOnly(2026, 6, 12), row.WhenDate);
         Assert.Equal(Priority.P2, row.Priority);
     }
 

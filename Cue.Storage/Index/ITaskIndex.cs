@@ -97,11 +97,13 @@ public interface ITaskIndex
     Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Tasks whose single When date falls within the inclusive date range. This is the read model
-    /// for the timeline view (one point per task); it remains fully rebuildable from the per-record
-    /// files. Only tasks with a concrete When (OnDate) appear.
+    /// Tasks whose single When date falls within the inclusive date range — the read model for the
+    /// timeline (agenda) view, grouped by day in the view model. Returns the full list projection
+    /// (group, tags, time, recurrence) so a timeline card renders consistently with a main-list row.
+    /// Ordered by date, then time of day (timed before all-day), then sort order. Only tasks with a
+    /// concrete When (OnDate) appear; it remains fully rebuildable from the per-record files.
     /// </summary>
-    Task<IReadOnlyList<TimelineTaskItem>> GetTimelineAsync(
+    Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(
         DateOnly start,
         DateOnly end,
         CancellationToken cancellationToken = default);

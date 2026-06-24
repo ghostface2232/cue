@@ -16,118 +16,197 @@
         <SolidColorBrush x:Key="TimelineBarBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
 
         <Style x:Key="TimelineMetadataTextStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="{StaticResource CueFontSecondary}" />
+            <Setter Property="FontSize" Value="{StaticResource CueFontListMeta}" />
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
-        <DataTemplate x:Key="TimelineDayTemplate" x:DataType="vm:TimelineDayViewModel">
-            <Grid Width="{x:Bind Width}" Height="58">
-                <Border BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,1,1" />
-                <StackPanel VerticalAlignment="Center" Spacing="{StaticResource CueGap2}">
-                    <Border
-                        MinWidth="28"
-                        Height="28"
-                        HorizontalAlignment="Center"
-                        Background="{ThemeResource AccentFillColorDefaultBrush}"
-                        CornerRadius="14"
-                        Visibility="{x:Bind IsToday, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            FontFamily="{StaticResource CueFontFamilySemiBold}"
-                            FontSize="13"
-                            Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                            Text="{x:Bind DayLabel}" />
-                    </Border>
-                    <TextBlock
-                        HorizontalAlignment="Center"
-                        FontFamily="{StaticResource CueFontFamilySemiBold}"
-                        FontSize="13"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="{x:Bind DayLabel}"
-                        Visibility="{x:Bind IsNotToday, Converter={StaticResource BoolToVisibility}}" />
-                    <TextBlock
-                        HorizontalAlignment="Center"
-                        Style="{StaticResource TimelineMetadataTextStyle}"
-                        Text="{x:Bind WeekdayLabel}" />
+        <!-- Tag chip — identical to the main list's (squircle tint pill). Duplicated here so the
+             timeline card reads exactly like a list row. -->
+        <DataTemplate x:Key="TimelineTagChipTemplate" x:DataType="vm:TaskRowTag">
+            <Border
+                Height="{StaticResource CueChipHeight}"
+                Padding="{StaticResource CuePadChip}"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                Background="{x:Bind Color, Converter={StaticResource HexToTint}}"
+                CornerRadius="{StaticResource CueRadiusChip}">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                    <FontIcon FontSize="12" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
+                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-            </Grid>
+            </Border>
         </DataTemplate>
 
-        <DataTemplate x:Key="TimelineRowTemplate" x:DataType="vm:TimelineTaskRowViewModel">
-            <Grid Width="{x:Bind TrackWidth}" Height="70" Opacity="{x:Bind VisualOpacity}">
-                <Rectangle
-                    Height="1"
-                    VerticalAlignment="Bottom"
-                    Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                <Canvas Width="{x:Bind TrackWidth}" Height="70">
-                    <Border
-                        Canvas.Left="{x:Bind StartOffset}"
-                        Canvas.Top="8"
-                        Width="{x:Bind CardWidth}"
-                        MinHeight="54"
-                        Padding="12,0"
-                        Background="{StaticResource TimelineBarBrush}"
-                        BackgroundSizing="InnerBorderEdge"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="{StaticResource CueRadiusRow}"
-                        PointerEntered="TimelineBar_PointerEntered"
-                        PointerExited="TimelineBar_PointerExited"
-                        Tapped="TimelineBar_Tapped"
-                        Tag="{x:Bind Id}">
-                        <Grid ColumnSpacing="{StaticResource CueGap8}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center" Spacing="1">
-                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
-                                    <Grid MaxWidth="142" VerticalAlignment="Center">
-                                        <TextBlock
-                                            x:Name="TimelineTitleText"
-                                            FontFamily="{StaticResource CueFontFamilyMedium}"
-                                            FontSize="{StaticResource CueFontRow}"
-                                            Loaded="FadeText_Loaded"
-                                            MaxLines="1"
-                                            SizeChanged="FadeText_SizeChanged"
-                                            Text="{x:Bind Title}"
-                                            TextTrimming="Clip" />
-                                        <Rectangle
-                                            x:Name="TimelineTitleFade"
-                                            Width="48"
-                                            HorizontalAlignment="Right"
-                                            IsHitTestVisible="False"
-                                            Opacity="0">
-                                            <Rectangle.Fill>
-                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                                    <GradientStop Offset="0" Color="Transparent" />
-                                                    <GradientStop Offset="0.58" Color="{ThemeResource CardBackgroundFillColorDefault}" />
-                                                    <GradientStop Offset="1" Color="{ThemeResource CardBackgroundFillColorDefault}" />
-                                                </LinearGradientBrush>
-                                            </Rectangle.Fill>
-                                        </Rectangle>
-                                    </Grid>
-                                    <Border
-                                        Padding="7,1"
-                                        VerticalAlignment="Center"
-                                        Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}}"
-                                        CornerRadius="9"
-                                        Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}}">
-                                        <TextBlock
-                                            FontSize="11"
-                                            Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}}"
-                                            Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}}" />
-                                    </Border>
-                                </StackPanel>
+        <!-- A timeline task card: keeps the timeline's bordered-card feel, but its internals (checkbox,
+             title + priority chip, time + repeat, group/tag chips) mirror the main list row exactly. The
+             day section header carries the date, so the card shows only the time. -->
+        <DataTemplate x:Key="TimelineCardTemplate" x:DataType="vm:TaskRowViewModel">
+            <Border
+                Background="{StaticResource TimelineBarBrush}"
+                BackgroundSizing="InnerBorderEdge"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource CueRadiusRow}"
+                Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
+                PointerEntered="TimelineBar_PointerEntered"
+                PointerExited="TimelineBar_PointerExited"
+                Tapped="TimelineBar_Tapped"
+                Tag="{x:Bind Id}">
+                <Border.BackgroundTransition>
+                    <BrushTransition Duration="0:0:0.083" />
+                </Border.BackgroundTransition>
+                <Grid>
+                    <!-- Persistent selected tint (open task), matching the list's selection fill. -->
+                    <Rectangle
+                        Fill="{StaticResource TimelineRowHoverBrush}"
+                        RadiusX="8"
+                        RadiusY="8"
+                        Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                    <Grid MinHeight="56" Padding="14,10" ColumnSpacing="{StaticResource CueGap16}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <CheckBox
+                            behaviors:CircleCheckBoxPop.IsEnabled="True"
+                            VerticalAlignment="Center"
+                            IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
+                            Style="{StaticResource CueCircleCheckBoxStyle}" />
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="{StaticResource CueGap8}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
                                 <TextBlock
-                                    Style="{StaticResource TimelineMetadataTextStyle}"
-                                    Text="{x:Bind DateCaption}"
+                                    MaxWidth="420"
+                                    VerticalAlignment="Center"
+                                    FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                    FontSize="{StaticResource CueFontListTitle}"
+                                    Text="{x:Bind Title, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis" />
+                                <Border
+                                    Height="{StaticResource CueChipHeight}"
+                                    Padding="{StaticResource CuePadChip}"
+                                    VerticalAlignment="Center"
+                                    Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}, Mode=OneWay}"
+                                    CornerRadius="{StaticResource CueRadiusChip}"
+                                    Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                                    <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}" />
+                                </Border>
                             </StackPanel>
-                        </Grid>
+                            <!-- Time + repeat line; shown when the task has a time or repeats. -->
+                            <StackPanel
+                                Orientation="Horizontal"
+                                Spacing="{StaticResource CueGap8}"
+                                VerticalAlignment="Center"
+                                Visibility="{x:Bind HasTimeOrRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock VerticalAlignment="Center" Style="{StaticResource TimelineMetadataTextStyle}" Text="{x:Bind TimeCaption, Mode=OneWay}" Visibility="{x:Bind HasTimeCaption, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                <FontIcon
+                                    VerticalAlignment="Center"
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Glyph="&#xE8EE;"
+                                    ToolTipService.ToolTip="반복"
+                                    AutomationProperties.Name="반복"
+                                    Visibility="{x:Bind IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                            <!-- Compact reflow: chips drop under the title when the card is narrow. -->
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" Visibility="{x:Bind ShowInlineMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <Border
+                                    Height="{StaticResource CueChipHeight}"
+                                    Padding="{StaticResource CuePadChip}"
+                                    VerticalAlignment="Center"
+                                    Background="{ThemeResource CueChipNeutralFillBrush}"
+                                    CornerRadius="{StaticResource CueRadiusChip}"
+                                    Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                                        <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
+                                        <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Border>
+                                <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TimelineTagChipTemplate}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Right edge (wide): group chip + tag chip(s), stacked and right-aligned. -->
+                        <StackPanel
+                            Grid.Column="2"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right"
+                            Spacing="{StaticResource CueGap8}"
+                            Visibility="{x:Bind ShowRightMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                            <Border
+                                Height="{StaticResource CueChipHeight}"
+                                Padding="{StaticResource CuePadChip}"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                Background="{ThemeResource CueChipNeutralFillBrush}"
+                                CornerRadius="{StaticResource CueRadiusChip}"
+                                Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                                    <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
+                                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                            <ItemsControl HorizontalAlignment="Right" ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TimelineTagChipTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Vertical" HorizontalAlignment="Right" Spacing="{StaticResource CueGap8}" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- One day section: a date header (accent + 오늘 pill for today) over the day's task cards. -->
+        <DataTemplate x:Key="TimelineDayTemplate" x:DataType="vm:TimelineDayViewModel">
+            <StackPanel Margin="0,0,0,18" Loaded="DayRoot_Loaded">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" Margin="2,0,0,8" VerticalAlignment="Center">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontFamily="{StaticResource CueFontFamilySemiBold}"
+                        FontSize="{StaticResource CueFontSection}"
+                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                        Text="{x:Bind DateHeader}"
+                        Visibility="{x:Bind IsToday, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontFamily="{StaticResource CueFontFamilySemiBold}"
+                        FontSize="{StaticResource CueFontSection}"
+                        Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                        Text="{x:Bind DateHeader}"
+                        Visibility="{x:Bind IsNotToday, Converter={StaticResource BoolToVisibility}}" />
+                    <Border
+                        Height="{StaticResource CueChipHeight}"
+                        Padding="{StaticResource CuePadChip}"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                        CornerRadius="{StaticResource CueRadiusChip}"
+                        Visibility="{x:Bind IsToday, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock VerticalAlignment="Center" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" Text="{x:Bind RelativeLabel}" />
                     </Border>
-                </Canvas>
-            </Grid>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="{StaticResource CueFontListMeta}"
+                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                        Text="{x:Bind RelativeLabel}"
+                        Visibility="{x:Bind ShowSecondaryRelative, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+                <ItemsRepeater ItemTemplate="{StaticResource TimelineCardTemplate}" ItemsSource="{x:Bind Tasks}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Orientation="Vertical" Spacing="{StaticResource CueGap8}" />
+                    </ItemsRepeater.Layout>
+                </ItemsRepeater>
+            </StackPanel>
         </DataTemplate>
     </Page.Resources>
 
@@ -199,44 +278,22 @@
                 <ScrollViewer
                     x:Name="TimelineScrollViewer"
                     behaviors:ScrollBarAutoHide.IsEnabled="True"
-                    HorizontalScrollBarVisibility="Auto"
-                    HorizontalScrollMode="Enabled"
+                    HorizontalScrollMode="Disabled"
+                    HorizontalScrollBarVisibility="Disabled"
                     IsTabStop="True"
-                    KeyDown="TimelineScrollViewer_KeyDown"
                     Loaded="TimelineScrollViewer_Loaded"
-                    PointerCanceled="TimelineScrollViewer_PointerCanceled"
-                    PointerMoved="TimelineScrollViewer_PointerMoved"
-                    PointerPressed="TimelineScrollViewer_PointerPressed"
-                    PointerReleased="TimelineScrollViewer_PointerReleased"
-                    PointerWheelChanged="TimelineScrollViewer_PointerWheelChanged"
                     VerticalScrollBarVisibility="Auto"
-                    VerticalScrollMode="Enabled"
-                    ZoomMode="Disabled">
-                        <Grid Width="{x:Bind ViewModel.TrackWidth, Mode=OneWay}" MinHeight="420">
-                        <StackPanel>
-                            <ItemsRepeater ItemTemplate="{StaticResource TimelineDayTemplate}" ItemsSource="{x:Bind ViewModel.Days, Mode=OneWay}">
-                                <ItemsRepeater.Layout>
-                                    <StackLayout Orientation="Horizontal" />
-                                </ItemsRepeater.Layout>
-                            </ItemsRepeater>
-                            <ItemsRepeater
-                                ItemTemplate="{StaticResource TimelineRowTemplate}"
-                                ItemsSource="{x:Bind ViewModel.Rows, Mode=OneWay}"
-                                ElementPrepared="TimelineRows_ElementPrepared"
-                                ElementClearing="TimelineRows_ElementClearing" />
-                        </StackPanel>
-                        <Rectangle
-                            Width="1"
-                            HorizontalAlignment="Left"
-                            Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                            IsHitTestVisible="False"
-                            Opacity="0.8"
-                            Visibility="{x:Bind ViewModel.HasTodayInRange, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <Rectangle.RenderTransform>
-                                <TranslateTransform X="{x:Bind ViewModel.TodayLineOffset, Mode=OneWay}" />
-                            </Rectangle.RenderTransform>
-                        </Rectangle>
-                    </Grid>
+                    VerticalScrollMode="Enabled">
+                    <ItemsRepeater
+                        Margin="14,16,14,16"
+                        ItemTemplate="{StaticResource TimelineDayTemplate}"
+                        ItemsSource="{x:Bind ViewModel.Days, Mode=OneWay}"
+                        ElementPrepared="TimelineRows_ElementPrepared"
+                        ElementClearing="TimelineRows_ElementClearing">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Orientation="Vertical" />
+                        </ItemsRepeater.Layout>
+                    </ItemsRepeater>
                 </ScrollViewer>
             </Border>
 

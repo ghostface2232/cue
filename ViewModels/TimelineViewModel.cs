@@ -6,29 +6,34 @@ using Cue.Domain;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.Storage.Ranking;
+using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
-/// <summary>View model for the horizontal month timeline.</summary>
+/// <summary>
+/// View model for the vertical month timeline (agenda): tasks with a concrete When date in the
+/// visible month, grouped by day. Only days that actually have tasks appear, each as a section with
+/// its date header and the day's task cards stacked beneath it. The cards reuse
+/// <see cref="TaskRowViewModel"/> so they render consistently with the main list rows.
+/// </summary>
 public partial class TimelineViewModel : ObservableObject
 {
-    private const double DayWidthValue = 220;
+    private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
+    private readonly IRecurringTaskService _recurrence;
     private readonly TimeProvider _clock;
     private readonly TimeZoneInfo _zone;
+
+    // Serializes completion toggles so rapid checks can't reorder their saves (mirrors the list).
+    private readonly SemaphoreSlim _toggleGate = new(1, 1);
 
     private DateOnly _visibleMonth;
     private DateOnly _rangeStart;
     private DateOnly _rangeEnd;
+    private bool _rowsCompact;
 
     public ObservableCollection<TimelineDayViewModel> Days { get; } = new();
-    public ObservableCollection<TimelineTaskRowViewModel> Rows { get; } = new();
     public TaskDetailViewModel Detail { get; }
-
-    public double DayWidth => DayWidthValue;
-    public double TrackWidth => Days.Count * DayWidthValue;
-    public double TodayLineOffset { get; private set; }
-    public bool HasTodayInRange { get; private set; }
 
     [ObservableProperty]
     public partial string Title { get; set; } = "타임라인";
@@ -43,24 +48,37 @@ public partial class TimelineViewModel : ObservableObject
         ITaskStore store,
         ITaskIndex index,
         IReorderService reorder,
+        IRecurringTaskService recurrence,
         TimeProvider clock,
         TimeZoneInfo zone,
         INavDataChangeNotifier navNotifier)
     {
+        _store = store;
         _index = index;
+        _recurrence = recurrence;
         _clock = clock;
         _zone = zone;
 
         var today = Today();
         _visibleMonth = new DateOnly(today.Year, today.Month, 1);
-        RebuildDays();
+        _rangeStart = _visibleMonth;
+        _rangeEnd = _visibleMonth.AddMonths(1).AddDays(-1);
+        UpdateRangeCaption();
         Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, navNotifier);
+        // Clear the selection accent when the detail panel closes.
+        Detail.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TaskDetailViewModel.IsOpen) && !Detail.IsOpen)
+                ApplySelection(null);
+        };
     }
 
     [RelayCommand]
     public Task LoadAsync()
     {
-        RebuildDays();
+        _rangeStart = _visibleMonth;
+        _rangeEnd = _visibleMonth.AddMonths(1).AddDays(-1);
+        UpdateRangeCaption();
         return ReloadRowsAsync();
     }
 
@@ -99,102 +117,177 @@ public partial class TimelineViewModel : ObservableObject
         }
 
         await Detail.OpenAsync(id);
+        ApplySelection(id);
+    }
+
+    /// <summary>
+    /// Toggles completion for one card's task, persisting through the store (or the recurrence service
+    /// for a repeating task). On failure the checkbox is restored so the UI never disagrees with disk.
+    /// Mirrors <c>TaskListViewModel.ToggleCompleteAsync</c>.
+    /// </summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task ToggleCompleteAsync(TaskRowViewModel row)
+    {
+        var completed = row.IsCompleted;
+        await _toggleGate.WaitAsync();
+        try
+        {
+            if (completed)
+                await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
+            else
+                await _store.MutateAsync<TaskItem>(row.Id, task => { task.CompletedAt = null; return true; });
+        }
+        catch
+        {
+            row.SetCompletedSilently(!completed);
+        }
+        finally
+        {
+            _toggleGate.Release();
+        }
+    }
+
+    /// <summary>Sets whether cards reflow their group/tag chips beneath the title (narrow layout). The
+    /// page calls this as the content column resizes; the state is remembered so cards built during a
+    /// reload inherit it.</summary>
+    public void SetRowsCompact(bool compact)
+    {
+        _rowsCompact = compact;
+        foreach (var day in Days)
+            foreach (var row in day.Tasks)
+                row.IsCompact = compact;
     }
 
     private async Task ReloadRowsAsync()
     {
-        var items = await _index.GetTimelineAsync(_rangeStart, _rangeEnd);
+        var items = await _index.GetTimelineRowsAsync(_rangeStart, _rangeEnd);
+        var today = Today();
 
-        Rows.Clear();
+        // Items arrive ordered by day (then time, then sort order); collect that order into day buckets.
+        var order = new List<DateOnly>();
+        var buckets = new Dictionary<DateOnly, List<TaskListItem>>();
         foreach (var item in items)
-            Rows.Add(new TimelineTaskRowViewModel(item, _rangeStart, _rangeEnd, DayWidthValue));
+        {
+            var day = item.WhenDate!.Value;
+            if (!buckets.TryGetValue(day, out var bucket))
+            {
+                bucket = new List<TaskListItem>();
+                buckets.Add(day, bucket);
+                order.Add(day);
+            }
+            bucket.Add(item);
+        }
 
-        IsEmpty = Rows.Count == 0;
+        // Reconcile the Days collection in place, reusing existing day + card view models by key so a
+        // save-triggered reload doesn't recreate (and re-animate) untouched cards.
+        for (var i = Days.Count - 1; i >= 0; i--)
+            if (!buckets.ContainsKey(Days[i].Date))
+                Days.RemoveAt(i);
+
+        for (var i = 0; i < order.Count; i++)
+        {
+            var day = order[i];
+            if (i >= Days.Count || Days[i].Date != day)
+            {
+                var existing = IndexOfDay(day);
+                if (existing >= 0)
+                    Days.Move(existing, i);
+                else
+                    Days.Insert(i, new TimelineDayViewModel(day, today));
+            }
+            SyncDayTasks(Days[i].Tasks, buckets[day]);
+        }
+
+        IsEmpty = Days.Count == 0;
+        ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
     }
 
-    private void RebuildDays()
+    private void SyncDayTasks(ObservableCollection<TaskRowViewModel> target, List<TaskListItem> items)
     {
-        _rangeStart = _visibleMonth;
-        _rangeEnd = _visibleMonth.AddMonths(1).AddDays(-1);
-        var now = LocalNow();
-        var today = DateOnly.FromDateTime(now.DateTime);
+        var desired = new HashSet<Guid>(items.Count);
+        foreach (var item in items) desired.Add(item.Id);
+        for (var i = target.Count - 1; i >= 0; i--)
+            if (!desired.Contains(target[i].Id))
+                target.RemoveAt(i);
 
-        Days.Clear();
-        for (var day = _rangeStart; day <= _rangeEnd; day = day.AddDays(1))
-            Days.Add(new TimelineDayViewModel(day, today, DayWidthValue));
-
-        RangeCaption = _visibleMonth.ToString("yyyy년 M월", CultureInfo.GetCultureInfo("ko-KR"));
-        HasTodayInRange = today >= _rangeStart && today <= _rangeEnd;
-        TodayLineOffset = HasTodayInRange
-            ? (today.DayNumber - _rangeStart.DayNumber) * DayWidthValue +
-              (now.TimeOfDay.TotalSeconds / TimeSpan.FromDays(1).TotalSeconds * DayWidthValue)
-            : 0;
-        OnPropertyChanged(nameof(TrackWidth));
-        OnPropertyChanged(nameof(TodayLineOffset));
-        OnPropertyChanged(nameof(HasTodayInRange));
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (i >= target.Count || target[i].Id != item.Id)
+            {
+                var existing = IndexOfRow(target, item.Id);
+                if (existing >= 0)
+                {
+                    target.Move(existing, i);
+                    target[i].Update(item);
+                }
+                else
+                {
+                    target.Insert(i, new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r)) { IsCompact = _rowsCompact });
+                }
+            }
+            else
+            {
+                target[i].Update(item);
+            }
+        }
     }
+
+    private int IndexOfDay(DateOnly date)
+    {
+        for (var i = 0; i < Days.Count; i++)
+            if (Days[i].Date == date) return i;
+        return -1;
+    }
+
+    private static int IndexOfRow(ObservableCollection<TaskRowViewModel> rows, Guid id)
+    {
+        for (var i = 0; i < rows.Count; i++)
+            if (rows[i].Id == id) return i;
+        return -1;
+    }
+
+    private void ApplySelection(Guid? id)
+    {
+        foreach (var day in Days)
+            foreach (var row in day.Tasks)
+                row.IsSelected = row.Id == id;
+    }
+
+    private void UpdateRangeCaption()
+        => RangeCaption = _visibleMonth.ToString("yyyy년 M월", CultureInfo.GetCultureInfo("ko-KR"));
 
     private DateOnly Today()
-        => DateOnly.FromDateTime(LocalNow().DateTime);
-
-    private DateTimeOffset LocalNow() => TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone);
+        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime);
 }
 
+/// <summary>One day section in the vertical timeline: its date header plus the day's task cards.</summary>
 public sealed class TimelineDayViewModel
 {
     private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
 
     public DateOnly Date { get; }
-    public string DayLabel { get; }
-    public string WeekdayLabel { get; }
+    public string DateHeader { get; }
+    public string RelativeLabel { get; }
+    public bool HasRelative => RelativeLabel.Length > 0;
     public bool IsToday { get; }
     public bool IsNotToday => !IsToday;
-    public bool IsWeekend { get; }
-    public double Width { get; }
+    // 내일 / 어제 read as a quiet secondary label; 오늘 gets the accent pill instead.
+    public bool ShowSecondaryRelative => HasRelative && !IsToday;
+    public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    public TimelineDayViewModel(DateOnly date, DateOnly today, double width)
+    public TimelineDayViewModel(DateOnly date, DateOnly today)
     {
         Date = date;
-        DayLabel = date.Day.ToString(Korean);
-        WeekdayLabel = date.ToString("ddd", Korean);
+        DateHeader = date.ToString("M월 d일 (ddd)", Korean);
         IsToday = date == today;
-        IsWeekend = date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-        Width = width;
-    }
-}
-
-public sealed class TimelineTaskRowViewModel
-{
-    private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
-
-    public Guid Id { get; }
-    public string Title { get; }
-    public DateOnly Date { get; }
-    public string DateCaption { get; }
-    public bool IsCompleted { get; }
-    public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
-    public Priority Priority { get; }
-    public bool HasPriority => Priority != Priority.None;
-
-    /// <summary>Left offset of the card, placed at the task's single When date (a point, not a bar).</summary>
-    public double StartOffset { get; }
-
-    /// <summary>Fixed card width — one day-column wide. The timeline shows a card at a date, not a span.</summary>
-    public double CardWidth { get; }
-    public double TrackWidth { get; }
-
-    public TimelineTaskRowViewModel(TimelineTaskItem item, DateOnly rangeStart, DateOnly rangeEnd, double dayWidth)
-    {
-        Id = item.Id;
-        Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
-        Date = item.Date;
-        IsCompleted = item.IsCompleted;
-        Priority = item.Priority;
-
-        var clamped = item.Date < rangeStart ? rangeStart : item.Date > rangeEnd ? rangeEnd : item.Date;
-        StartOffset = (clamped.DayNumber - rangeStart.DayNumber) * dayWidth + 8;
-        CardWidth = dayWidth - 16;
-        TrackWidth = (rangeEnd.DayNumber - rangeStart.DayNumber + 1) * dayWidth;
-        DateCaption = item.Date.ToString("M월 d일 (ddd)", Korean);
+        var delta = date.DayNumber - today.DayNumber;
+        RelativeLabel = delta switch
+        {
+            0 => "오늘",
+            1 => "내일",
+            -1 => "어제",
+            _ => string.Empty,
+        };
     }
 }
