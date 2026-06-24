@@ -27,7 +27,7 @@
              dragged or carry a date/priority/group; tapping the row (anywhere but the checkbox) opens
              its parent task's detail. -->
         <DataTemplate x:Key="ChecklistRowTemplate" x:DataType="vm:ChecklistRowViewModel">
-            <Border Margin="0,1,4,1" Padding="6,4" Background="Transparent" Tag="{x:Bind ParentTaskId}" Tapped="ChecklistSurface_Tapped" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+            <Border Margin="0,1,4,1" Padding="12,4" Background="Transparent" Tag="{x:Bind ParentTaskId}" Tapped="ChecklistSurface_Tapped" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
                 <Grid ColumnSpacing="6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="24" />
@@ -269,10 +269,26 @@
                 PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
                 Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                 <TextBox.Resources>
-                    <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="ControlFillColorSecondaryBrush" />
-                    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
-                    <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="CircleElevationBorderBrush" />
-                    <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
+                    <!-- Hover lift is theme-split. Light keeps the standard one-tone lift
+                         (ControlFillColorSecondary). Dark's ControlFillColorSecondary (#15FFFFFF) jumps too
+                         bright over the resting fill (#0FFFFFFF) on the dark page, so the dark hover uses a
+                         gentler white overlay (#12FFFFFF) — a smaller, calmer lift. -->
+                    <ResourceDictionary>
+                        <ResourceDictionary.ThemeDictionaries>
+                            <ResourceDictionary x:Key="Light">
+                                <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="ControlFillColorSecondaryBrush" />
+                                <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
+                                <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="CircleElevationBorderBrush" />
+                                <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
+                            </ResourceDictionary>
+                            <ResourceDictionary x:Key="Dark">
+                                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#12FFFFFF" />
+                                <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
+                                <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="CircleElevationBorderBrush" />
+                                <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
+                            </ResourceDictionary>
+                        </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
                 </TextBox.Resources>
             </TextBox>
             <FontIcon

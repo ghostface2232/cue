@@ -40,6 +40,7 @@
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"
             IsSettingsVisible="False"
+            ExpandedModeThresholdWidth="880"
             OpenPaneLength="216"
             RightTapped="NavView_RightTapped"
             SelectionChanged="NavView_SelectionChanged">
