@@ -405,6 +405,104 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task QuickAddWithBareDate_IsMarkedAllDay_AndRowShowsTheDayAlone()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // A date with no explicit time is an all-day (종일) task.
+        vm.QuickAddText = "다음주 금요일 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var listed = Assert.Single(await store.GetAllActiveAsync(), t => t.Title == "회의");
+        Assert.Equal(WhenKind.OnDate, listed.WhenKind);
+        Assert.NotNull(listed.WhenDate);
+        Assert.Null(listed.WhenTime); // the index leaves an all-day row's time column NULL
+
+        var domain = await store.GetAsync<TaskItem>(listed.Id);
+        Assert.True(domain!.When.IsAllDay); // carried explicitly on the domain value
+
+        // The list row shows the day alone — no time fragment (which would carry a ':').
+        var row = vm.Tasks.Single(r => r.Id == listed.Id);
+        Assert.True(row.HasSchedule);
+        Assert.DoesNotContain(":", row.Schedule);
+    }
+
+    [Fact]
+    public async Task DetailOpensAllDay_HidesTime_AndUncheckingSavesATimedWhen()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem
+        {
+            Title = "행사",
+            When = ScheduledWhen.AllDay(ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 0, 0, 0), "UTC")),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        // An all-day task opens flagged 종일 with the time hidden and no time value.
+        Assert.True(vm.Detail.IsWhenAllDay);
+        Assert.Null(vm.Detail.WhenTime);
+        Assert.False(vm.Detail.ShowWhenTime);
+
+        // Unchecking 종일 reveals the time picker; choosing a time saves a timed (non-all-day) When.
+        vm.Detail.IsWhenAllDay = false;
+        Assert.True(vm.Detail.ShowWhenTime);
+        vm.Detail.SelectedWhenHour = vm.Detail.Hours[9];
+        vm.Detail.SelectedWhenMinute = vm.Detail.Minutes[30];
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.False(saved!.When.IsAllDay);
+        Assert.Equal(new TimeSpan(9, 30, 0), saved.When.Date!.Value.ToLocal().TimeOfDay);
+    }
+
+    [Fact]
+    public async Task DetailMarkingAllDay_SavesAllDay_AndIndexDropsTheTime()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem
+        {
+            Title = "회의",
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 6, 24, 15, 0, 0), "UTC")),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.False(vm.Detail.IsWhenAllDay);
+
+        // Checking 종일 autosaves the task as all-day.
+        vm.Detail.IsWhenAllDay = true;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.True(saved!.When.IsAllDay);
+
+        // The index reflects it as date-only: a day is kept, the time is dropped.
+        var listed = Assert.Single(await store.GetAllActiveAsync(), t => t.Id == task.Id);
+        Assert.NotNull(listed.WhenDate);
+        Assert.Null(listed.WhenTime);
+    }
+
+    [Fact]
     public async Task QuickAddWithExplicitSomeday_OnTodayListStaysUnscheduled()
     {
         using var temp = new TempDirectory();

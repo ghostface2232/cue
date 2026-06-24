@@ -191,7 +191,8 @@ public partial class TaskDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial TimeOption? SelectedWhenMinute { get; set; }
 
-    /// <summary>종일 — a date-only When that carries no time (pinned to end of day, 23:59).</summary>
+    /// <summary>종일 — a date-only When that carries no meaningful time. Stored explicitly via
+    /// <see cref="ScheduledWhen.AllDay"/>; while on, <see cref="WhenTime"/> is null and the time picker is hidden.</summary>
     [ObservableProperty]
     public partial bool IsWhenAllDay { get; set; }
 
@@ -214,9 +215,6 @@ public partial class TaskDetailViewModel : ObservableObject
     /// <summary>Time picker shows only with a concrete date that is not all-day.</summary>
     public bool ShowWhenTime => HasConcreteWhen && !IsWhenAllDay;
 
-    /// <summary>End-of-day time a 종일 (all-day) item is pinned to so it expires at 23:59 local.</summary>
-    private static readonly TimeSpan AllDayTime = new(23, 59, 0);
-    private TimeSpan? EffectiveWhenTime => IsWhenAllDay ? AllDayTime : WhenTime;
     public bool IsWhenEditorVisible => HasConcreteWhen;
     // The "+ 날짜 추가" button shows only when there is no concrete date.
     public bool CanAddWhen => !IsWhenEditorVisible;
@@ -245,7 +243,8 @@ public partial class TaskDetailViewModel : ObservableObject
         var resume = SuppressAutoSave();
         if (value.Mode == WhenEditorMode.SpecificDate && WhenDate is null)
             WhenDate = LocalNow();
-        if (value.Mode is WhenEditorMode.Today or WhenEditorMode.SpecificDate && WhenTime is null)
+        // A 종일 date carries no time, so don't default one when switching to a dated mode.
+        if (value.Mode is WhenEditorMode.Today or WhenEditorMode.SpecificDate && WhenTime is null && !IsWhenAllDay)
             WhenTime = TimeSpan.FromHours(12);
         OnPropertyChanged(nameof(IsSpecificDate));
         OnPropertyChanged(nameof(HasConcreteWhen));
@@ -258,7 +257,12 @@ public partial class TaskDetailViewModel : ObservableObject
     partial void OnIsWhenAllDayChanged(bool value)
     {
         var resume = SuppressAutoSave();
-        if (!value && WhenTime == AllDayTime)
+        if (value)
+        {
+            WhenTime = null; // 종일 carries no time
+            SetWhenTimeEditors(null);
+        }
+        else if (WhenTime is null)
         {
             WhenTime = TimeSpan.FromHours(12); // leaving all-day → restore a sensible editable time
             SetWhenTimeEditors(WhenTime);
@@ -274,8 +278,12 @@ public partial class TaskDetailViewModel : ObservableObject
         if (value is not null)
         {
             SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
-            WhenTime ??= TimeSpan.FromHours(12);
-            SetWhenTimeEditors(WhenTime);
+            // A timed date defaults its time to noon; an all-day date keeps no time.
+            if (!IsWhenAllDay)
+            {
+                WhenTime ??= TimeSpan.FromHours(12);
+                SetWhenTimeEditors(WhenTime);
+            }
         }
         else
         {
@@ -306,10 +314,11 @@ public partial class TaskDetailViewModel : ObservableObject
         Notes = task.Notes ?? string.Empty;
         SelectedPriority = task.Priority;
         WhenDate = task.When.Date?.ToLocal();
-        WhenTime = task.When.Date?.ToLocal().TimeOfDay;
+        // 종일 carries no time; a timed date loads its wall-clock time. The flag is read straight off the
+        // domain, not inferred from a sentinel time.
+        WhenTime = task.When.IsAllDay ? null : task.When.Date?.ToLocal().TimeOfDay;
         SetWhenTimeEditors(WhenTime);
-        // A date-only (종일) item was pinned to 23:59 — recognize it on load.
-        IsWhenAllDay = task.When.Date is not null && WhenTime == AllDayTime;
+        IsWhenAllDay = task.When.IsAllDay;
         SelectedWhenOption = OptionFor(task.When);
 
         _originalWhen = task.When;
@@ -344,11 +353,9 @@ public partial class TaskDetailViewModel : ObservableObject
     public void EnableWhenEditor()
     {
         var resume = SuppressAutoSave();
-        WhenDate = LocalNow();
-        WhenTime ??= TimeSpan.FromHours(12);
-        SetWhenTimeEditors(WhenTime);
-        SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
         IsWhenAllDay = true; // new dates start as 종일; uncheck to set a time
+        WhenDate = LocalNow();
+        SelectedWhenOption = FindOption(WhenEditorMode.SpecificDate);
         resume();
     }
 
@@ -651,12 +658,20 @@ public partial class TaskDetailViewModel : ObservableObject
         return SelectedWhenOption.Mode switch
         {
             WhenEditorMode.Unscheduled => ScheduledWhen.Unscheduled,
-            WhenEditorMode.Today => ScheduledWhen.On(PinDate(LocalNow(), EffectiveWhenTime)),
-            WhenEditorMode.SpecificDate when WhenDate is { } date => ScheduledWhen.On(PinDate(date, EffectiveWhenTime)),
+            WhenEditorMode.Today => DatedWhen(LocalNow()),
+            WhenEditorMode.SpecificDate when WhenDate is { } date => DatedWhen(date),
             WhenEditorMode.SpecificDate => ScheduledWhen.Unscheduled,
             _ => throw new ArgumentOutOfRangeException(),
         };
     }
+
+    /// <summary>Builds the OnDate When for a chosen day: an all-day (종일) date pinned to local start of
+    /// day with the 종일 flag, or a timed date pinned to the chosen wall-clock time.</summary>
+    private ScheduledWhen DatedWhen(DateTimeOffset selected)
+        => IsWhenAllDay
+            ? ScheduledWhen.AllDay(ZonedDateTime.FromLocal(
+                new DateTime(selected.Year, selected.Month, selected.Day), _zone.Id))
+            : ScheduledWhen.On(PinDate(selected, WhenTime));
 
     private static bool SameDay(DateTimeOffset? left, DateTimeOffset? right)
         => left is null || right is null

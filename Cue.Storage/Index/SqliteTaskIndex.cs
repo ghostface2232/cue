@@ -277,7 +277,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             Bind(cmd, "$checklist", JsonSerializer.Serialize(task.Checklist, ChecklistJson));
             Bind(cmd, "$whenKind", task.When.Kind.ToString());
             Bind(cmd, "$whenDate", task.When.Kind == WhenKind.OnDate ? LocalDate(task.When.Date) : null);
-            Bind(cmd, "$whenTime", task.When.Kind == WhenKind.OnDate ? LocalTime(task.When.Date) : null);
+            // An all-day (종일) date carries no meaningful time, so its time column is left NULL — the row
+            // shows the day alone. Only a timed OnDate records a wall-clock time.
+            Bind(cmd, "$whenTime", task.When.Kind == WhenKind.OnDate && !task.When.IsAllDay ? LocalTime(task.When.Date) : null);
             Bind(cmd, "$completed", Instant(task.CompletedAt));
             Bind(cmd, "$deleted", Instant(task.DeletedAt));
             Bind(cmd, "$priority", (int)task.Priority);
@@ -659,7 +661,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             : DateOnly.FromDateTime(zoned.Value.ToLocal().DateTime).ToString("yyyy-MM-dd");
 
     /// <summary>The pinned wall-clock time-of-day, in the task's own zone, as <c>HH:mm</c> — so a list
-    /// row can show the time. An all-day item is pinned to 23:59 (the end-of-day marker the UI reads).</summary>
+    /// row can show the time. Called only for timed dates; an all-day (종일) item stores a NULL time.</summary>
     private static string? LocalTime(ZonedDateTime? zoned)
         => zoned is null
             ? null

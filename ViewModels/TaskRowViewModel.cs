@@ -181,15 +181,13 @@ public partial class TaskRowViewModel : ObservableObject
     private static string FormatTitle(string title)
         => string.IsNullOrWhiteSpace(title) ? "(제목 없음)" : title;
 
-    // All-day (종일) tasks are pinned to 23:59; that is a marker, not a real time, so the row shows the
-    // date alone. Any other time is a deliberate schedule and is shown next to the date.
-    private static readonly TimeOnly AllDayTime = new(23, 59);
-
+    // An all-day (종일) task carries no time in the index (its time column is NULL), so the row shows the
+    // date alone. A present time is a deliberate schedule and is shown next to the date.
     private static string BuildSchedule(TaskListItem item)
     {
         if (item.WhenDate is not { } when)
             return string.Empty;
-        return item.WhenTime is { } time && time != AllDayTime
+        return item.WhenTime is { } time
             ? $"{Day(when)} {Time(time)}"
             : Day(when);
     }
