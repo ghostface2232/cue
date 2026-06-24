@@ -576,6 +576,79 @@ public sealed class ViewModelRegressionTests
         Assert.False(saved.When.HasDate);
     }
 
+    [Fact]
+    public async Task DetailMovingWhen_ReAnchorsRecurrence_EvenWhenRuleUnchanged()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        // 매주 월요일 오전 9시 — anchor and When both Monday 2026-06-22 09:00.
+        var monday9 = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem
+        {
+            Title = "주간 회의",
+            When = ScheduledWhen.On(monday9),
+            Recurrence = new RecurrenceRule("FREQ=WEEKLY", monday9),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        // User moves the date/time to Tuesday 2026-06-23 15:00 without touching the 반복 selection.
+        vm.Detail.WhenDate = new DateTimeOffset(2026, 6, 23, 0, 0, 0, TimeSpan.Zero);
+        vm.Detail.SelectedWhenHour = vm.Detail.Hours[15];
+        vm.Detail.SelectedWhenMinute = vm.Detail.Minutes[0];
+        await vm.Detail.DrainPendingSaveAsync();
+
+        // The rule string is unchanged, but the anchor must follow the new When — otherwise the next
+        // occurrence after completion would land back on Monday 09:00, contradicting the edit.
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved!.Recurrence);
+        Assert.Equal("FREQ=WEEKLY", saved.Recurrence!.Rule);
+        var anchorLocal = saved.Recurrence.Anchor.ToLocal();
+        Assert.Equal(new DateOnly(2026, 6, 23), DateOnly.FromDateTime(anchorLocal.DateTime)); // Tuesday
+        Assert.Equal(new TimeSpan(15, 0, 0), anchorLocal.TimeOfDay);
+        Assert.Equal(saved.When.Date, saved.Recurrence.Anchor); // anchor tracks the new When exactly
+    }
+
+    [Fact]
+    public async Task DetailMetadataOnlyEdit_PreservesRecurrenceAnchor()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var monday9 = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem
+        {
+            Title = "주간 회의",
+            When = ScheduledWhen.On(monday9),
+            Recurrence = new RecurrenceRule("FREQ=WEEKLY", monday9),
+            Priority = Priority.None,
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Editing only the priority must leave the recurrence anchor untouched (no silent re-anchoring).
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);
+        Assert.NotNull(saved.Recurrence);
+        Assert.Equal(monday9, saved.Recurrence!.Anchor); // original anchor preserved verbatim
+    }
+
     [Theory]
     [InlineData(TaskListMode.Today, WhenKind.OnDate)]          // only Today pins an actual day
     [InlineData(TaskListMode.Upcoming, WhenKind.Unscheduled)]  // names no specific date → Unscheduled
