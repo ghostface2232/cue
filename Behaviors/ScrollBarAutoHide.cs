@@ -105,6 +105,20 @@ public static class ScrollBarAutoHide
         }
     }
 
+    /// <summary>Collects a ScrollViewer's <i>own</i> two scrollbars — walking its template but stopping
+    /// at the content presenter, so inner controls' scrollbars (e.g. a TextBox's) are left alone.</summary>
+    private static void CollectOwnScrollBars(DependencyObject root, List<ScrollBar> into)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollBar bar) { into.Add(bar); continue; }
+            if (child is ScrollContentPresenter) continue; // the scrolled content lives here — don't descend
+            CollectOwnScrollBars(child, into);
+        }
+    }
+
     /// <summary>Per-ScrollViewer fade controller: tracks scroll activity and pointer hover, and drives
     /// the bars' composition opacity. Composition opacity (not Visibility) is used so a hidden bar still
     /// hit-tests — moving the pointer onto its strip brings it back so it can be grabbed.</summary>
@@ -113,6 +127,7 @@ public static class ScrollBarAutoHide
         private readonly ScrollViewer _scrollViewer;
         private readonly DispatcherTimer _idle = new() { Interval = IdleBeforeHide };
         private readonly List<ScrollBar> _bars = new();
+        private readonly HashSet<ScrollBar> _thickened = new();
         private bool _hovering;
 
         public Controller(ScrollViewer scrollViewer)
@@ -127,14 +142,14 @@ public static class ScrollBarAutoHide
 
         public void Attach()
         {
-            CollectDescendants(_scrollViewer, _bars);
+            CollectOwnScrollBars(_scrollViewer, _bars);
             foreach (var bar in _bars)
             {
-                ApplyThickness(bar);
                 bar.PointerEntered += (_, _) => { _hovering = true; _idle.Stop(); Fade(1f, FadeIn); };
                 bar.PointerExited += (_, _) => { _hovering = false; Bump(); };
             }
 
+            EnsureThickness();
             _scrollViewer.ViewChanged += (_, _) => Bump();
             _scrollViewer.Unloaded += (_, _) => _idle.Stop();
 
@@ -145,9 +160,27 @@ public static class ScrollBarAutoHide
         // Scroll or pointer-leave: ensure visible, then restart the idle countdown.
         private void Bump()
         {
+            // A thumb is only realized once its bar has been shown, so re-attempt thickness here (cheap,
+            // and skipped once a bar is done) rather than via a Loaded retry, which can re-fire forever.
+            EnsureThickness();
             Fade(1f, FadeIn);
             _idle.Stop();
             _idle.Start();
+        }
+
+        private void EnsureThickness()
+        {
+            foreach (var bar in _bars)
+            {
+                if (_thickened.Contains(bar) || FindDescendant<Thumb>(bar) is not { } thumb) continue;
+                // Raise the floor (MinWidth/MinHeight) rather than pin Width/Height, so the template's
+                // own hover-expand still works — the thumb just never gets thinner than this.
+                if (bar.Orientation == Orientation.Vertical)
+                    thumb.MinWidth = ThumbThickness;
+                else
+                    thumb.MinHeight = ThumbThickness;
+                _thickened.Add(bar);
+            }
         }
 
         private void Fade(float opacity, TimeSpan duration)
@@ -165,28 +198,6 @@ public static class ScrollBarAutoHide
                 animation.Duration = duration;
                 visual.StartAnimation("Opacity", animation);
             }
-        }
-
-        private static void ApplyThickness(ScrollBar bar)
-        {
-            // The thumb may not be realized until the bar loads; defer if so.
-            if (FindDescendant<Thumb>(bar) is not { } thumb)
-            {
-                void OnLoaded(object s, RoutedEventArgs e)
-                {
-                    bar.Loaded -= OnLoaded;
-                    ApplyThickness(bar);
-                }
-                bar.Loaded += OnLoaded;
-                return;
-            }
-
-            // Raise the floor (MinWidth/MinHeight) rather than pin Width/Height, so the template's own
-            // hover-expand still works — the thumb just never gets thinner than this.
-            if (bar.Orientation == Orientation.Vertical)
-                thumb.MinWidth = ThumbThickness;
-            else
-                thumb.MinHeight = ThumbThickness;
         }
     }
 }
