@@ -429,6 +429,9 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### Inputs
 - Flat 1px boxes with no bottom accent bar. Theme-split tone (Dark = recessed well). On focus only the border turns accent.
+- **One consistent interaction recipe, app-wide** (the floating quick-add is the one exception — it keeps its elevated pill look). The accent focus border is **global** (`TextControlBorderBrushFocused` → `AccentFillColorDefault`), so every text input — notes, inline new-tag, settings fields, sidebar inline group/tag create+rename — shows the same accent focus ring in both themes, not just the quick-add. Rest/hover keep the flat 1px `ControlStrokeColorDefault`; hover lifts the fill one tone.
+- **Inline-editable text.** Checklist item titles are borderless and transparent at rest so they read as content, but adopt the **same fill + border on hover/focus** as the boxed inputs (a transparent rest border that resolves to `ControlStroke` on hover and the accent on focus) — so editing them matches every other field. The **detail-panel title is the one heading exception**: it stays fully borderless in every state (its accent focus border is suppressed locally) so it reads as a title rather than a field.
+- **Enter commits inline edits.** The detail title and checklist item titles save immediately on Enter, not only on focus-out — matching the sidebar inline group/tag create + rename and the inline new-tag field, which already commit on Enter.
 
 ### Sidebar / navigation
 - Stock `NavigationView` + thin override. Selected text is flattened to `TextFillColorPrimary` (calm, not accent); selection reads from the fill + the stock left accent pill.

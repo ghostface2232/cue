@@ -309,7 +309,9 @@ public sealed partial class MainWindow : Window
             else await CommitInlineCreateAsync(box.Text);
         };
 
-        section.MenuItems.Add(item);
+        // Insert at the top so the inline editor sits where the created group/tag will land (PrependRank),
+        // instead of appearing at the bottom and jumping to the top on commit.
+        section.MenuItems.Insert(0, item);
         NormalizeSidebarItem(item, nested: true);
         section.IsExpanded = true;
         box.Loaded += (_, _) => box.Focus(FocusState.Programmatic);

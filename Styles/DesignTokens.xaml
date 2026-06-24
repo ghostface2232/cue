@@ -216,7 +216,10 @@
     <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
     <StaticResource x:Key="TextControlBorderBrush" ResourceKey="ControlStrokeColorDefaultBrush" />
     <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="ControlStrokeColorDefaultBrush" />
-    <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="ControlStrokeColorDefaultBrush" />
+    <!-- On focus the border shifts to the accent (the documented rule). This is now global, so every text
+         input — notes, inline new-tag, settings fields, inline group/tag create+rename — shows the same
+         clear accent focus ring, matching the quick-add. Rest/hover stay the flat 1px ControlStroke. -->
+    <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
     <!-- A persistent tone so inputs read as distinct from the page/cards, one step deeper on hover,
          holding the tone on focus instead of the default bright white-out. The actual background
          brushes are theme-split in the ThemeDictionaries at the top of this file. -->

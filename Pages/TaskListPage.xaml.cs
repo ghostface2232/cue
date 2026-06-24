@@ -711,6 +711,24 @@ public sealed partial class TaskListPage : Page
     private async void DetailText_LostFocus(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await ViewModel.Detail.FlushAsync();
 
+    // The title commits on Enter too (it binds live, so this just flushes the save now). AcceptsReturn is
+    // off, so Enter never inserts a newline.
+    private async void DetailTitle_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter) return;
+        e.Handled = true;
+        await ViewModel.Detail.FlushAsync();
+    }
+
+    // A checklist item commits on Enter by pushing the box's current text to its row view model (the Text
+    // binding otherwise updates only on focus-out), which fires the checklist save right away.
+    private void ChecklistItemTitle_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter || sender is not TextBox { DataContext: ChecklistItemViewModel item } box) return;
+        e.Handled = true;
+        item.Title = box.Text;
+    }
+
     private async void AddChecklistItem_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddChecklistItemCommand.ExecuteAsync(null));
 
