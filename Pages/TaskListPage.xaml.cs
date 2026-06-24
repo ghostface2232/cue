@@ -249,15 +249,12 @@ public sealed partial class TaskListPage : Page
     {
         if (sender is not Border border) return;
         border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TaskHoverBrush"];
-        if (_animationsEnabled)
-            ElementCompositionPreview.GetElementVisual(border).Scale = new Vector3(1.0025f, 1.0025f, 1f);
     }
 
     private void TaskSurface_PointerExited(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not Border border) return;
         border.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        ElementCompositionPreview.GetElementVisual(border).Scale = Vector3.One;
     }
 
     private void DetailPanel_Loaded(object sender, RoutedEventArgs e)
