@@ -131,7 +131,7 @@
                                 <TextBlock
                                     MaxWidth="520"
                                     VerticalAlignment="Center"
-                                    FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                    FontFamily="{StaticResource CueFontFamilyMedium}"
                                     FontSize="{StaticResource CueFontListTitle}"
                                     Text="{x:Bind Title, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis" />
@@ -488,8 +488,8 @@
                                 VerticalAlignment="Center"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                FontFamily="{StaticResource CueFontFamilySemiBold}"
-                                FontSize="27"
+                                FontFamily="{StaticResource CueFontFamilyMedium}"
+                                FontSize="24"
                                 KeyDown="DetailTitle_KeyDown"
                                 LostFocus="DetailText_LostFocus"
                                 PlaceholderText="할 일 제목"

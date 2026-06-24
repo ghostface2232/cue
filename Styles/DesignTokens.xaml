@@ -111,9 +111,9 @@
     <x:Double x:Key="CueFontRowSub">14</x:Double>
     <x:Double x:Key="CueFontSecondary">12</x:Double>
 
-    <!-- Main list rows read larger and clearer than the base row scale: a 16.5 title and a 13 meta
+    <!-- Main list rows read larger and clearer than the base row scale: a 16 title (Medium) and a 13 meta
          line (date · time), with the rows themselves given more height (see TaskListPage padding). -->
-    <x:Double x:Key="CueFontListTitle">16.5</x:Double>
+    <x:Double x:Key="CueFontListTitle">16</x:Double>
     <x:Double x:Key="CueFontListMeta">13</x:Double>
 
     <!-- Sidebar group/tag rows: the hover/selection pill, the icon, and the label are positioned
