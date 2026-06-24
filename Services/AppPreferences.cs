@@ -65,6 +65,19 @@ public sealed class AppPreferences
         set => Set(nameof(AutoAfternoonForBareOneToSix), value);
     }
 
+    /// <summary>The width the user last dragged the task detail panel to, shared across every task list so
+    /// the resize sticks as you move between lists. Null until the panel has ever been resized; the page
+    /// clamps it to its current window-dependent range and falls back to its own default when unset.</summary>
+    public double? DetailPanelWidth
+    {
+        get => DoubleValue(nameof(DetailPanelWidth));
+        set
+        {
+            if (value is { } width && width > 0)
+                Set(nameof(DetailPanelWidth), width);
+        }
+    }
+
     public IReadOnlyList<CustomDateMeaning> CustomDateMeanings
     {
         get
@@ -181,6 +194,13 @@ public sealed class AppPreferences
         if (Store is { } store && store.TryGetValue(Key(name), out var persisted) && persisted is bool flag)
             return flag;
         return Memory.TryGetValue(Key(name), out var value) && value is bool remembered ? remembered : fallback;
+    }
+
+    private static double? DoubleValue(string name)
+    {
+        if (Store is { } store && store.TryGetValue(Key(name), out var persisted) && persisted is double number)
+            return number;
+        return Memory.TryGetValue(Key(name), out var value) && value is double remembered ? remembered : null;
     }
 
     private static T EnumValue<T>(string name, T fallback)

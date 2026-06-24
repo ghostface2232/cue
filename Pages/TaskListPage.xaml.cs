@@ -41,11 +41,12 @@ public sealed partial class TaskListPage : Page
     public TaskListViewModel ViewModel { get; }
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
+    private readonly AppPreferences _preferences;
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
     private Visual? _detailPanelVisual;
     private bool _isResizingDetail;
-    private double _detailPreferredWidth = DetailDefaultWidth;
+    private double _detailPreferredWidth;
     private double _resizeStartX;
     private double _resizeStartWidth;
     private bool _detailOverlay;
@@ -61,6 +62,10 @@ public sealed partial class TaskListPage : Page
         ViewModel = App.Services.GetRequiredService<TaskListViewModel>();
         _dialogs = App.Services.GetRequiredService<DialogService>();
         _navNotifier = App.Services.GetRequiredService<INavDataChangeNotifier>();
+        _preferences = App.Services.GetRequiredService<AppPreferences>();
+        // Seed from the app-scoped preference so a width the user dragged on another list carries over;
+        // the resize range still clamps it per window size in ApplyDetailPanelWidth.
+        _detailPreferredWidth = _preferences.DetailPanelWidth ?? DetailDefaultWidth;
         InitializeComponent();
         // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
@@ -398,6 +403,10 @@ public sealed partial class TaskListPage : Page
         if (sender is UIElement handle)
             handle.ReleasePointerCapture(e.Pointer);
         SetDetailResizeGripVisible(false);
+        // Persist the clamped, applied width (not the raw drag value) so the resize sticks across lists and
+        // launches. Overlay mode stretches the panel to fill, so there's no user-chosen width to save there.
+        if (!_detailOverlay && DetailPanel.Width > 0)
+            _preferences.DetailPanelWidth = DetailPanel.Width;
         e.Handled = true;
     }
 
