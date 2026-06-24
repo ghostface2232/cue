@@ -14,9 +14,9 @@
         <!-- Section navigation: mirrors the sidebar's calm, flattened selection (subtle fill +
              primary text, no accent text) so the two nav surfaces read the same. -->
         <Style x:Key="SettingsNavItemStyle" TargetType="ListViewItem">
-            <Setter Property="MinHeight" Value="36" />
-            <Setter Property="Margin" Value="0,1" />
-            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="Padding" Value="12,0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusRow}" />
             <Setter Property="FocusVisualMargin" Value="2" />
@@ -36,6 +36,12 @@
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
+        <!-- Row label (= the detail-panel card header), allowed to wrap when the label column is
+             narrow so a long label never forces the card wider. -->
+        <Style x:Key="SettingsRowHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource CueCardHeaderTextStyle}">
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
         <!-- Quietest label tone for the right column captions (= MetadataTextStyle elsewhere). -->
         <Style x:Key="SettingsCaptionStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="{StaticResource CueFontSecondary}" />
@@ -45,23 +51,26 @@
         </Style>
 
         <!-- Left text column of a settings row: label + caption, vertically centered against the
-             trailing control, width-capped so captions wrap at a comfortable measure. -->
+             trailing control, width-capped (shared token) so captions wrap at a comfortable measure. -->
         <Style x:Key="SettingsLabelColumnStyle" TargetType="StackPanel">
             <Setter Property="Spacing" Value="3" />
-            <Setter Property="MaxWidth" Value="360" />
+            <Setter Property="MaxWidth" Value="{StaticResource CueSettingsLabelMaxWidth}" />
             <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <!-- One settings row = [label/caption *] [control Auto, flush right]. -->
         <Style x:Key="SettingsRowStyle" TargetType="Grid">
-            <Setter Property="MinHeight" Value="52" />
+            <Setter Property="MinHeight" Value="{StaticResource CueSettingsRowMinHeight}" />
             <Setter Property="ColumnSpacing" Value="24" />
         </Style>
 
-        <!-- Trailing control sits centered and flush to the card's inner edge. -->
-        <Style x:Key="SettingsControlStyle" TargetType="FrameworkElement">
-            <Setter Property="Width" Value="200" />
+        <!-- Trailing control sits centered and flush to the card's inner edge, at a shared fixed
+             width and the small (4px) control radius so every section's control aligns and rounds
+             the same. -->
+        <Style x:Key="SettingsControlStyle" TargetType="Control">
+            <Setter Property="Width" Value="{StaticResource CueSettingsControlWidth}" />
+            <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -92,25 +101,27 @@
         </Style>
     </Page.Resources>
 
-    <Grid Padding="28,20" RowSpacing="18">
+    <!-- Uniform 20px body padding to match the list and timeline pages (see DESIGN "Layout"). -->
+    <Grid Padding="20" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <TextBlock
-            Margin="10,0,0,0"
+            Margin="4,0,0,2"
             Style="{StaticResource CuePageTitleTextStyle}"
             Text="설정" />
 
-        <Grid Grid.Row="1" ColumnSpacing="24">
+        <Grid Grid.Row="1" Margin="4,0,0,0" ColumnSpacing="24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="176" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <ListView
                 x:Name="SectionNav"
+                Width="{StaticResource CueSettingsNavWidth}"
                 VerticalAlignment="Top"
                 HorizontalAlignment="Stretch"
                 Padding="0"
@@ -177,7 +188,10 @@
                 Padding="0,0,0,8"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-                <Grid MaxWidth="680" HorizontalAlignment="Left">
+                <!-- Stretch (capped at the shared max-width token) so every section's cards fill the
+                     same measure: the label column gets a bounded width, captions wrap instead of
+                     running on one line, and section-to-section width never drifts. -->
+                <Grid MaxWidth="{StaticResource CueSettingsContentMaxWidth}" HorizontalAlignment="Stretch">
                     <!-- ===== 시간 ===== -->
                     <StackPanel
                         x:Name="TimeSection"
@@ -196,7 +210,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
-                                        <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="주 시작 요일" />
+                                        <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="주 시작 요일" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="주간 보기와 달력 선택에서 먼저 오는 요일" />
                                     </StackPanel>
                                     <ComboBox
@@ -214,7 +228,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
-                                        <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="기본 시간대" />
+                                        <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="기본 시간대" />
                                         <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="오늘, 앞으로 할 일, 빠른 입력 날짜 기준. 다음 실행부터 전체 반영" />
                                     </StackPanel>
                                     <ComboBox
@@ -244,7 +258,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
-                                    <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="1–6시를 오후로 해석" />
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="1–6시를 오후로 해석" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="오전/오후가 없을 때 3시는 15:00으로 저장" />
                                 </StackPanel>
                                 <ToggleSwitch
@@ -258,7 +272,7 @@
                         <Border Style="{StaticResource SettingsCardStyle}">
                             <StackPanel Spacing="14">
                                 <StackPanel Spacing="3">
-                                    <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="커스텀 날짜 의미" />
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="커스텀 날짜 의미" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="입력에서 인식할 매월 반복 날짜를 직접 추가합니다" />
                                 </StackPanel>
 
@@ -274,19 +288,19 @@
                                 <ListView
                                     x:Name="CustomDatesList"
                                     MaxHeight="220"
-                                    Margin="-4,0"
+                                    Margin="-8,-4"
                                     SelectionMode="None">
                                     <ListView.ItemContainerStyle>
                                         <Style TargetType="ListViewItem">
                                             <Setter Property="MinHeight" Value="0" />
-                                            <Setter Property="Padding" Value="4,0" />
+                                            <Setter Property="Padding" Value="8,8" />
                                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
                                         </Style>
                                     </ListView.ItemContainerStyle>
                                     <ListView.ItemTemplate>
                                         <DataTemplate x:DataType="local:CustomDateMeaningRow">
-                                            <Grid Padding="0,7" ColumnSpacing="12">
+                                            <Grid ColumnSpacing="12" MinHeight="36">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
@@ -353,7 +367,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
-                                    <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="화면 모드" />
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="화면 모드" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="시스템, 라이트, 다크" />
                                 </StackPanel>
                                 <ComboBox
@@ -367,7 +381,7 @@
                         <Border Style="{StaticResource SettingsCardStyle}">
                             <StackPanel Spacing="14">
                                 <StackPanel Spacing="3">
-                                    <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="강조 컬러" />
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="강조 컬러" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="선택 표시, 체크, 포커스 링에만 사용" />
                                 </StackPanel>
                                 <StackPanel
@@ -395,7 +409,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
-                                    <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="리마인더" />
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="리마인더" />
                                     <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="리마인더 구현 단계에서 활성화" />
                                 </StackPanel>
                                 <ToggleSwitch

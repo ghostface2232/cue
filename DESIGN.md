@@ -201,6 +201,20 @@ components:
     backgroundColor: "#18000000"   # Dark theme only: a recessed black-overlay well
   text-input-dark-well-hover:
     backgroundColor: "#24000000"
+  # --- Settings (section nav + form rows) ---
+  settings-nav:                # left section list (시간 / 파싱 / 외관 / 알림)
+    width: 200px               # {CueSettingsNavWidth}
+    item-rounded: "{rounded.md}"   # hover/selection pill matches the sidebar
+    item-min-height: 38px
+  settings-content:            # right column form
+    maxWidth: 720px            # {CueSettingsContentMaxWidth}; stretches, centers past this width
+  settings-row:                # one label/caption + trailing control row inside a card
+    minHeight: 52px            # {CueSettingsRowMinHeight}
+    columnGap: 24px
+    label-maxWidth: 380px      # {CueSettingsLabelMaxWidth}; caps the text column so captions wrap
+  settings-control:            # trailing combo/etc.
+    width: 200px               # {CueSettingsControlWidth}
+    rounded: "{rounded.sm}"    # 4px inside the 8px card (inner ≤ outer)
 ---
 
 # Cue Design System
@@ -310,6 +324,15 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 - Panning: pointer drag and mouse-wheel both scroll the timeline horizontally; left/right arrow keys pan the view in predictable steps (the ScrollViewer is a tab stop).
 - Shares the **same detail panel** as the list page (resizable, identical card stack and behavior).
 
+### Settings page — `SettingsPage.xaml`
+- Body padding is the same uniform `20` as the list and timeline pages; the page title (`CuePageTitleTextStyle`) and the nav/content grid share the `4` inner inset so the screen lines up with the rest of the app.
+- Two columns: a left **section nav** (`settings-nav`, fixed `{CueSettingsNavWidth}` = 200px) listing 시간 / 파싱 / 외관 / 알림, and a right **form column** holding one section's cards at a time (sections are visibility-toggled, with the shared fade+slide entrance — see "Motion").
+- The section nav is a `ListView` thinly overridden to read like the main sidebar: a calm subtle-fill hover/selection **pill** rounded to `{rounded.md}` (icon + label, primary text on selection, no accent text). Items are 38px min-height with a small gap so each pill reads separately.
+- The form column **stretches but is capped** at `{CueSettingsContentMaxWidth}` (720px), centering past that width. This is load-bearing: because the column has a bounded width, every section's cards fill the **same measure** (no per-section width drift) and the label column gets a real width so captions wrap instead of running the card too wide.
+- A settings **row** (`settings-row`) is `[label + caption *] [control Auto, flush right]`: the label/caption column is width-capped (`{CueSettingsLabelMaxWidth}`) so captions wrap at a comfortable measure, and the trailing control sits at a shared fixed width (`{CueSettingsControlWidth}`) so controls align across rows. Rows are 52px min-height, separated inside a card by full-bleed `DividerStrokeColorDefault` dividers.
+- Controls consume the shared tokens: combos/inputs round to `{rounded.sm}` (4px, inner ≤ the 8px card), the toggle is stripped of its On/Off content and right-aligned, and list rows (custom date meanings) carry the row-sub font with an even vertical rhythm.
+- Cards, typography (`CueSectionHeaderTextStyle` / `CueCardHeaderTextStyle` / `SettingsCaptionStyle` = `MetadataTextStyle`), strokes, and the accent-swatch picker (ringed current selection, per "Selection popup") all match the rest of the app — the settings screen carries no bespoke look.
+
 ### Detail panel
 - Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in and slides out on close (see "Motion").
 - A vertical stack of cards (radius 8, 1px stroke, no shadow): task info (notes · importance · group) / **일시 (the single When, + optional time / 종일)** / tags / checklist. The date card is titled **일시** (date + time); a date added with no explicit time defaults to 종일 (all-day). In the one-column (compact) layout the time dropdowns stretch to the card width instead of staying fixed-width.
@@ -418,6 +441,11 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 - Inline secondary actions (rename / delete / + add) share one style: transparent background + subtle hover + secondary text (`CueSubtleTextButtonStyle`). At most one true primary is emphasized per context.
 - The shared icon button is `CueIconButtonStyle` (34×34 `HyperlinkButton`, transparent at rest, semantic meaning via glyph color only).
 
+### Settings form
+- **Section nav** (`settings-nav`): a `ListView` styled to match the sidebar — a `{rounded.md}` subtle-fill pill on hover/selection, primary text, icon + label. Fixed width `{CueSettingsNavWidth}`.
+- **Form column** (`settings-content`): stretches, capped at `{CueSettingsContentMaxWidth}`, so all sections share one measure (no width drift) and captions wrap rather than over-widening the card.
+- **Row** (`settings-row`): `[label + caption *][control flush right]`. The label column caps at `{CueSettingsLabelMaxWidth}` (captions wrap); the control sits at `{CueSettingsControlWidth}` and rounds to `{rounded.sm}` (4px inside the 8px card). Dimensions are tokens in `DesignTokens.xaml` (`CueSettings*`), not inline literals.
+
 ## Do's and Don'ts
 
 - **Do** consume color from WinUI theme tokens; **don't** hardcode ARGB. Where a literal is unavoidable, use a `ThemeResource` Color or `ThemeDictionaries`.
@@ -468,7 +496,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ## Known Gaps
 
-- **No centralized spacing token.** `Styles/DesignTokens.xaml` defines radius, type, and color tokens, but spacing/padding is still applied inline in XAML. The `spacing` scale in the frontmatter documents the intended rhythm (page padding `20`, card padding `16`) but is not yet a consumed resource. This is the main unmet part of the "tokens are truth" principle.
+- **No centralized spacing token.** `Styles/DesignTokens.xaml` defines radius, type, color, and a few page-specific layout dimensions (the sidebar nav offsets and the `CueSettings*` settings-form column/row dimensions), but general spacing/padding is still applied inline in XAML. The `spacing` scale in the frontmatter documents the intended rhythm (page padding `20`, card padding `16`) but is not yet a consumed resource. This is the main unmet part of the "tokens are truth" principle.
 - **Pretendard JP** ships as static OTFs, so weight hierarchy is family-switched (Regular vs. SemiBold) rather than `FontWeight`-driven. The frontmatter encodes the semantic weight (400/600) for non-WinUI export.
 - **Caption (window) buttons** are system-drawn and themed in code-behind (`ApplyCaptionButtonColors`), reapplied on `ActualThemeChanged` — they are not reachable as XAML tokens.
 - The Dark text-input **well** (`#18000000` / `#24000000`) is the only set of literal colors in the system; it is intentionally theme-scoped in `ThemeDictionaries`.
