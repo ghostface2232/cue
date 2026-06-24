@@ -203,7 +203,7 @@
         </Style>
     </Page.Resources>
 
-    <!-- Uniform body padding (CuePadPage) to match the list and timeline pages (see DESIGN "Layout"). -->
+    <!-- Uniform body padding (CuePadPage) to match the list page (see DESIGN "Layout"). -->
     <Grid Padding="{StaticResource CuePadPage}" RowSpacing="{StaticResource CueGap16}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />

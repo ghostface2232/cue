@@ -90,21 +90,10 @@ public interface ITaskIndex
     Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Tasks that carry a priority flag (P1–P4), for the 중요도 view. Ordered by priority (P1 first),
-    /// then completed-last, then rank — the view model groups them into per-priority sections.
-    /// Includes completed tasks (shown dimmed) so finished work stays visible until navigation.
+    /// Every active task, for the 중요도 view. Ordered by priority (P1 first) with unprioritized tasks
+    /// last, then completed-last, then rank — the view model groups them into per-priority sections plus
+    /// a trailing 없음 (no priority) bucket. Includes completed tasks (shown dimmed) so finished work
+    /// stays visible until navigation.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Tasks whose single When date falls within the inclusive date range — the read model for the
-    /// timeline (agenda) view, grouped by day in the view model. Returns the full list projection
-    /// (group, tags, time, recurrence) so a timeline card renders consistently with a main-list row.
-    /// Ordered by date, then time of day (timed before all-day), then sort order. Only tasks with a
-    /// concrete When (OnDate) appear; it remains fully rebuildable from the per-record files.
-    /// </summary>
-    Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(
-        DateOnly start,
-        DateOnly end,
-        CancellationToken cancellationToken = default);
 }

@@ -356,7 +356,7 @@
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="vm:TaskGroupViewModel">
                             <StackPanel Margin="0,0,0,16">
-                                <TextBlock Margin="14,5,8,7" Style="{StaticResource CueSectionHeaderTextStyle}" Text="{x:Bind Name}" />
+                                <TextBlock Margin="14,5,8,7" Style="{StaticResource CuePriorityGroupHeaderTextStyle}" Text="{x:Bind Name}" />
                                 <ItemsRepeater ElementClearing="TaskRepeater_ElementClearing" ElementPrepared="TaskRepeater_ElementPrepared" ItemTemplate="{StaticResource TaskRowTemplate}" ItemsSource="{x:Bind Tasks}" Loaded="ReorderRepeater_Loaded" />
                             </StackPanel>
                         </DataTemplate>

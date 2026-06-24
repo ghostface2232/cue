@@ -482,34 +482,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.priority <> 0 " +
-            "ORDER BY t.priority, t.completed_at IS NOT NULL, t.sort_order;",
-            _ => { }, cancellationToken);
-
-    public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(
-        DateOnly start,
-        DateOnly end,
-        CancellationToken cancellationToken = default)
-    {
-        if (end < start)
-            throw new ArgumentException("Timeline end date must be on or after the start date.", nameof(end));
-
-        // Full list projection (SelectRows) filtered to the range's concrete-When tasks, ordered by
-        // day, then time within the day (a NULL time = all-day sinks after timed items), then sort
-        // order. The view model groups these rows by day for the vertical agenda.
-        return QueryAsync(
+            // Every active task, grouped by priority. Unprioritized tasks (priority 0) are kept and sorted
+            // last (the "없음" bucket at the bottom) via "t.priority = 0" ordering ahead of the priority key.
             SelectRows + "WHERE t.deleted_at IS NULL " +
-            "AND t.when_kind = 'OnDate' AND t.when_date IS NOT NULL " +
-            "AND t.when_date >= $start AND t.when_date <= $end " +
-            "ORDER BY t.when_date, t.when_time IS NULL, t.when_time, " +
-            "t.completed_at IS NOT NULL, t.sort_order;",
-            cmd =>
-            {
-                Bind(cmd, "$start", start.ToString("yyyy-MM-dd"));
-                Bind(cmd, "$end", end.ToString("yyyy-MM-dd"));
-            },
-            cancellationToken);
-    }
+            "ORDER BY t.priority = 0, t.priority, t.completed_at IS NOT NULL, t.sort_order;",
+            _ => { }, cancellationToken);
 
     // Plumbing
 

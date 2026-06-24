@@ -58,7 +58,7 @@
          SemiBold lives in its own family, so weight hierarchy switches family, not FontWeight. -->
     <FontFamily x:Key="CueFontFamily">ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP</FontFamily>
     <!-- Medium is the emphasis weight for important content text that would otherwise read as Regular
-         (list/timeline task titles, checklist item titles): clearer than Regular, lighter than the
+         (list task titles, checklist item titles): clearer than Regular, lighter than the
          SemiBold reserved for headers. Like the others it ships as its own static-OTF family. -->
     <FontFamily x:Key="CueFontFamilyMedium">ms-appx:///Assets/Fonts/PretendardJP-Medium.otf#Pretendard JP Medium</FontFamily>
     <FontFamily x:Key="CueFontFamilySemiBold">ms-appx:///Assets/Fonts/PretendardJP-SemiBold.otf#Pretendard JP SemiBold</FontFamily>
@@ -76,6 +76,13 @@
         <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
         <Setter Property="FontSize" Value="{StaticResource CueFontSection}" />
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <!-- 중요도 view bucket header (매우 중요 / 중요 / …): a muted, smaller category caption that reads
+         clearly apart from the larger task titles below it — gray (secondary) at the meta size. -->
+    <Style x:Key="CuePriorityGroupHeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
+        <Setter Property="FontSize" Value="{StaticResource CueFontListMeta}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
     </Style>
     <Style x:Key="CueCardHeaderTextStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource CueFontFamilySemiBold}" />
@@ -169,7 +176,7 @@
     <x:Double x:Key="CueGap20">20</x:Double>
     <x:Double x:Key="CueGap24">24</x:Double>
 
-    <!-- Page body padding (uniform 20, = xl). The list, timeline, and settings pages share it. -->
+    <!-- Page body padding (uniform 20, = xl). The list and settings pages share it. -->
     <Thickness x:Key="CuePadPage">20</Thickness>
     <!-- Detail inner-card padding (uniform 16, = lg). Sits beside CueRadiusCard on the same Border. -->
     <Thickness x:Key="CuePadCard">16</Thickness>
@@ -184,7 +191,7 @@
     <Thickness x:Key="CuePadDetailCard">4,0,8,7</Thickness>
     <Thickness x:Key="CuePadDetailCardLast">4,0,8,8</Thickness>
 
-    <!-- Shared hover language. Main list rows, timeline bars, subtle buttons, and local panel
+    <!-- Shared hover language. Main list rows, subtle buttons, and local panel
          controls all use the same fill so light mode does not drift between surfaces. -->
     <SolidColorBrush x:Key="CueHoverFillBrush" Color="{ThemeResource SubtleFillColorSecondary}" />
     <SolidColorBrush x:Key="CuePressedFillBrush" Color="{ThemeResource SubtleFillColorTertiary}" />

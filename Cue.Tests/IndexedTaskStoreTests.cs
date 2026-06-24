@@ -487,7 +487,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetByPriority_ReturnsFlaggedTasksOrderedByPriority_OpenBeforeCompleted()
+    public async Task GetByPriority_ReturnsAllTasksOrderedByPriority_UnprioritizedLast_OpenBeforeCompleted()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
@@ -500,46 +500,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         var ids = (await store.GetByPriorityAsync()).Select(t => t.Id).ToList();
 
-        // Unflagged tasks are excluded; results run P1 → P4, with completed sinking within each level.
-        Assert.DoesNotContain(none.Id, ids);
-        Assert.Equal(new[] { p1.Id, p1done.Id, p2.Id }, ids);
-    }
-
-    [Fact]
-    public async Task TimelineQuery_ReturnsDatedTasksWhoseWhenFallsInTheVisibleRange()
-    {
-        var root = NewRoot();
-        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
-        var rangeStart = new DateOnly(2026, 6, 1);
-        var rangeEnd = new DateOnly(2026, 6, 30);
-
-        var insideRange = new TaskItem
-        {
-            Title = "범위 안 일정",
-            When = OnDay(new DateOnly(2026, 6, 12)),
-            Priority = Priority.P2,
-        };
-        var onStartEdge = new TaskItem { Title = "시작 경계", When = OnDay(rangeStart) };
-        var beforeRange = new TaskItem { Title = "범위 전", When = OnDay(new DateOnly(2026, 5, 29)) };
-        var afterRange = new TaskItem { Title = "범위 밖", When = OnDay(new DateOnly(2026, 7, 2)) };
-        var dateless = new TaskItem { Title = "날짜 없음" };
-
-        foreach (var task in new[] { insideRange, onStartEdge, beforeRange, afterRange, dateless })
-            await store.SaveAsync(task);
-
-        var timeline = await store.GetTimelineRowsAsync(rangeStart, rangeEnd);
-        var ids = timeline.Select(item => item.Id).ToHashSet();
-
-        Assert.Contains(insideRange.Id, ids);
-        Assert.Contains(onStartEdge.Id, ids);
-        Assert.DoesNotContain(beforeRange.Id, ids);   // When before the range
-        Assert.DoesNotContain(afterRange.Id, ids);    // When after the range
-        Assert.DoesNotContain(dateless.Id, ids);      // no When ⇒ never on the timeline
-
-        // The timeline is single-point: each task sits on its one When date.
-        var row = Assert.Single(timeline, item => item.Id == insideRange.Id);
-        Assert.Equal(new DateOnly(2026, 6, 12), row.WhenDate);
-        Assert.Equal(Priority.P2, row.Priority);
+        // Results run P1 → P4 with completed sinking within each level, then unprioritized tasks last.
+        Assert.Equal(new[] { p1.Id, p1done.Id, p2.Id, none.Id }, ids);
     }
 
     [Fact]

@@ -16,7 +16,7 @@ public enum WhenKind
 
 /// <summary>
 /// A task's single date ("When"): when the user intends to work on it / when it is due, and the
-/// basis for Today/Upcoming/Timeline. There is no separate deadline — a task has exactly one date.
+/// basis for Today/Upcoming. There is no separate deadline — a task has exactly one date.
 /// </summary>
 /// <remarks>
 /// There are only two stored states: <see cref="WhenKind.Unscheduled"/> (no date) and

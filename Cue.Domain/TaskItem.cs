@@ -46,7 +46,7 @@ public sealed class TaskItem : RecordBase, ISortable
 
     /// <summary>
     /// The task's single date — when the user intends to work on it / when it is due, and the basis
-    /// for Today/Upcoming/Timeline. Two states only: a concrete date (OnDate) or none (Unscheduled).
+    /// for Today/Upcoming. Two states only: a concrete date (OnDate) or none (Unscheduled).
     /// Defaults to <see cref="WhenKind.Unscheduled"/>.
     /// </summary>
     public ScheduledWhen When { get; set; } = ScheduledWhen.Unscheduled;

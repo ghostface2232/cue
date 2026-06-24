@@ -75,7 +75,7 @@ typography:
     fontFamily: Pretendard JP
     fontSize: 15px
     fontWeight: 400
-  list-title:            # main list row title (larger/clearer than the base row); also timeline task titles
+  list-title:            # main list row title (larger/clearer than the base row)
     fontFamily: Pretendard JP SemiBold
     fontSize: 16.5px
     fontWeight: 600
@@ -102,8 +102,8 @@ typography:
 
 rounded:
   sm: 4px   # buttons, checks, checklist rows, small surfaces
-  md: 8px   # task rows, detail inner cards, timeline bars
-  lg: 12px  # detail panel, timeline canvas
+  md: 8px   # task rows, detail inner cards
+  lg: 12px  # detail panel
   chip: 14px # group / tag / priority chips on a task row
   pill: 9999px
 
@@ -117,7 +117,7 @@ spacing:
   sm: 8px     # CueGap8
   md: 12px    # CueGap12
   lg: 16px    # CueGap16  (also CuePadCard, uniform card padding)
-  xl: 20px    # CueGap20 / CuePadPage — uniform body padding on both axes (list / timeline / settings)
+  xl: 20px    # CueGap20 / CuePadPage — uniform body padding on both axes (list / settings)
   xxl: 24px   # CueGap24  (settings label↔control column gap)
 
 components:
@@ -169,26 +169,6 @@ components:
     backgroundColor: "{colors.card-surface}"
     rounded: "{rounded.md}"
     padding: 16px
-  # --- Timeline ---
-  timeline-canvas:
-    backgroundColor: "{colors.card-surface}"
-    rounded: "{rounded.lg}"
-  timeline-bar:
-    backgroundColor: "{colors.card-surface}"
-    rounded: "{rounded.md}"
-    height: 54px
-    padding: 0 12px
-  timeline-day-header:
-    textColor: "{colors.text-secondary}"
-    height: 58px
-  today-marker:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.on-accent}"
-    rounded: 14px
-    size: 28px
-  today-line:
-    backgroundColor: "{colors.accent}"
-    width: 1px
   # --- Navigation ---
   nav-item-selected:
     textColor: "{colors.text-primary}"
@@ -264,7 +244,7 @@ Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-bas
 
 ### Surfaces
 - **Page surface** (`{colors.page-surface}` → `LayerFillColorDefault`): page and detail-panel background.
-- **Card surface** (`{colors.card-surface}` → `CardBackgroundFillColorDefault`): detail inner cards, timeline bars.
+- **Card surface** (`{colors.card-surface}` → `CardBackgroundFillColorDefault`): detail inner cards.
 - **Input surface** (`{colors.input-surface}` → `ControlFillColorDefault`): the floating quick-add and text inputs.
 
 ### Text
@@ -273,7 +253,7 @@ Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-bas
 - **Tertiary** (`{colors.text-tertiary}` → `TextFillColorTertiary`): the quietest labels (group/tag headers, unchecked check outline).
 
 ### Interaction
-- Transparent at rest → hover `{colors.hover-fill}` (`SubtleFillColorSecondary`) → press `{colors.pressed-fill}` (`SubtleFillColorTertiary`). This **one shared recipe** is used by main list rows, checklist rows, timeline bars, subtle buttons, and detail-panel controls alike, so Light mode never drifts between surfaces.
+- Transparent at rest → hover `{colors.hover-fill}` (`SubtleFillColorSecondary`) → press `{colors.pressed-fill}` (`SubtleFillColorTertiary`). This **one shared recipe** is used by main list rows, checklist rows, subtle buttons, and detail-panel controls alike, so Light mode never drifts between surfaces.
 
   > Implementation note: hover/press is unified through `CueHoverFillBrush` / `CuePressedFillBrush`. The detail panel previously used a one-step-stronger custom overlay; it now aliases the same shared brushes for both themes.
 
@@ -287,6 +267,8 @@ Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-bas
 
 The importance pill paints its background as a ~17% alpha tint of the priority color (`PriorityToTint`, alpha `0x2B`) with the saturated color as the label text (`PriorityToBrush`).
 
+The 중요도 view groups every task into these four buckets in P1→P4 order, followed by a trailing **없음** bucket for tasks with no priority. Each bucket header is a muted gray, slightly-smaller-than-title caption (`{typography.bucket-header}`) so it reads clearly apart from the task titles beneath it. A bucket is shown only when it has rows.
+
 ### Semantic state
 - **Success** (`{colors.success}` → `SystemFillColorSuccess`): the detail Save glyph.
 - **Error** (`{colors.error}` → `SystemFillColorCritical`): the detail Close glyph, error `InfoBar`.
@@ -295,7 +277,7 @@ The importance pill paints its background as a ~17% alpha tint of the priority c
 
 ## Typography
 
-The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship as separate families, **weight hierarchy switches family, not FontWeight**: Medium (`Pretendard JP Medium`, via `CueFontFamilyMedium`) and SemiBold (`Pretendard JP SemiBold`) are each their own family. Medium is the emphasis weight for important content that would otherwise read as Regular — list/timeline task titles and checklist item titles — sitting between Regular body text and SemiBold headers. `ContentControlThemeFontFamily` is overridden to Pretendard so templated controls (buttons, lists, inputs, nav) inherit it; plain `TextBlock`s inherit via the window root's `FontFamily`.
+The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship as separate families, **weight hierarchy switches family, not FontWeight**: Medium (`Pretendard JP Medium`, via `CueFontFamilyMedium`) and SemiBold (`Pretendard JP SemiBold`) are each their own family. Medium is the emphasis weight for important content that would otherwise read as Regular — list task titles and checklist item titles — sitting between Regular body text and SemiBold headers. `ContentControlThemeFontFamily` is overridden to Pretendard so templated controls (buttons, lists, inputs, nav) inherit it; plain `TextBlock`s inherit via the window root's `FontFamily`.
 
 ### Hierarchy
 
@@ -303,7 +285,8 @@ The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship a
 |---|---|---|---|
 | `{typography.page-title}` | SemiBold | 28 | Page title (`CuePageTitleTextStyle`) |
 | `{typography.detail-title}` | SemiBold | 27 | Detail-pane editable title |
-| `{typography.section-header}` | SemiBold | 16 | Group / priority-bucket headers (`CueSectionHeaderTextStyle`) |
+| `{typography.section-header}` | SemiBold | 16 | Section headers — settings groups (`CueSectionHeaderTextStyle`) |
+| `{typography.bucket-header}` | SemiBold | 13 | 중요도 view priority-bucket headers, muted gray (`CuePriorityGroupHeaderTextStyle`) |
 | `{typography.row}` | Regular | 15 | Task-row title |
 | `{typography.card-header}` | SemiBold | 14 | Detail card headers (`CueCardHeaderTextStyle`) |
 | `{typography.row-sub}` | Regular | 14 | Checklist item rows |
@@ -330,16 +313,8 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 - Two-column body: left list (flexible) + right detail panel (resizable, default 460px). When the detail closes, the list reclaims the width.
 - The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **grouped list** (`ListView`, group header + rows). The grouped form is used only by the Priority (P1–P4) view (`IsGroupedList`); every other list, the TaskGroup list included, is flat.
 
-### Timeline page — `TimelinePage.xaml`
-- A **vertically-scrolling month agenda**. One framed panel (`{rounded.lg}`, 1px card stroke) holds day **sections** stacked top-to-bottom. Only days that actually carry tasks appear (empty days are omitted); the day is the section header, and that day's tasks stack as cards beneath it (`GetTimelineRowsAsync`, grouped by day in the view model).
-- Single-point, not a gantt range: each task has one date (When). Only tasks with a concrete When (OnDate) appear, ordered within a day by time (timed before all-day), then sort order.
-- **Day header:** the date (`M월 d일 (ddd)`) — in the accent color with an "오늘" accent chip for today, primary text otherwise; 내일 / 어제 read as a quiet tertiary label. On load the today section is brought to the top of the viewport.
-- **Card internals mirror the main list row** (the whole reason the timeline reuses `TaskRowViewModel`): circular completion check, SemiBold title + priority chip, a time-only meta line with the repeat glyph, and the same squircle group/tag chips (right-aligned stacked when wide, reflowed under the title when narrow). The card keeps the timeline's bordered-card surface (card fill, 1px stroke) — that is the one intended departure from the borderless list row — and lifts to the hover tone on hover, with a persistent selection tint for the open task.
-- Header row: title + range caption, with prev-month / 오늘 (Today) / next-month controls (`subtle-text-button`, 34px icon buttons with chevron glyphs).
-- Shares the **same detail panel** as the list page (resizable, identical card stack and behavior).
-
 ### Settings page — `SettingsPage.xaml`
-- Body padding is the same uniform `20` as the list and timeline pages; the page title (`CuePageTitleTextStyle`) and the nav/content grid share the `4` inner inset so the screen lines up with the rest of the app.
+- Body padding is the same uniform `20` as the list page; the page title (`CuePageTitleTextStyle`) and the nav/content grid share the `4` inner inset so the screen lines up with the rest of the app.
 - Two columns: a left **section nav** (`settings-nav`, fixed `{CueSettingsNavWidth}` = 200px) listing 시간 / 파싱 / 외관 / 알림, and a right **form column** holding one section's cards at a time (sections are visibility-toggled, with the shared fade+slide entrance — see "Motion").
 - The section nav is a `ListView` whose item is **retemplated to read exactly like the main sidebar/list**: a calm subtle-fill hover/selection **pill** rounded to `{rounded.md}`, inset 4px so its corners float (icon + label, primary text/glyph on selection, no accent text), with a left **accent bar** marking the selected item. The fill fades on the same `83ms` `BrushTransition` as the main list, and a selected item **deepens** on hover/press (Secondary → Tertiary), following the cross-surface deepen rule. Items are 38px min-height with a small gap so each pill reads separately.
 - The form column **fills the space beside the nav** (variable width, no cap), the same way the main content area fills the space beside the sidebar — a wider window gives the cards more room rather than leaving the right side empty. The per-row measure is held by the row itself, not a column cap: the label column is width-capped (`{CueSettingsLabelMaxWidth}`) so captions wrap, and the trailing control is a fixed width flush right, so a wide card simply widens the gap between label and control.
@@ -356,7 +331,6 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 - **Resizable.** A 10px transparent grab strip on the panel's left edge drag-resizes it. Width is clamped to 320–680px (absolute min 260px) and further capped so the primary list keeps ≥340px — the panel never starves the list. On hover or while dragging, the strip reveals a slim vertical pill handle (4×58, radius 2, tertiary text brush at ~72% opacity) with the standard 83ms opacity transition.
 - **Responsive.** Below a compact width (~390px), paired side-by-side fields (importance + group, date + time) reflow to stack vertically so nothing is squeezed.
 - **Conditional text fade for clipped content** (see "Elevation & Depth"): only overflowing inline text inside padded content, such as long tag names, fades at the right edge instead of hard-clipping. The panel scroll body itself does not get a bottom fade because it clips at the panel boundary.
-- The timeline's detail panel is the same component with the same behavior.
 
 ### Spacing
 The page rhythm is `CuePadPage` body padding (uniform `20` on all sides) and `CuePadCard` (`16`) card internal padding. Spacing is tokenized: gaps consume the `CueGap*` scale (2/4/8/12/16/20/24) and padding/margin consume the `CuePad*` Thickness tokens, both from `Styles/DesignTokens.xaml`. Off-scale literals were snapped to the nearest rung. Structural/optical exceptions stay inline — negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the priority-pill inset, the detail-card margin *rhythm* (per-axis, see Components), and sub-2px nudges; the `CueNav*` offsets are optical corrections, not part of the scale (see "Known Gaps").
@@ -367,15 +341,15 @@ Separation is carried by **stroke and tone, not shadow.**
 
 | Level | Treatment | Use |
 |---|---|---|
-| In-flow | No shadow, 1px stroke | Cards, list rows, detail panel, timeline bars |
+| In-flow | No shadow, 1px stroke | Cards, list rows, detail panel |
 | Pseudo-float | No shadow, gradient stroke | Quick-add (`CircleElevationBorderBrush`) |
 | True overlay | Elevation / shadow | Flyouts, popups, menus |
 
 - In-flow surfaces use **zero shadow**. A 1px `CardStrokeColorDefault` (cards) or `DividerStrokeColorDefault` (inner dividers) does the separating. Stroked cards set `BackgroundSizing="InnerBorderEdge"` so the 1px sits inside the radius.
 - When something needs to feel lifted (the quick-add omnibar) it uses `CircleElevationBorderBrush` — a top-light / bottom-dark gradient stroke — for subtle dimension **instead of** a drop shadow.
 - Shadows belong only to true overlays (flyouts, popups).
-- **Edge fades are conditional and local.** Use a short gradient only when content is clipped before it reaches an actual window/card/panel edge — for example, inline text ending inside padded content. Do not add fades where the container boundary already explains the clipping, such as the main list, sidebar, timeline canvas edge, or detail-panel scroll body.
-- The fade appears only when the text actually overflows. Short labels must render without a gradient overlay. Overflowing tag names fade at the right to `CardBackgroundFillColorDefault`; timeline bar titles fade at the right to the bar's current surface, switching to the shared hover fill while hovered. The opaque stop should arrive late enough to feel like the text disappears naturally, not like a translucent veil over readable text.
+- **Edge fades are conditional and local.** Use a short gradient only when content is clipped before it reaches an actual window/card/panel edge — for example, inline text ending inside padded content. Do not add fades where the container boundary already explains the clipping, such as the main list, sidebar, or detail-panel scroll body.
+- The fade appears only when the text actually overflows. Short labels must render without a gradient overlay. Overflowing tag names fade at the right to `CardBackgroundFillColorDefault`. The opaque stop should arrive late enough to feel like the text disappears naturally, not like a translucent veil over readable text.
 
 ## Shapes
 
@@ -385,8 +359,8 @@ Use only `{rounded.sm}` (4) / `{rounded.md}` (8) / `{rounded.lg}` (12) plus pill
 | Token | Value | Use |
 |---|---|---|
 | `{rounded.sm}` | 4px | Buttons, checks, checklist rows, small surfaces |
-| `{rounded.md}` | 8px | Task rows, detail inner cards, timeline bars |
-| `{rounded.lg}` | 12px | Detail panel, timeline canvas |
+| `{rounded.md}` | 8px | Task rows, detail inner cards |
+| `{rounded.lg}` | 12px | Detail panel |
 | `{rounded.chip}` | 14px | Group / tag / priority chips on a task row (full pill at chip height) |
 | `{rounded.pill}` | height/2 | Pills |
 
@@ -444,7 +418,7 @@ Pill instances are explicit half-height radii: chips (group/tag/priority) `{roun
 
 ### Sidebar / navigation
 - Stock `NavigationView` + thin override. Selected text is flattened to `TextFillColorPrimary` (calm, not accent); selection reads from the fill + the stock left accent pill.
-- Fixed items, in order: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · 언젠가 할 일 (Anytime) · 완료한 일 (Logbook) · 중요도 (Priority) · **타임라인 (Timeline)**. Below them: **그룹 (TaskGroup)** and **태그 (Tag)** sections. **앞으로 할 일 (Upcoming)** and **언젠가 할 일 (Anytime)** start hidden by default (shown via the right-click show/hide menu).
+- Fixed items, in order: 모든 할 일 (All) · 오늘 할 일 (Today) · 앞으로 할 일 (Upcoming) · 언젠가 할 일 (Anytime) · 완료한 일 (Logbook) · 중요도 (Priority). Below them: **그룹 (TaskGroup)** and **태그 (Tag)** sections. **앞으로 할 일 (Upcoming)** and **언젠가 할 일 (Anytime)** start hidden by default (shown via the right-click show/hide menu).
 - Group/Tag headers are 12 SemiBold `TextFillColorTertiary` (quiet hierarchy). The **new group / new tag action is a `+` icon button on the section header**, immediately left of the expand/collapse chevron — not a list row. Its glyph is the stock Add (`E710`) sized to match the sibling nav glyphs (15) — Segoe Fluent Icons has **no weight variants**, so an icon's visual weight comes from its render size, not a heavier glyph.
 - Each section **ends with** a **그룹 없음 / 태그 없음** catch-all row (always sorted last, below the real groups/tags) for unfiled items, marked with a **faded** (`CueNavUnfiledIconOpacity` = 0.4) copy of the real group/tag glyph rather than a distinct funnel icon — it reads as the section's empty bucket, not a different kind of filter. A **newly created** group/tag is inserted at the **top** of its section (`PrependRank`), above the existing rows.
 - **Creating and renaming are both inline.** The `+` action opens an inline name field at the foot of the section; renaming (via the row's context menu) swaps the row's label for the same inline editor in place — neither uses a modal dialog. Enter or blur-with-text commits, Escape or blur-empty cancels.
@@ -452,7 +426,7 @@ Pill instances are explicit half-height radii: chips (group/tag/priority) `{roun
 - Top-level rows start from the stock 4px hover/selection pill gutter (`CueNavPillLeft`); rows **nested** under a Groups/Tags section indent deeper (`CueNavChildPillLeft` = 12) so the hierarchy reads at a glance. The right gutter has a 1px optical compensation against the content separator. The `CueNav*` values in `DesignTokens.xaml` set the pill / label offsets directly on the stock presenter parts (`LayoutRoot` / `ContentGrid` / `ContentPresenter` / `PresenterContentRootGrid`) over the NavigationView's nesting indent — optical corrections, not page spacing tokens. **The icon, highlight, and accent bar are pinned to the collapsed (compact) geometry — a zero left inset on `PresenterContentRootGrid` / `ContentGrid` — in both pane states, so they sit the same distance from the window's left edge and don't shift when the pane toggles open/closed.** Right-edge spacing is tokenized the same way: the count badge inset (`CueNavBadgeRight`) and the chevron's gap from the edge (`CueNavChevronRight`, layered on top of the framework's −14 flush margin so the token reads directly as px-from-edge, 0 = flush).
 - **Hover deepens selection, everywhere.** Hovering an already-selected row darkens it (selected + hover stacks toward `{colors.pressed-fill}`), matching the main list — the stock NavigationView's lighter selected-hover is overridden per theme so the two surfaces behave the same.
 - **Glyph click = instant picker.** Clicking a group glyph opens the icon picker; clicking a tag glyph opens the color picker — directly, no depth (right-click context menu is the fallback).
-- **Sidebar right-click = show/hide menu.** A checkable list toggles the fixed views (오늘 / 앞으로 / 언젠가 / 완료 / 중요도 / 타임라인) on and off (name left, accent check right). Saved to app-local settings. "모든 할 일" is always shown.
+- **Sidebar right-click = show/hide menu.** A checkable list toggles the fixed views (오늘 / 앞으로 / 언젠가 / 완료 / 중요도) on and off (name left, accent check right). Saved to app-local settings. "모든 할 일" is always shown.
 - **Delete key deletes the focused group/tag**, the same way it deletes a focused task row — through the anchored confirm popover (not the right-click menu's only path). A tag asks a one-line confirm; a group, which must decide its tasks' fate, asks a two-action popover (그룹만 제거 / 할 일까지 삭제), with the task-deleting action in the red destructive tone and 그룹만 제거 as the focused default.
 
 ### Selection popup (icon / color)
@@ -460,11 +434,6 @@ Pill instances are explicit half-height radii: chips (group/tag/priority) `{roun
 - **The current selection is ringed** (accent ring for icons, high-contrast ring for colors).
 - Color swatches only **brighten slightly** on hover (white-blend) rather than being covered by a theme fill; the ring persists through hover/press.
 - Group icons are chosen not to clash with the fixed sidebar glyphs; the star uses an outline glyph (tonally matched to the other outline icons).
-
-### Timeline
-- **Day-column header** (`timeline-day-header`, 58px tall): day number over weekday label, secondary text; the cell carries a right + bottom 1px divider. Today's number sits in a 28px accent circle (`today-marker`, radius 14) with on-accent text.
-- **Task bar** (`timeline-bar`): a card-surface bar (radius 8, 1px card stroke, `InnerBorderEdge`), fixed width 204 (the 220px day column − 16) and min height 54, positioned on a canvas at its date's offset; the title is capped at MaxWidth 142. Carries the title + priority pill and a date caption. Hover uses the shared `CueHoverFillBrush`; the title fade appears only when the measured title overflows.
-- **Now line** (`today-line`): a precise 1px accent rectangle at opacity 0.8, positioned by a `TranslateTransform` using the current time-of-day fraction, shown only when today falls in range.
 
 ### Dialogs / inline buttons
 - Inline secondary actions (rename / delete / + add) share one style: transparent background + subtle hover + secondary text (`CueSubtleTextButtonStyle`). At most one true primary is emphasized per context.

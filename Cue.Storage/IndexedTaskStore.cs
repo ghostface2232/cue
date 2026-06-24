@@ -337,11 +337,5 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
         => _index.GetByPriorityAsync(cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(
-        DateOnly start,
-        DateOnly end,
-        CancellationToken cancellationToken = default)
-        => _index.GetTimelineRowsAsync(start, end, cancellationToken);
-
     public ValueTask DisposeAsync() => _index.DisposeAsync();
 }
