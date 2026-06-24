@@ -414,7 +414,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### 일시 (When) card
 - A task has a **single date** (When) — there is no separate start date or deadline. Before a date is set, a "+ 일시 추가" button holds the card; tapping it adds a date and reveals the editor (headed **일시**), with a "제거" button to clear it.
-- The editor is one date picker plus an optional time (hour : minute dropdowns). A "종일" (All day) checkbox hides the time and pins the item to end-of-day (23:59); a date added with no explicit time defaults to 종일 until the user unchecks it to set a time.
+- The editor is one date picker plus an optional time (hour : minute dropdowns). A "종일" (All day) checkbox marks the date as all-day — carried as an explicit flag on the When (`ScheduledWhen.AllDay`), not a sentinel time — which hides the time; a date added with no explicit time defaults to 종일 until the user unchecks it to set a time.
 - In the one-column (compact) layout the time dropdowns stretch to the card width instead of staying fixed-width.
 
 ### Tags
