@@ -160,8 +160,8 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         await store.SaveAsync(label);
 
         // unfiled: no group, no label — the quick-capture leftover the 그룹 없음/태그 없음 tabs re-gather.
-        // Explicit sort orders keep the list order deterministic; the completed task sorts last despite
-        // its early rank, proving the completed-last ordering.
+        // Explicit sort orders keep the list order deterministic; the completed task is excluded outright
+        // (these inbox lists are open-only — completed work doesn't need filing).
         var unfiled = new TaskItem { Title = "미분류", SortOrder = "b" };
         var grouped = new TaskItem { Title = "그룹에 든 일", TaskGroupId = project.Id, SortOrder = "c" };
         var tagged = new TaskItem { Title = "태그 붙은 일", TagIds = { label.Id }, SortOrder = "d" };
@@ -171,13 +171,13 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         await store.SaveAsync(tagged);
         await store.SaveAsync(doneUnfiled);
 
-        // 그룹 없음: every task with no group (tagged-but-ungrouped included), completed kept but dimmed below.
+        // 그룹 없음: open tasks with no group (tagged-but-ungrouped included); the completed one is excluded.
         Assert.Equal(
-            new[] { unfiled.Id, tagged.Id, doneUnfiled.Id },
+            new[] { unfiled.Id, tagged.Id },
             (await store.GetWithoutTaskGroupAsync()).Select(t => t.Id));
-        // 태그 없음: every task carrying no label (grouped-but-untagged included).
+        // 태그 없음: open tasks carrying no label (grouped-but-untagged included); completed excluded.
         Assert.Equal(
-            new[] { unfiled.Id, grouped.Id, doneUnfiled.Id },
+            new[] { unfiled.Id, grouped.Id },
             (await store.GetWithoutTagAsync()).Select(t => t.Id));
 
         // Badge counts are open-only — the completed unfiled task drops out of both.
@@ -211,8 +211,10 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         // Deleting a group never deletes its work; the tasks are ungrouped (TaskGroupId cleared).
         Assert.Null((await store.GetAsync<TaskItem>(open.Id))!.TaskGroupId);
         Assert.Null((await store.GetAsync<TaskItem>(done.Id))!.TaskGroupId);
-        // Both stay in the home "모든 할 일" view; the completed one sinks (dimmed) below the open one.
-        Assert.Equal(new[] { open.Id, done.Id }, (await store.GetAllActiveAsync()).Select(t => t.Id));
+        // The open one stays in the home "모든 할 일" view; the completed one is excluded (it lives in the
+        // Logbook now, not dimmed in place).
+        Assert.Equal(new[] { open.Id }, (await store.GetAllActiveAsync()).Select(t => t.Id));
+        Assert.Contains(await store.GetLogbookAsync(), t => t.Id == done.Id);
         Assert.NotNull((await store.GetAsync<TaskGroup>(project.Id))!.DeletedAt);
         Assert.Empty(await store.GetTaskGroupsAsync());
     }
@@ -465,20 +467,24 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         foreach (var t in new[] { inbox, anytimeFiled, todayTask, future, done })
             await store.SaveAsync(t);
 
-        // The home "모든 할 일" (All) spans every group: it returns every non-deleted task, grouped or not.
+        // The home "모든 할 일" (All) spans every group: it returns every non-deleted OPEN task, grouped or
+        // not — the completed one is excluded.
         Assert.Equal(
-            new[] { inbox.Id, anytimeFiled.Id, todayTask.Id, future.Id, done.Id }.OrderBy(g => g),
+            new[] { inbox.Id, anytimeFiled.Id, todayTask.Id, future.Id }.OrderBy(g => g),
             (await store.GetAllActiveAsync()).Select(t => t.Id).OrderBy(g => g));
 
-        // Anytime ("언젠가") = non-deleted tasks with no When date, regardless of project.
+        // Anytime ("언젠가") = non-deleted open tasks with no When date, regardless of project.
         Assert.Equal(
             new[] { inbox.Id, anytimeFiled.Id }.OrderBy(g => g),
             (await store.GetAnytimeAsync()).Select(t => t.Id).OrderBy(g => g));
 
         var today = (await store.GetTodayAsync()).Select(t => t.Id).ToHashSet();
         Assert.Contains(todayTask.Id, today);
-        Assert.Contains(done.Id, today);                // completed stays in its time bucket (dimmed)
+        Assert.DoesNotContain(done.Id, today);          // completed is excluded from the open Today list
         Assert.DoesNotContain(future.Id, today);        // future When
+
+        // The completed task (finished today) surfaces in the Today view's "오늘 완료한 일" section instead.
+        Assert.Equal(new[] { done.Id }, (await store.GetTodayCompletedAsync()).Select(t => t.Id));
 
         var upcoming = (await store.GetUpcomingAsync()).Select(t => t.Id).ToHashSet();
         Assert.Contains(future.Id, upcoming);        // future When
@@ -487,7 +493,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetByPriority_ReturnsAllTasksOrderedByPriority_UnprioritizedLast_OpenBeforeCompleted()
+    public async Task GetByPriority_ReturnsOpenTasksOrderedByPriority_UnprioritizedLast_CompletedExcluded()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
@@ -500,8 +506,45 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         var ids = (await store.GetByPriorityAsync()).Select(t => t.Id).ToList();
 
-        // Results run P1 → P4 with completed sinking within each level, then unprioritized tasks last.
-        Assert.Equal(new[] { p1.Id, p1done.Id, p2.Id, none.Id }, ids);
+        // Results run P1 → P4 then unprioritized tasks last. Completed tasks are excluded entirely — the
+        // 중요도 view is a lens on open ranked work — so the completed P1 does not appear.
+        Assert.Equal(new[] { p1.Id, p2.Id, none.Id }, ids);
+    }
+
+    [Fact]
+    public async Task CompletedSections_ExposeCompletedWorkPerToday_Group_AndTag()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        var project = new TaskGroup { Name = "프로젝트" };
+        var label = new Tag { Name = "라벨" };
+        await store.SaveAsync(project);
+        await store.SaveAsync(label);
+
+        // A task completed today, inside the group and carrying the tag.
+        var doneToday = new TaskItem { Title = "오늘 끝낸 일", TaskGroupId = project.Id, TagIds = { label.Id }, CompletedAt = Now };
+        // A task completed yesterday, inside the group — group/tag completed lists keep it, but it is not
+        // "completed today" so it stays out of the Today section.
+        var doneYesterday = new TaskItem { Title = "어제 끝낸 일", TaskGroupId = project.Id, CompletedAt = Now.AddDays(-1) };
+        // An open task in the group: never in any completed list.
+        var open = new TaskItem { Title = "열린 일", TaskGroupId = project.Id };
+        foreach (var t in new[] { doneToday, doneYesterday, open })
+            await store.SaveAsync(t);
+
+        // 오늘 완료한 일: only what was completed within the current local day.
+        Assert.Equal(new[] { doneToday.Id }, (await store.GetTodayCompletedAsync()).Select(t => t.Id));
+
+        // The group / tag completed sections gather that container's completed work, newest first, and
+        // exclude the open task.
+        Assert.Equal(new[] { doneToday.Id, doneYesterday.Id }, (await store.GetCompletedByTaskGroupAsync(project.Id)).Select(t => t.Id));
+        Assert.Equal(new[] { doneToday.Id }, (await store.GetCompletedByTagAsync(label.Id)).Select(t => t.Id));
+
+        // The open lists never carry the completed rows, and each completed row carries its completion
+        // instant so the Logbook can group by day.
+        Assert.Equal(new[] { open.Id }, (await store.GetByTaskGroupAsync(project.Id)).Select(t => t.Id));
+        Assert.All(await store.GetLogbookAsync(), row => Assert.NotNull(row.CompletedAt));
     }
 
     [Fact]

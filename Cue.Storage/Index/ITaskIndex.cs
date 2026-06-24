@@ -11,8 +11,9 @@ namespace Cue.Storage.Index;
 /// Queries fall on two axes:
 /// <list type="bullet">
 /// <item><b>Classification</b> — by container: a task group, a tag, or the home "모든 할 일" (AllTasks)
-/// list which spans every group. These return non-deleted task rows; completed rows are kept visible
-/// and dimmed in active lists, while badge counts below stay open-only.</item>
+/// list which spans every group. Active lists return non-deleted, <i>open</i> task rows only —
+/// completed tasks are excluded from the live lists and surfaced separately (a Today / group / tag
+/// "completed" section, or the Logbook). Badge counts stay open-only.</item>
 /// <item><b>Time</b> — Today / Upcoming / Anytime / Logbook, all computed from the single When date.
 /// These are <i>never stored</i>: each is computed by comparing the task's When date against the
 /// current day at query time, which is exactly what lets an item scheduled for a past date roll
@@ -48,52 +49,73 @@ public interface ITaskIndex
 
     // Classification axis
 
-    /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (AllTasks) list. Each
-    /// row carries its embedded checklist for the nested rows the view shows under it.</summary>
+    /// <summary>Every non-deleted, <i>open</i> task regardless of group — the home "모든 할 일" (AllTasks)
+    /// list. Completed tasks are excluded entirely. Each row carries its embedded checklist for the
+    /// nested rows the view shows under it.</summary>
     Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks belonging to the given task group.</summary>
+    /// <summary>Non-deleted, open tasks belonging to the given task group. Completed tasks are excluded —
+    /// they surface in the group's collapsible "완료한 일" section via
+    /// <see cref="GetCompletedByTaskGroupAsync"/>.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks carrying the given tag.</summary>
+    /// <summary>Non-deleted, open tasks carrying the given tag. Completed tasks are excluded — they
+    /// surface in the tag's collapsible "완료한 일" section via <see cref="GetCompletedByTagAsync"/>.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks in no group at all — the 그룹 없음 list that re-gathers unfiled
-    /// captures.</summary>
+    /// <summary>Completed tasks belonging to the given task group, most-recently-completed first — the
+    /// rows of the group's collapsible "완료한 일" section.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Completed tasks carrying the given tag, most-recently-completed first — the rows of the
+    /// tag's collapsible "완료한 일" section.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, CancellationToken cancellationToken = default);
+
+    /// <summary>Non-deleted, open tasks in no group at all — the 그룹 없음 list that re-gathers unfiled
+    /// captures. Completed tasks are excluded.</summary>
     Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Non-deleted tasks carrying no tag at all — the 태그 없음 list that re-gathers unfiled
-    /// captures.</summary>
+    /// <summary>Non-deleted, open tasks carrying no tag at all — the 태그 없음 list that re-gathers unfiled
+    /// captures. Completed tasks are excluded.</summary>
     Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default);
 
     // Time axis (computed against the current day)
 
     /// <summary>
-    /// Non-deleted tasks actionable today: a When date on today <i>or earlier</i>. Past dates roll
-    /// forward into Today rather than being missed; completed rows remain visible and dimmed.
+    /// Non-deleted, open tasks actionable today: a When date on today <i>or earlier</i>. Past dates roll
+    /// forward into Today rather than being missed. Completed tasks are excluded — those completed today
+    /// surface in the Today view's collapsible "오늘 완료한 일" section via
+    /// <see cref="GetTodayCompletedAsync"/>.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Non-deleted tasks with a When date on a future day. Excludes anything already due (those are
-    /// in Today); completed rows remain visible and dimmed.
+    /// Tasks completed today (their <see cref="RecordBase"/> completion instant falls on the current
+    /// local day), most-recently-completed first — the rows of the Today view's collapsible
+    /// "오늘 완료한 일" section. A repeating task's completed copy lands here on the day it was finished.
+    /// </summary>
+    Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Non-deleted, open tasks with a When date on a future day. Excludes anything already due (those are
+    /// in Today); completed tasks are excluded entirely.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Non-deleted tasks with no When date (Unscheduled) — the "언젠가" (Anytime) bucket. Completed
-    /// rows remain visible and dimmed.
+    /// Non-deleted, open tasks with no When date (Unscheduled) — the "언젠가" (Anytime) bucket. Completed
+    /// tasks are excluded entirely.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Completed tasks, most-recently-completed first — the Logbook.</summary>
+    /// <summary>Completed tasks, most-recently-completed first — the Logbook. Carries each row's
+    /// completion instant so the view can group them by day (오늘 / 어제 / a date).</summary>
     Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Every active task, for the 중요도 view. Ordered by priority (P1 first) with unprioritized tasks
-    /// last, then completed-last, then rank — the view model groups them into per-priority sections plus
-    /// a trailing 없음 (no priority) bucket. Includes completed tasks (shown dimmed) so finished work
-    /// stays visible until navigation.
+    /// Every active, <i>open</i> task, for the 중요도 view. Ordered by priority (P1 first) with
+    /// unprioritized tasks last, then rank — the view model groups them into per-priority sections plus a
+    /// trailing 없음 (no priority) bucket. Completed tasks are excluded entirely.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default);
 }
