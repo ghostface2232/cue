@@ -291,7 +291,6 @@
                 FontSize="15"
                 IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
                 KeyDown="QuickAdd_KeyDown"
-                PlaceholderText="할 일을 입력하고 Enter — 예: 내일 오후 3시 회의 준비"
                 Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                 <TextBox.Resources>
                     <!-- Hover lift is theme-split. Light keeps the standard one-tone lift
@@ -324,6 +323,21 @@
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 Glyph="&#xE710;"
                 IsHitTestVisible="False" />
+            <!-- Custom placeholder: PlaceholderText is a plain string, but a filtered view colors the
+                 group/tag name with the accent, so the placeholder is two Runs in an overlay. Aligned to
+                 the TextBox content (46px left padding; +2px down for its 13/9 top/bottom padding) and
+                 shown only while the box is empty. -->
+            <TextBlock
+                Margin="46,4,14,0"
+                VerticalAlignment="Center"
+                FontSize="15"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                IsHitTestVisible="False"
+                TextTrimming="CharacterEllipsis"
+                Visibility="{x:Bind ViewModel.QuickAddIsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                <Run Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Text="{x:Bind ViewModel.QuickAddPlaceholderName, Mode=OneWay}" />
+                <Run Text="{x:Bind ViewModel.QuickAddPlaceholderSuffix, Mode=OneWay}" />
+            </TextBlock>
         </Grid>
 
         <Grid

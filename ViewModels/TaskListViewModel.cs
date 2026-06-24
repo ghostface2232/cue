@@ -83,6 +83,21 @@ public partial class TaskListViewModel : ObservableObject
     [ObservableProperty]
     public partial string QuickAddText { get; set; }
 
+    /// <summary>Accent-colored prefix of the quick-add placeholder — the group/tag name in a filtered
+    /// view, empty otherwise. Rendered as a separate <c>Run</c> so only the name carries the accent.</summary>
+    [ObservableProperty]
+    public partial string QuickAddPlaceholderName { get; set; } = string.Empty;
+
+    /// <summary>Normal-colored remainder of the quick-add placeholder (e.g. "할 일 입력하기"). Carries a
+    /// leading space when <see cref="QuickAddPlaceholderName"/> precedes it.</summary>
+    [ObservableProperty]
+    public partial string QuickAddPlaceholderSuffix { get; set; } = "할 일 입력하기";
+
+    /// <summary>Drives the custom placeholder overlay's visibility — shown only while the box is empty.</summary>
+    public bool QuickAddIsEmpty => string.IsNullOrEmpty(QuickAddText);
+
+    partial void OnQuickAddTextChanged(string value) => OnPropertyChanged(nameof(QuickAddIsEmpty));
+
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
 
@@ -160,6 +175,16 @@ public partial class TaskListViewModel : ObservableObject
             TaskListMode.NoTag => "태그 없음",
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
+        // The quick-add placeholder echoes the active view: a plain "할 일 입력하기" everywhere, the
+        // dated "오늘 할 일 입력하기" in Today, and the group/tag name (accent-colored via its own Run)
+        // ahead of the suffix in a filtered view.
+        (QuickAddPlaceholderName, QuickAddPlaceholderSuffix) = _mode switch
+        {
+            TaskListMode.Today => (string.Empty, "오늘 할 일 입력하기"),
+            TaskListMode.TaskGroup or TaskListMode.Tag => (Title, " 할 일 입력하기"),
+            _ => (string.Empty, "할 일 입력하기"),
+        };
+
         TitleCaption = string.Empty;
         OnPropertyChanged(nameof(HasTitleCaption));
         IsTaskGroupMode = _mode == TaskListMode.TaskGroup;
