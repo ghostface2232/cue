@@ -311,7 +311,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 ### List page — `TaskListPage.xaml`
 - Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `20` (uniform on all sides).
 - Two-column body: left list (flexible) + right detail panel (resizable, default 460px). When the detail closes, the list reclaims the width.
-- The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **grouped list** (`ListView`, group header + rows). The grouped form is used only by the Priority (P1–P4) view (`IsGroupedList`); every other list, the TaskGroup list included, is flat.
+- The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **sectioned list** (`ListView`, section header + rows). The sectioned form is used only by the Priority (P1–P4) view (`IsPrioritySectioned`); every other list, the TaskGroup list included, is flat.
 
 ### Settings page — `SettingsPage.xaml`
 - Body padding is the same uniform `20` as the list page; the page title (`CuePageTitleTextStyle`) and the nav/content grid share the `4` inner inset so the screen lines up with the rest of the app.

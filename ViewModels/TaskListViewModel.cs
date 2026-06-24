@@ -73,8 +73,8 @@ public partial class TaskListViewModel : ObservableObject
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    /// <summary>Grouped rows for the 중요도 (priority) view — the only grouped list.</summary>
-    public ObservableCollection<TaskGroupViewModel> Groups { get; } = new();
+    /// <summary>Priority sections for the 중요도 (priority) view — the only sectioned list.</summary>
+    public ObservableCollection<PrioritySectionViewModel> PrioritySections { get; } = new();
 
     public TaskDetailViewModel Detail { get; }
 
@@ -108,10 +108,10 @@ public partial class TaskListViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsTaskGroupMode { get; set; }
 
-    /// <summary>True when the list is rendered as grouped buckets (the 중요도 view's P1–P4 buckets)
+    /// <summary>True when the list is rendered as priority sections (the 중요도 view's P1–P4 buckets)
     /// rather than one flat list.</summary>
     [ObservableProperty]
-    public partial bool IsGroupedList { get; set; }
+    public partial bool IsPrioritySectioned { get; set; }
 
     [ObservableProperty]
     public partial string TitleCaption { get; set; } = string.Empty;
@@ -149,13 +149,13 @@ public partial class TaskListViewModel : ObservableObject
             row.IsSelected = row.Id == id;
     }
 
-    /// <summary>Every realized task row across the flat list and all groups. Checklist rows are not
-    /// included — they are not selectable.</summary>
+    /// <summary>Every realized task row across the flat list and all priority sections. Checklist rows
+    /// are not included — they are not selectable.</summary>
     private IEnumerable<TaskRowViewModel> AllRows()
     {
         foreach (var row in Tasks) yield return row;
-        foreach (var group in Groups)
-            foreach (var row in group.Tasks) yield return row;
+        foreach (var section in PrioritySections)
+            foreach (var row in section.Tasks) yield return row;
     }
 
     /// <summary>Switches which index view this list reflects, and retitles accordingly.</summary>
@@ -190,8 +190,8 @@ public partial class TaskListViewModel : ObservableObject
         TitleCaption = string.Empty;
         OnPropertyChanged(nameof(HasTitleCaption));
         IsTaskGroupMode = _mode == TaskListMode.TaskGroup;
-        IsGroupedList = _mode is TaskListMode.Priority;
-        IsStandardList = !IsGroupedList;
+        IsPrioritySectioned = _mode is TaskListMode.Priority;
+        IsStandardList = !IsPrioritySectioned;
         OnPropertyChanged(nameof(CanQuickAdd));
     }
 
@@ -284,17 +284,17 @@ public partial class TaskListViewModel : ObservableObject
         // recreating hundreds of rows when a single detail-panel edit changed one value.
         if (_mode == TaskListMode.Priority)
         {
-            SyncRows(Tasks, []);   // the 중요도 view is grouped; its rows live in the buckets, not the flat list
-            SyncGroups(items);
+            SyncRows(Tasks, []);   // the 중요도 view is sectioned; its rows live in the buckets, not the flat list
+            SyncPrioritySections(items);
         }
         else
         {
-            SyncGroups([]);        // every other view is flat; keep the bucket list empty
+            SyncPrioritySections([]);  // every other view is flat; keep the section list empty
             SyncRows(Tasks, items);
         }
 
-        IsEmpty = IsGroupedList
-            ? Groups.Count == 0
+        IsEmpty = IsPrioritySectioned
+            ? PrioritySections.Count == 0
             : Tasks.Count == 0;
 
         // Re-apply the selection accent: reused rows keep theirs, but a freshly inserted row needs it set.
@@ -334,8 +334,8 @@ public partial class TaskListViewModel : ObservableObject
     private IEnumerable<string?> VisibleRowRanks()
     {
         foreach (var row in Tasks) yield return row.SortOrder;
-        foreach (var group in Groups)
-            foreach (var row in group.Tasks) yield return row.SortOrder;
+        foreach (var section in PrioritySections)
+            foreach (var row in section.Tasks) yield return row.SortOrder;
     }
 
     /// <summary>Toggles one nested checklist item from the list: loads its owning task, flips the item
@@ -505,10 +505,10 @@ public partial class TaskListViewModel : ObservableObject
         return -1;
     }
 
-    /// <summary>Reconciles the priority buckets (the only grouped view) in place: keeps a group per
-    /// priority that has rows, in P1→P4 order, reusing existing group instances and syncing each group's
-    /// rows. Pass an empty list to clear the buckets for an ungrouped view.</summary>
-    private void SyncGroups(IReadOnlyList<TaskListItem> items)
+    /// <summary>Reconciles the priority sections (the only sectioned view) in place: keeps a section per
+    /// priority that has rows, in P1→P4 order, reusing existing section instances and syncing each
+    /// section's rows. Pass an empty list to clear the sections for an unsectioned view.</summary>
+    private void SyncPrioritySections(IReadOnlyList<TaskListItem> items)
     {
         var desired = new List<(string Name, List<TaskListItem> Items)>();
         foreach (var (priority, name) in PriorityBuckets)
@@ -517,28 +517,28 @@ public partial class TaskListViewModel : ObservableObject
             if (bucket.Count > 0) desired.Add((name, bucket));
         }
 
-        var desiredNames = new HashSet<string>(desired.Select(group => group.Name));
-        for (var i = Groups.Count - 1; i >= 0; i--)
-            if (!desiredNames.Contains(Groups[i].Name))
-                Groups.RemoveAt(i);
+        var desiredNames = new HashSet<string>(desired.Select(section => section.Name));
+        for (var i = PrioritySections.Count - 1; i >= 0; i--)
+            if (!desiredNames.Contains(PrioritySections[i].Name))
+                PrioritySections.RemoveAt(i);
 
         for (var i = 0; i < desired.Count; i++)
         {
             var (name, bucket) = desired[i];
-            if (i >= Groups.Count || Groups[i].Name != name)
+            if (i >= PrioritySections.Count || PrioritySections[i].Name != name)
             {
-                var existing = IndexOfGroup(name);
-                if (existing >= 0) Groups.Move(existing, i);
-                else Groups.Insert(i, new TaskGroupViewModel(name));
+                var existing = IndexOfPrioritySection(name);
+                if (existing >= 0) PrioritySections.Move(existing, i);
+                else PrioritySections.Insert(i, new PrioritySectionViewModel(name));
             }
-            SyncRows(Groups[i].Tasks, bucket);
+            SyncRows(PrioritySections[i].Tasks, bucket);
         }
     }
 
-    private int IndexOfGroup(string name)
+    private int IndexOfPrioritySection(string name)
     {
-        for (var i = 0; i < Groups.Count; i++)
-            if (Groups[i].Name == name) return i;
+        for (var i = 0; i < PrioritySections.Count; i++)
+            if (PrioritySections[i].Name == name) return i;
         return -1;
     }
 

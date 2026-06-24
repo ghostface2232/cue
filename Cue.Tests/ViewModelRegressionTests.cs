@@ -894,18 +894,18 @@ public sealed class ViewModelRegressionTests
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         vm.SetNavigation(new TaskListNavigation(TaskListMode.Priority));
         await vm.LoadAsync();
-        Assert.Equal(2, vm.Groups.Count); // 매우 중요 + 중요
+        Assert.Equal(2, vm.PrioritySections.Count); // 매우 중요 + 중요
 
         // Promote the P2 task to P1: it must leave the 중요 bucket (now empty, so removed) and join 매우 중요.
         await vm.Detail.OpenAsync(p2.Id);
         vm.Detail.SelectedPriority = Priority.P1;
         await vm.Detail.DrainPendingSaveAsync();
 
-        var group = Assert.Single(vm.Groups);
-        Assert.Equal("매우 중요", group.Name);
-        Assert.Equal(2, group.Tasks.Count);
-        Assert.Contains(p1.Id, group.Tasks.Select(row => row.Id));
-        Assert.Contains(p2.Id, group.Tasks.Select(row => row.Id));
+        var section = Assert.Single(vm.PrioritySections);
+        Assert.Equal("매우 중요", section.Name);
+        Assert.Equal(2, section.Tasks.Count);
+        Assert.Contains(p1.Id, section.Tasks.Select(row => row.Id));
+        Assert.Contains(p2.Id, section.Tasks.Select(row => row.Id));
     }
 
     [Fact]

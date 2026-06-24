@@ -350,11 +350,11 @@
 
                 <ListView
                     behaviors:ScrollBarAutoHide.IsEnabled="True"
-                    ItemsSource="{x:Bind ViewModel.Groups, Mode=OneWay}"
+                    ItemsSource="{x:Bind ViewModel.PrioritySections, Mode=OneWay}"
                     SelectionMode="None"
-                    Visibility="{x:Bind ViewModel.IsGroupedList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                    Visibility="{x:Bind ViewModel.IsPrioritySectioned, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="vm:TaskGroupViewModel">
+                        <DataTemplate x:DataType="vm:PrioritySectionViewModel">
                             <StackPanel Margin="0,0,0,16">
                                 <TextBlock Margin="14,5,8,7" Style="{StaticResource CuePriorityGroupHeaderTextStyle}" Text="{x:Bind Name}" />
                                 <ItemsRepeater ElementClearing="TaskRepeater_ElementClearing" ElementPrepared="TaskRepeater_ElementPrepared" ItemTemplate="{StaticResource TaskRowTemplate}" ItemsSource="{x:Bind Tasks}" Loaded="ReorderRepeater_Loaded" />
