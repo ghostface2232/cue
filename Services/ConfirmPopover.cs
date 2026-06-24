@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -19,25 +21,66 @@ public sealed class ConfirmPopoverOptions
     public FlyoutPlacementMode Placement { get; init; } = FlyoutPlacementMode.Bottom;
 }
 
+/// <summary>One affirmative action in a <see cref="ConfirmPopover.ShowChoiceAsync"/> popover.</summary>
+/// <param name="Text">Button label.</param>
+/// <param name="Destructive">When true the button is tinted with the critical (red) tone; otherwise
+/// it keeps the stock accent.</param>
+public sealed record ChoicePopoverAction(string Text, bool Destructive = false);
+
+/// <summary>Message + ordered affirmative actions for a multi-choice confirm popover (e.g. delete a
+/// group: 그룹만 제거 / 할 일까지 삭제). A cancel is always added; Enter triggers
+/// <see cref="DefaultActionIndex"/>.</summary>
+public sealed class ChoicePopoverOptions
+{
+    public string Message { get; init; } = "";
+    public string CancelText { get; init; } = "취소";
+    public IList<ChoicePopoverAction> Actions { get; } = new List<ChoicePopoverAction>();
+
+    /// <summary>Which action is focused and fired by Enter — the least-destructive default.</summary>
+    public int DefaultActionIndex { get; init; }
+
+    public FlyoutPlacementMode Placement { get; init; } = FlyoutPlacementMode.Bottom;
+}
+
 /// <summary>
 /// A lightweight, anchored confirmation popover — a contextual alternative to a centered
-/// <see cref="ContentDialog"/> for one-line confirmations. The primary button or Enter confirms;
+/// <see cref="ContentDialog"/> for one-line confirmations. An affirmative button or Enter confirms;
 /// the cancel button, Esc, or a click outside cancels. Styling is token-driven: see DesignTokens.xaml
 /// (CueConfirmPopoverPresenterStyle, the CuePopover*/CuePadPopover sizing, and CueDangerFillBrush).
 /// </summary>
 public static class ConfirmPopover
 {
-    /// <summary>Shows the popover anchored to <paramref name="target"/>; resolves true on confirm,
-    /// false on any form of cancel (button, Esc, or light dismiss).</summary>
-    public static Task<bool> ShowAsync(FrameworkElement target, ConfirmPopoverOptions? options = null)
+    /// <summary>Shows a single-confirm popover anchored to <paramref name="target"/>; resolves true on
+    /// confirm, false on any form of cancel (button, Esc, or light dismiss).</summary>
+    public static async Task<bool> ShowAsync(FrameworkElement target, ConfirmPopoverOptions? options = null)
     {
         options ??= new ConfirmPopoverOptions();
-        var resources = Application.Current.Resources;
-        var tcs = new TaskCompletionSource<bool>();
+        var chosen = await ShowCoreAsync(
+            target,
+            options.Message,
+            options.CancelText,
+            new[] { new ChoicePopoverAction(options.ConfirmText, options.Destructive) },
+            defaultIndex: 0,
+            options.Placement);
+        return chosen == 0;
+    }
 
-        var message = new TextBlock
+    /// <summary>Shows a popover with several affirmative actions anchored to <paramref name="target"/>;
+    /// resolves the chosen action's index, or null on any form of cancel.</summary>
+    public static Task<int?> ShowChoiceAsync(FrameworkElement target, ChoicePopoverOptions options)
+        => ShowCoreAsync(target, options.Message, options.CancelText, options.Actions.ToList(),
+            options.DefaultActionIndex, options.Placement);
+
+    private static Task<int?> ShowCoreAsync(
+        FrameworkElement target, string message, string cancelText,
+        IReadOnlyList<ChoicePopoverAction> actions, int defaultIndex, FlyoutPlacementMode placement)
+    {
+        var resources = Application.Current.Resources;
+        var tcs = new TaskCompletionSource<int?>();
+
+        var messageBlock = new TextBlock
         {
-            Text = options.Message,
+            Text = message,
             TextWrapping = TextWrapping.Wrap,
             FontSize = (double)resources["CueFontRow"],
             Foreground = (Brush)resources["TextFillColorPrimaryBrush"],
@@ -45,14 +88,8 @@ public static class ConfirmPopover
 
         var cancel = new Button
         {
-            Content = options.CancelText,
+            Content = cancelText,
             Style = (Style)resources["CueSubtleTextButtonStyle"],
-            MinWidth = 60,
-        };
-        var confirm = new Button
-        {
-            Content = options.ConfirmText,
-            Style = (Style)resources["AccentButtonStyle"],
             MinWidth = 60,
         };
 
@@ -63,34 +100,47 @@ public static class ConfirmPopover
             HorizontalAlignment = HorizontalAlignment.Right,
         };
         buttons.Children.Add(cancel);
-        buttons.Children.Add(confirm);
+
+        var actionButtons = new List<Button>();
+        foreach (var action in actions)
+        {
+            var button = new Button
+            {
+                Content = action.Text,
+                Style = (Style)resources["AccentButtonStyle"],
+                MinWidth = 60,
+            };
+            // A destructive action recolors only its own button to the critical tone. The AccentButton
+            // template binds its background via {ThemeResource AccentButtonBackground}, which the stock
+            // theme defines as a StaticResource alias of AccentFillColorDefaultBrush — overriding the
+            // alias wouldn't reach it, so override the AccentButtonBackground keys directly, in this
+            // button's own scope, keeping the accent template's white text and hover/press deepening.
+            if (action.Destructive)
+            {
+                var danger = ((SolidColorBrush)resources["CueDangerFillBrush"]).Color;
+                button.Resources["AccentButtonBackground"] = new SolidColorBrush(danger);
+                button.Resources["AccentButtonBackgroundPointerOver"] = new SolidColorBrush(danger) { Opacity = 0.9 };
+                button.Resources["AccentButtonBackgroundPressed"] = new SolidColorBrush(danger) { Opacity = 0.8 };
+            }
+            actionButtons.Add(button);
+            buttons.Children.Add(button);
+        }
 
         var root = new StackPanel { Spacing = (double)resources["CueGap16"] };
-        root.Children.Add(message);
+        root.Children.Add(messageBlock);
         root.Children.Add(buttons);
-
-        if (options.Destructive)
-        {
-            // Recolor the AccentButton template to the critical tone within the popover scope only,
-            // so the primary button reads as destructive (red) while keeping the stock accent
-            // template's white-on-fill text and hover/press deepening.
-            var danger = ((SolidColorBrush)resources["CueDangerFillBrush"]).Color;
-            root.Resources["AccentFillColorDefaultBrush"] = new SolidColorBrush(danger);
-            root.Resources["AccentFillColorSecondaryBrush"] = new SolidColorBrush(danger) { Opacity = 0.9 };
-            root.Resources["AccentFillColorTertiaryBrush"] = new SolidColorBrush(danger) { Opacity = 0.8 };
-        }
 
         var flyout = new Flyout
         {
             Content = root,
-            Placement = options.Placement,
+            Placement = placement,
             FlyoutPresenterStyle = (Style)resources["CueConfirmPopoverPresenterStyle"],
         };
 
         // Resolve exactly once: button click, Enter/Esc, or light dismiss all funnel here so the
         // Closed handler can't overwrite an already-made decision.
         var settled = false;
-        void Settle(bool result)
+        void Settle(int? result)
         {
             if (settled) return;
             settled = true;
@@ -98,20 +148,29 @@ public static class ConfirmPopover
             flyout.Hide();
         }
 
-        confirm.Click += (_, _) => Settle(true);
-        cancel.Click += (_, _) => Settle(false);
+        cancel.Click += (_, _) => Settle(null);
+        for (var i = 0; i < actionButtons.Count; i++)
+        {
+            var index = i;
+            actionButtons[i].Click += (_, _) => Settle(index);
+        }
         root.KeyDown += (_, e) =>
         {
-            if (e.Key == VirtualKey.Enter) { e.Handled = true; Settle(true); }
-            else if (e.Key == VirtualKey.Escape) { e.Handled = true; Settle(false); }
+            if (e.Key == VirtualKey.Enter) { e.Handled = true; Settle(defaultIndex); }
+            else if (e.Key == VirtualKey.Escape) { e.Handled = true; Settle(null); }
         };
-        // Focus the primary button so Enter confirms and the popover is keyboard-reachable at once.
-        flyout.Opened += (_, _) => confirm.Focus(FocusState.Programmatic);
+        // Focus the default (least-destructive) action so Enter confirms and the popover is keyboard-
+        // reachable at once.
+        flyout.Opened += (_, _) =>
+        {
+            if (defaultIndex >= 0 && defaultIndex < actionButtons.Count)
+                actionButtons[defaultIndex].Focus(FocusState.Programmatic);
+        };
         flyout.Closed += (_, _) =>
         {
             if (settled) return;
             settled = true;
-            tcs.TrySetResult(false);
+            tcs.TrySetResult(null);
         };
 
         flyout.ShowAt(target);

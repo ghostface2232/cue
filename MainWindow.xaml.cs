@@ -1,6 +1,7 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Cue.Pages;
 using Cue.Storage;
@@ -292,6 +293,11 @@ public sealed partial class MainWindow : Window
         };
         box.LostFocus += async (_, _) =>
         {
+            // Enter commits, which removes this editor from the tree and so fires LostFocus a second time
+            // — after the _inlineCommitting guard has already reset. Bail unless this is still the live
+            // editor, so a committed/cancelled item can't be created twice (which produced a duplicate
+            // tag with the next palette color).
+            if (!ReferenceEquals(_inlineCreateItem, item)) return;
             if (string.IsNullOrWhiteSpace(box.Text)) CancelInlineCreate();
             else await CommitInlineCreateAsync(box.Text);
         };
@@ -530,6 +536,7 @@ public sealed partial class MainWindow : Window
         if (ViewModel.TaskGroupTaskCounts.TryGetValue(taskGroup.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(taskGroup, isGroup: true, item);
+        AddDeleteAccelerator(item, anchor => DeleteTaskGroupFlowAsync(taskGroup, anchor));
         return item;
     }
 
@@ -550,6 +557,7 @@ public sealed partial class MainWindow : Window
         if (ViewModel.TagTaskCounts.TryGetValue(tag.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(tag, isGroup: false, item);
+        AddDeleteAccelerator(item, anchor => DeleteTagFlowAsync(tag, anchor));
         return item;
     }
 
@@ -611,13 +619,16 @@ public sealed partial class MainWindow : Window
         if (FindDescendantByName(root, "LayoutRoot") is { } pill)
             pill.Margin = new Thickness(
                 NavD(nested ? "CueNavChildPillLeft" : "CueNavPillLeft", 4), 2, NavD("CueNavPillRight", 5), 2);
-        // PresenterContentRootGrid holds the accent bar + content and gets its own nesting indent from
-        // the NavigationView, which is the gap between the highlight's left edge and the content. Override
-        // it so the bar/content sit close to that edge.
+        // Keep the accent bar + content (icon, highlight) flush to the pill's content edge in BOTH pane
+        // states. The collapsed (compact) geometry is the reference: its zero left inset is what the open
+        // pane now matches, so the icon / highlight / accent bar sit the same distance from the window's
+        // left edge and don't shift when the pane toggles. Only the trailing spacing (right gutter, label
+        // gap) differs by pane state. PresenterContentRootGrid holds the accent bar + content and the
+        // NavigationView would otherwise indent it on its own — pin it to 0 so it can't drift.
         if (FindDescendantByName(root, "PresenterContentRootGrid") is { } inner)
-            inner.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavBarInset", 0), 0, 0, 0);
+            inner.Margin = new Thickness(0);
         if (FindDescendantByName(root, "ContentGrid") is { } content)
-            content.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavIconLeft", 20), 0, 4, 0);
+            content.Margin = compact ? new Thickness(0) : new Thickness(0, 0, 4, 0);
         if (FindDescendantByName(root, "ContentPresenter") is { } label)
             label.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavLabelLeft", 4), -1, 4, -1);
         // The expand-collapse chevron is a 40px-wide grid with a 12px glyph centered in it; the framework
@@ -654,7 +665,14 @@ public sealed partial class MainWindow : Window
         var rename = new MenuFlyoutItem { Text = "이름 변경", Tag = record };
         var delete = new MenuFlyoutItem { Text = "삭제", Tag = record };
         rename.Click += isGroup ? RenameTaskGroup_Click : RenameTag_Click;
-        delete.Click += isGroup ? DeleteTaskGroup_Click : DeleteTag_Click;
+        // Delete confirms in a popover anchored to the owning row — same flow the Delete key triggers.
+        delete.Click += (_, _) =>
+        {
+            if (isGroup && record is TaskGroupListItem taskGroupRecord)
+                _ = DeleteTaskGroupFlowAsync(taskGroupRecord, owner);
+            else if (!isGroup && record is TagListItem tagRecord)
+                _ = DeleteTagFlowAsync(tagRecord, owner);
+        };
         var menu = new MenuFlyout();
         menu.Items.Add(rename);
         if (isGroup && record is TaskGroupListItem taskGroup)
@@ -811,54 +829,63 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private async void DeleteTaskGroup_Click(object sender, RoutedEventArgs e)
+    /// <summary>Wires the Delete key on a sidebar group/tag row to its delete flow, anchored to that
+    /// row — the same flow the right-click 삭제 item runs. Fire-and-forget; the flow is guarded by
+    /// RunSafelyAsync.</summary>
+    private static void AddDeleteAccelerator(NavigationViewItem item, Func<FrameworkElement, Task> deleteFlow)
     {
-        await RunSafelyAsync(async () =>
+        var accelerator = new KeyboardAccelerator { Key = VirtualKey.Delete };
+        accelerator.Invoked += (accel, args) => { args.Handled = true; _ = deleteFlow(item); };
+        item.KeyboardAccelerators.Add(accelerator);
+    }
+
+    private Task DeleteTaskGroupFlowAsync(TaskGroupListItem taskGroup, FrameworkElement anchor)
+        => RunSafelyAsync(async () =>
         {
-            if (sender is not MenuFlyoutItem { Tag: TaskGroupListItem taskGroup }) return;
-            var mode = await AskTaskGroupDeletionAsync(taskGroup.Name);
+            var mode = await AskTaskGroupDeletionAsync(taskGroup.Name, anchor);
             if (mode is null) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.TaskGroup && _currentNavigation.FilterId == taskGroup.Id;
             await MutateNavAsync(() => ViewModel.DeleteTaskGroupAsync(taskGroup.Id, mode.Value));
             RebuildLiveNavigation();
             if (isCurrent) NavigateHome();
         });
-    }
 
-    /// <summary>Deleting a group asks what to do with its tasks: move them to the Cue home (the
-    /// least-destructive default) or delete them along with the group. Null = the user cancelled.</summary>
-    private async Task<TaskGroupDeletionMode?> AskTaskGroupDeletionAsync(string name)
+    /// <summary>Deleting a group asks what to do with its tasks in an anchored popover: keep them (move
+    /// to the Cue home — the least-destructive default) or delete them along with the group. Null = the
+    /// user cancelled.</summary>
+    private static async Task<TaskGroupDeletionMode?> AskTaskGroupDeletionAsync(string name, FrameworkElement anchor)
     {
-        var dialog = new ContentDialog
+        var choice = await ConfirmPopover.ShowChoiceAsync(anchor, new ChoicePopoverOptions
         {
-            XamlRoot = NavView.XamlRoot,
-            Title = $"'{name}' 그룹을 삭제할까요?",
-            Content = "그룹 안의 할 일을 어떻게 할지 선택하세요. '그룹만 제거'하면 할 일은 그대로 남아 '모든 할 일'에서 볼 수 있습니다.",
-            PrimaryButtonText = "그룹만 제거",
-            SecondaryButtonText = "할 일까지 삭제",
-            CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-        return await _dialogs.ShowAsync(dialog) switch
+            Message = $"'{name}' 그룹을 삭제할까요?",
+            Actions =
+            {
+                new ChoicePopoverAction("그룹만 제거"),
+                new ChoicePopoverAction("할 일까지 삭제", Destructive: true),
+            },
+            // Focus/Enter defaults to the least-destructive 그룹만 제거.
+            DefaultActionIndex = 0,
+        });
+        return choice switch
         {
-            ContentDialogResult.Primary => TaskGroupDeletionMode.Reparent,
-            ContentDialogResult.Secondary => TaskGroupDeletionMode.DeleteTasks,
+            0 => TaskGroupDeletionMode.Reparent,
+            1 => TaskGroupDeletionMode.DeleteTasks,
             _ => null,
         };
     }
 
-    private async void DeleteTag_Click(object sender, RoutedEventArgs e)
-    {
-        await RunSafelyAsync(async () =>
+    private Task DeleteTagFlowAsync(TagListItem tag, FrameworkElement anchor)
+        => RunSafelyAsync(async () =>
         {
-            if (sender is not MenuFlyoutItem { Tag: TagListItem tag }) return;
-            if (!await ConfirmDeleteAsync("태그를 삭제할까요?", "할 일은 그대로 두고 이 태그만 떼어냅니다.")) return;
+            if (!await ConfirmPopover.ShowAsync(anchor, new ConfirmPopoverOptions
+            {
+                Message = "이 태그를 삭제할까요?",
+            })) return;
             var isCurrent = _currentNavigation?.Mode == TaskListMode.Tag && _currentNavigation.FilterId == tag.Id;
             await MutateNavAsync(() => ViewModel.DeleteTagCommand.ExecuteAsync(tag.Id));
             RebuildLiveNavigation();
             if (isCurrent) NavigateHome();
         });
-    }
 
     private void Navigate(TaskListNavigation navigation)
     {
@@ -894,20 +921,6 @@ public sealed partial class MainWindow : Window
         var result = await _dialogs.ShowAsync(dialog);
         var name = input.Text.Trim();
         return result == ContentDialogResult.Primary && name.Length > 0 ? name : null;
-    }
-
-    private async Task<bool> ConfirmDeleteAsync(string title, string message)
-    {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = NavView.XamlRoot,
-            Title = title,
-            Content = message,
-            PrimaryButtonText = "삭제",
-            CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        return await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary;
     }
 
     private async Task RunSafelyAsync(Func<Task> operation)
