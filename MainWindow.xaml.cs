@@ -9,9 +9,6 @@ using Cue.ViewModels;
 using Cue.Services;
 using Windows.System;
 
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
-
 namespace Cue;
 
 public sealed partial class MainWindow : Window
@@ -572,8 +569,8 @@ public sealed partial class MainWindow : Window
                 CornerRadius = new CornerRadius(16),
                 Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(baseColor),
             };
-            // Hover/press only lightens the swatch instead of replacing it with a theme fill (which
-            // used to hide the color completely). Keep the color visible through both states.
+            // Hover/press only lightens the swatch instead of replacing it with a theme fill that
+            // would hide the color completely. Keep the color visible through both states.
             button.Resources["ButtonBackgroundPointerOver"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Lighten(baseColor, 0.18));
             button.Resources["ButtonBackgroundPressed"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Lighten(baseColor, 0.30));
             // The current color is emphasized with a high-contrast ring that survives hover/press.

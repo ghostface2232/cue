@@ -128,7 +128,7 @@ public static class FractionalRank
         return keys;
     }
 
-    // ---- Internals (faithful port of the reference algorithm) ----------------
+    // Internals (faithful port of the reference algorithm)
 
     private static string Midpoint(string a, string? b)
     {

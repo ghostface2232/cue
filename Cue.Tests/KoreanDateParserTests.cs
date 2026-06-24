@@ -24,7 +24,7 @@ public sealed class KoreanDateParserTests
     private static int WhenMinute(ScheduledWhen w) => w.Date!.Value.ToLocal().Minute;
     private static DateOnly ZonedDate(ZonedDateTime z) => DateOnly.FromDateTime(z.ToLocal().DateTime);
 
-    // ---- 1. Relative scheduled dates ----------------------------------------
+    // 1. Relative scheduled dates
 
     [Theory]
     [InlineData("내일 장보기", "장보기", 1)]
@@ -43,7 +43,7 @@ public sealed class KoreanDateParserTests
         Assert.Null(r.Recurrence);
     }
 
-    // ---- 2. Weekday / absolute dates ----------------------------------------
+    // 2. Weekday / absolute dates
 
     [Fact]
     public void Weekday_ResolvesToUpcomingThatWeekday()
@@ -73,7 +73,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(15, WhenDate(r.When).Day);
     }
 
-    // ---- 3. Times + 4. day-part words ---------------------------------------
+    // 3. Times + 4. day-part words
 
     [Fact]
     public void Time_IsCapturedOnTheScheduledDate()
@@ -98,7 +98,7 @@ public sealed class KoreanDateParserTests
     public void DayPartWithClock_KeepsTheClock_WithoutDoubleCounting()
     {
         // The tricky case: "오늘 저녁 7시" is the time; the "저녁" inside "저녁 약속" must stay in the title.
-        // "저녁" just confirms PM, giving 19:00; no day-part word raises the evening flag anymore.
+        // "저녁" just confirms PM, giving 19:00; a day-part word never raises a separate evening flag.
         var r = Parse("오늘 저녁 7시 저녁 약속");
         Assert.Equal("저녁 약속", r.Title);
         Assert.Equal(Today, WhenDate(r.When));
@@ -196,7 +196,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(15, WhenHour(r.When));
     }
 
-    // ---- Casual / colloquial forms ------------------------------------------
+    // Casual / colloquial forms
 
     [Fact]
     public void Colloquial_Nael_IsTomorrow()
@@ -327,7 +327,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(hour, WhenHour(r.When));
     }
 
-    // ---- Attached particles that still carry a date/time --------------------
+    // Attached particles that still carry a date/time
 
     [Fact]
     public void Colloquial_NaelKkaji_IsWhenTomorrow()
@@ -358,7 +358,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
     }
 
-    // ---- 5. Due expressions (까지 / 마감 / N일 안에) → a single When ----------------
+    // 5. Due expressions (까지 / 마감 / N일 안에) → a single When
 
     [Fact]
     public void DueParticle_ResolvesToWhen()
@@ -394,7 +394,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(31, WhenDate(r.When).Day);
     }
 
-    // ---- 6. Recurrence ------------------------------------------------------
+    // 6. Recurrence
 
     [Theory]
     [InlineData("매주 월요일 운동", "운동", "FREQ=WEEKLY;BYDAY=MO")]
@@ -432,7 +432,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(12, WhenHour(bare.When));
     }
 
-    // ---- 7/8. Unscheduled & "언젠가" markers ---------------------------------
+    // 7/8. Unscheduled & "언젠가" markers
 
     [Theory]
     [InlineData("새 노트북 알아보기")]
@@ -468,7 +468,7 @@ public sealed class KoreanDateParserTests
         Assert.False(r.When.HasDate);
     }
 
-    // ---- 10. Misrecognition guards ------------------------------------------
+    // 10. Misrecognition guards
 
     [Theory]
     [InlineData("3월의 라이온 만화책 사기")]
@@ -484,7 +484,7 @@ public sealed class KoreanDateParserTests
         Assert.Null(r.Recurrence);
     }
 
-    // ---- Out-of-range guards (RFC 5545 / calendar) --------------------------
+    // Out-of-range guards (RFC 5545 / calendar)
 
     [Theory]
     [InlineData("매월 99일 가계부 정산")]   // BYMONTHDAY out of 1..31
@@ -520,7 +520,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(new DateOnly(2026, 6, 25), WhenDate(r.When));
     }
 
-    // ---- 9. Word order + 11. composite --------------------------------------
+    // 9. Word order + 11. composite
 
     [Fact]
     public void DateExpression_TrailingInTheSentence_StillRecognized()
@@ -551,7 +551,7 @@ public sealed class KoreanDateParserTests
         Assert.Equal(Today.AddDays(1), WhenDate(r.When));
     }
 
-    // ---- Robustness ---------------------------------------------------------
+    // Robustness
 
     [Theory]
     [InlineData("")]

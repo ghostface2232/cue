@@ -52,8 +52,6 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     private static RecurrenceRule Daily(DateOnly anchorDay, string tz = "UTC")
         => new("FREQ=DAILY", OnDayZoned(anchorDay, tz));
 
-    // ---------------------------------------------------------------------------
-
     [Fact]
     public async Task CompletingRecurring_LeavesExactlyOneLogbookCopy_AndAdvancesOriginalOneCycle()
     {
