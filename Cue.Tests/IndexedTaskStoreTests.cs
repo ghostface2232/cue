@@ -574,27 +574,75 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         await using var store = await OpenAsync(root, clock);
 
         // The store enforces no referential integrity, so the index and views must tolerate floating
-        // references: a project/label that no record exists for.
-        var missingGroup = Guid.NewGuid();
-        var missingTag = Guid.NewGuid();
+        // references: a project/label that no record exists for. The save path normalizes those away,
+        // so we manufacture the floating state the way it really arises — files left referencing a
+        // record whose own file is gone (an out-of-band delete, a half-synced cloud folder) — and then
+        // rebuild the index from those files.
+        var group = new TaskGroup { Name = "사라질 프로젝트" };
+        var tag = new Tag { Name = "사라질 라벨" };
         var orphan = new TaskItem
         {
             Title = "떠 있는 참조",
             When = OnDay(Today),
-            TaskGroupId = missingGroup,
-            TagIds = { missingTag },
+            TaskGroupId = group.Id,
+            TagIds = { tag.Id },
         };
+        await store.SaveAsync(group);
+        await store.SaveAsync(tag);
         await store.SaveAsync(orphan);
+
+        // Remove the referenced records' files out of band, leaving the task's ids dangling.
+        File.Delete(Path.Combine(root, "groups", group.Id + ".json"));
+        File.Delete(Path.Combine(root, "tags", tag.Id + ".json"));
+        await store.InitializeAsync();
 
         // Time views never resolve references, so the orphan surfaces normally.
         Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
         // Classification queries by the dangling ids just return it — nothing joins or throws.
-        Assert.Contains(await store.GetByTaskGroupAsync(missingGroup), t => t.Id == orphan.Id);
-        Assert.Contains(await store.GetByTagAsync(missingTag), t => t.Id == orphan.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(group.Id), t => t.Id == orphan.Id);
+        Assert.Contains(await store.GetByTagAsync(tag.Id), t => t.Id == orphan.Id);
+    }
 
-        // A full rebuild from the files tolerates the same floating references.
-        await store.InitializeAsync();
-        Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
+    [Fact]
+    public async Task SaveTask_StripsReferencesToRecordsThatNoLongerExist()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        // A reference whose target file never existed (a missing group/tag id) is just as dangling as
+        // one whose target was soft-deleted. The save path's normalization must drop both, not only the
+        // soft-deleted case — otherwise a GetAsync that returns null leaves the dangling id in place.
+        var keptGroup = new TaskGroup { Name = "남는 프로젝트" };
+        var keptTag = new Tag { Name = "남는 라벨" };
+        await store.SaveAsync(keptGroup);
+        await store.SaveAsync(keptTag);
+
+        var missingGroup = Guid.NewGuid();
+        var missingTag = Guid.NewGuid();
+        var task = new TaskItem
+        {
+            Title = "참조 정리 대상",
+            TaskGroupId = missingGroup,
+            TagIds = { missingTag, keptTag.Id },
+        };
+        await store.SaveAsync(task);
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        // The dangling group id is cleared; only the existing tag survives.
+        Assert.Null(saved!.TaskGroupId);
+        Assert.Equal(new[] { keptTag.Id }, saved.TagIds);
+
+        // A live group id that later loses its file is dropped on the next save too.
+        saved.TaskGroupId = keptGroup.Id;
+        await store.SaveAsync(saved);
+        Assert.Equal(keptGroup.Id, (await store.GetAsync<TaskItem>(task.Id))!.TaskGroupId);
+
+        File.Delete(Path.Combine(root, "groups", keptGroup.Id + ".json"));
+        var refreshed = await store.GetAsync<TaskItem>(task.Id);
+        await store.SaveAsync(refreshed!);
+        Assert.Null((await store.GetAsync<TaskItem>(task.Id))!.TaskGroupId);
     }
 
     [Fact]

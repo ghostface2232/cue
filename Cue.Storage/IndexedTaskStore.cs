@@ -149,7 +149,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         if (task.TaskGroupId is { } taskGroupId)
         {
             var taskGroup = await _files.GetAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
-            if (taskGroup?.IsDeleted == true)
+            // Clear the reference when the group is missing entirely (GetAsync returns null) as well as
+            // when it exists but is soft-deleted; both leave a dangling id behind otherwise.
+            if (taskGroup is not { IsDeleted: false })
                 task.TaskGroupId = null;
         }
 
@@ -159,7 +161,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             foreach (var tagId in task.TagIds.Distinct())
             {
                 var tag = await _files.GetAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
-                if (tag?.IsDeleted != true) retainedTags.Add(tagId);
+                // Retain only tags that still exist and are not soft-deleted; a missing tag (null) is a
+                // dangling reference and must be dropped, same as a deleted one.
+                if (tag is { IsDeleted: false }) retainedTags.Add(tagId);
             }
             task.TagIds = retainedTags;
         }
