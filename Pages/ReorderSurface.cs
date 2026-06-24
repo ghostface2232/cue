@@ -80,7 +80,7 @@ public sealed class ReorderSurface
         return surface;
     }
 
-    // ---- Pointer plumbing ----------------------------------------------------
+    // Pointer plumbing
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
@@ -130,7 +130,7 @@ public sealed class ReorderSurface
         _ = DropAsync(drag); // capture lost mid-drag — settle into the current target
     }
 
-    // ---- Drag lifecycle ------------------------------------------------------
+    // Drag lifecycle
 
     private bool BeginDrag(Drag drag)
     {
@@ -298,7 +298,7 @@ public sealed class ReorderSurface
         catch { /* the view model reloads from the index on failure */ }
     }
 
-    // ---- Auto-scroll ---------------------------------------------------------
+    // Auto-scroll
 
     private void UpdateAutoScroll(Drag drag)
     {
@@ -333,7 +333,7 @@ public sealed class ReorderSurface
     private static double EdgeFactor(double depth)
         => MaxAutoScrollStep * Math.Clamp(depth / EdgeZone, 0.0, 1.0);
 
-    // ---- Geometry ------------------------------------------------------------
+    // Geometry
 
     /// <summary>Realized rows other than the dragged one, with clean layout geometry, top-sorted.</summary>
     private List<Sibling> RealizedSiblings(Drag drag)

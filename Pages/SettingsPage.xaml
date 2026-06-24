@@ -192,7 +192,7 @@
                      same measure: the label column gets a bounded width, captions wrap instead of
                      running on one line, and section-to-section width never drifts. -->
                 <Grid MaxWidth="{StaticResource CueSettingsContentMaxWidth}" HorizontalAlignment="Stretch">
-                    <!-- ===== 시간 ===== -->
+                    <!-- 시간 -->
                     <StackPanel
                         x:Name="TimeSection"
                         Spacing="{StaticResource CueGap12}"
@@ -241,7 +241,7 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- ===== 파싱 ===== -->
+                    <!-- 파싱 -->
                     <StackPanel
                         x:Name="ParsingSection"
                         Spacing="{StaticResource CueGap12}"
@@ -350,7 +350,7 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- ===== 외관 ===== -->
+                    <!-- 외관 -->
                     <StackPanel
                         x:Name="AppearanceSection"
                         Spacing="{StaticResource CueGap12}"
@@ -392,7 +392,7 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- ===== 알림 ===== -->
+                    <!-- 알림 -->
                     <StackPanel
                         x:Name="NotificationsSection"
                         Spacing="{StaticResource CueGap12}"

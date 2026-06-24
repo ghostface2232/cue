@@ -61,8 +61,6 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
     private static DateOnly Today => DateOnly.FromDateTime(Now.UtcDateTime);
 
-    // ---------------------------------------------------------------------------
-
     [Fact]
     public async Task RebuildsFromFilesAlone_WhenIndexDatabaseIsDeleted()
     {

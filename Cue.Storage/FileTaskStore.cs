@@ -47,8 +47,7 @@ public sealed class FileTaskStore : ITaskStore
 
             // Isolate corruption per file: one unreadable record (e.g. a half-written file left by a
             // crash, or a partially-synced cloud file) must not take down the whole listing or the
-            // index rebuild that runs on it. Skip it and keep going. (A real log sink lands with the
-            // logging phase; for now this is the only place that swallows.)
+            // index rebuild that runs on it. Skip it and keep going.
             T? record;
             try
             {

@@ -534,8 +534,8 @@ public sealed partial class TimelinePage : Page
             ViewModel.Detail.ToggleTag(option.Id);
     }
 
-    // The + 새 태그 affordance now opens an inline field in the tag card (no modal): type a name and
-    // press Enter (or 추가) to create + select it; Escape or blurring an empty field dismisses it.
+    // The + 새 태그 affordance opens an inline field in the tag card rather than a modal: type a name
+    // and press Enter (or 추가) to create + select it; Escape or blurring an empty field dismisses it.
     private void BeginAddTag_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.Detail.BeginAddTag();

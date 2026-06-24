@@ -456,7 +456,7 @@ public partial class TaskListViewModel : ObservableObject
         return -1;
     }
 
-    // ---- Row context-menu actions (move group / tag / rename / delete) -------
+    // Row context-menu actions (move group / tag / rename / delete)
 
     /// <summary>The live task record by id, so a row context menu can reflect its current group and
     /// tags. Reads the file source of truth.</summary>

@@ -72,7 +72,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await _index.RebuildAsync(tasks, taskGroups, tags, cancellationToken).ConfigureAwait(false);
     }
 
-    // ---- Write path: file first, then index (always both) --------------------
+    // Write path: file first, then index (always both)
 
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
     {
@@ -229,7 +229,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await SoftDeleteAndReflectAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
     }
 
-    // ---- By-id / full reads come from the files (source of truth) ------------
+    // By-id / full reads come from the files (source of truth)
 
     public Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : RecordBase
         => _files.GetAllAsync<T>(cancellationToken);
@@ -237,7 +237,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
         => _files.GetAsync<T>(id, cancellationToken);
 
-    // ---- List reads come from the index --------------------------------------
+    // List reads come from the index
 
     public Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default)
         => _index.GetTaskGroupsAsync(cancellationToken);

@@ -345,7 +345,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    // ---- Live navigation records --------------------------------------------
+    // Live navigation records
 
     public Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default)
         => QueryRecordsAsync(
@@ -401,7 +401,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "WHERE tt.tag_id = $id AND t.deleted_at IS NULL;",
             cmd => Bind(cmd, "$id", tagId.ToString()), cancellationToken);
 
-    // ---- Classification axis -------------------------------------------------
+    // Classification axis
 
     // Active lists keep completed tasks (shown dimmed) rather than dropping them on the next load, so
     // finishing an item doesn't make it vanish; they sink below the open rows via the completed-last
@@ -444,7 +444,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
             _ => { }, cancellationToken);
 
-    // ---- Time axis (computed against the current day) ------------------------
+    // Time axis (computed against the current day)
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
@@ -510,7 +510,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             cancellationToken);
     }
 
-    // ---- Plumbing ------------------------------------------------------------
+    // Plumbing
 
     private async Task<IReadOnlyList<TaskListItem>> QueryAsync(
         string sql, Action<SqliteCommand> bind, CancellationToken cancellationToken)

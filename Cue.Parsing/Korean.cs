@@ -111,7 +111,7 @@ internal static class Korean
         return null;
     }
 
-    // ---- Reusable pattern fragments ------------------------------------------
+    // Reusable pattern fragments
 
     /// <summary>Left boundary: the token must not be glued to a preceding Hangul syllable.</summary>
     public const string LeftEdge = @"(?<![가-힣])";

@@ -23,7 +23,7 @@ namespace Cue.Storage.Index;
 /// </remarks>
 public interface ITaskIndex
 {
-    // ---- Live navigation records --------------------------------------------
+    // Live navigation records
 
     /// <summary>Active task groups (pure groups), excluding tombstones.</summary>
     Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default);
@@ -46,7 +46,7 @@ public interface ITaskIndex
     /// <summary>Open (non-deleted, non-completed) task count carrying no tag — the 태그 없음 badge.</summary>
     Task<int> GetOpenTaskCountWithoutTagAsync(CancellationToken cancellationToken = default);
 
-    // ---- Classification axis -------------------------------------------------
+    // Classification axis
 
     /// <summary>Every non-deleted task regardless of group — the home "모든 할 일" (AllTasks) list. Each
     /// row carries its embedded checklist for the nested rows the view shows under it.</summary>
@@ -66,7 +66,7 @@ public interface ITaskIndex
     /// captures.</summary>
     Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default);
 
-    // ---- Time axis (computed against the current day) ------------------------
+    // Time axis (computed against the current day)
 
     /// <summary>
     /// Non-deleted tasks actionable today: a When date on today <i>or earlier</i>. Past dates roll
