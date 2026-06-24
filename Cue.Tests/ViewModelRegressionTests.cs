@@ -149,6 +149,43 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task Checklist_InlineToggle_ReusesRowInstance_AndKeepsCheckedDimAcrossReload()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "parent" };
+        task.Checklist.Add(new ChecklistItem { Title = "항목" });
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(Assert.Single(vm.Tasks).ChecklistItems);
+
+        // A bare reload (every save routes through one) must reconcile in place, not rebuild: the same
+        // row instance survives so the checkbox the user is interacting with is never torn down.
+        await vm.LoadCommand.ExecuteAsync(null);
+        Assert.Same(row, Assert.Single(Assert.Single(vm.Tasks).ChecklistItems));
+
+        // Ticking it persists and — after the toggle's own reload — the reused row reflects checked + dim.
+        row.SetCheckedSilently(true);
+        await vm.ToggleChecklistItemCommand.ExecuteAsync(row);
+        var afterToggle = Assert.Single(Assert.Single(vm.Tasks).ChecklistItems);
+        Assert.Same(row, afterToggle);
+        Assert.True(afterToggle.IsChecked);
+        Assert.Equal(0.48, afterToggle.VisualOpacity);
+
+        // Unchecking from the same instance works too (the bug was that this never took).
+        row.SetCheckedSilently(false);
+        await vm.ToggleChecklistItemCommand.ExecuteAsync(row);
+        Assert.False((await store.GetAsync<TaskItem>(task.Id))!.Checklist[0].IsChecked);
+        Assert.False(Assert.Single(Assert.Single(vm.Tasks).ChecklistItems).IsChecked);
+    }
+
+    [Fact]
     public async Task SegmentedTimeEditorSavesExactChosenTime()
     {
         using var temp = new TempDirectory();

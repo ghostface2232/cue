@@ -29,11 +29,15 @@ public partial class ChecklistRowViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsChecked { get; set; }
 
+    /// <summary>The label shown for a checklist item, with the blank-title fallback. Exposed so the
+    /// owning list's in-place reconcile can tell whether a reused row's title is still current.</summary>
+    public static string DisplayTitle(string? title) => string.IsNullOrWhiteSpace(title) ? "(제목 없음)" : title;
+
     public ChecklistRowViewModel(Guid parentTaskId, TaskListChecklistItem item, Action<ChecklistRowViewModel> onToggled)
     {
         ParentTaskId = parentTaskId;
         Id = item.Id;
-        Title = string.IsNullOrWhiteSpace(item.Title) ? "(제목 없음)" : item.Title;
+        Title = DisplayTitle(item.Title);
         _onToggled = onToggled;
         _suppressToggle = true;
         IsChecked = item.IsChecked;

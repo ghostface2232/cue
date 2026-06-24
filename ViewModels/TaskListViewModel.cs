@@ -401,15 +401,50 @@ public partial class TaskListViewModel : ObservableObject
         }
     }
 
-    /// <summary>Rebuilds a row's nested checklist rows from its projection. The checklist is short and
-    /// its rows are non-interactive beyond the checkbox, so a clear-and-rebuild keeps title and checked
-    /// state always fresh without the bookkeeping an in-place reconcile would need.</summary>
+    /// <summary>Reconciles a row's nested checklist rows in place from its projection, by id — reusing
+    /// the existing row instances exactly like <see cref="SyncRows"/>. A clear-and-rebuild here would
+    /// tear down and re-realize every checkbox on every refresh (and every save routes through one):
+    /// that replayed the entrance animation on each item (a flicker on any reload, e.g. a task switch)
+    /// and — worse — destroyed the very checkbox the user just toggled mid-interaction, so its checked /
+    /// dim state never stuck and it couldn't be unchecked. Reusing instances avoids all of that; only a
+    /// genuinely new or retitled item is created.</summary>
     private void SyncChecklistRows(TaskRowViewModel row, TaskListItem item)
     {
-        row.ChecklistItems.Clear();
-        if (item.Checklist is { Count: > 0 } items)
-            foreach (var checklistItem in items)
-                row.AddChecklistItem(new ChecklistRowViewModel(item.Id, checklistItem, r => ToggleChecklistItemCommand.Execute(r)));
+        var target = row.ChecklistItems;
+        var items = item.Checklist ?? (IReadOnlyList<TaskListChecklistItem>)Array.Empty<TaskListChecklistItem>();
+
+        var desired = new HashSet<Guid>(items.Count);
+        foreach (var checklistItem in items) desired.Add(checklistItem.Id);
+        for (var i = target.Count - 1; i >= 0; i--)
+            if (!desired.Contains(target[i].Id))
+                target.RemoveAt(i);
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var checklistItem = items[i];
+            var existing = IndexOfChecklistRow(target, checklistItem.Id);
+            if (existing >= 0)
+            {
+                // The row's title is immutable, so reuse it only while the title is unchanged and just
+                // patch the checked state (silently — patching must not fire the toggle/save callback).
+                // A retitled item falls through to a fresh row.
+                if (target[existing].Title == ChecklistRowViewModel.DisplayTitle(checklistItem.Title))
+                {
+                    if (existing != i) target.Move(existing, i);
+                    target[i].SetCheckedSilently(checklistItem.IsChecked);
+                    continue;
+                }
+                target.RemoveAt(existing);
+            }
+            target.Insert(i, new ChecklistRowViewModel(item.Id, checklistItem, r => ToggleChecklistItemCommand.Execute(r)));
+        }
+    }
+
+    private static int IndexOfChecklistRow(ObservableCollection<ChecklistRowViewModel> rows, Guid id)
+    {
+        for (var i = 0; i < rows.Count; i++)
+            if (rows[i].Id == id) return i;
+        return -1;
     }
 
     private static int IndexOfRow(ObservableCollection<TaskRowViewModel> rows, Guid id)
