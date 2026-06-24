@@ -186,6 +186,9 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
+            <!-- Timeline content (scrolling track + empty state). The code hides this while the detail
+                 panel overlays it in the narrow layout, so the translucent panel keeps its exact color. -->
+            <Grid x:Name="ContentContainer">
             <Border
                 Margin="4,0,4,4"
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -245,6 +248,7 @@
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 Text="이 달에 표시할 날짜가 있는 할 일이 없습니다."
                 Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+            </Grid>
 
             <Border
                 x:Name="DetailPanel"
@@ -263,6 +267,7 @@
                 Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                 <Grid>
                     <Rectangle
+                        x:Name="DetailResizeHitArea"
                         Width="10"
                         Margin="-18,0,0,0"
                         HorizontalAlignment="Left"

@@ -24,6 +24,10 @@ public sealed partial class TimelinePage : Page
     private const double DetailMaxWidth = 680;
     private const double DetailPrimaryMinWidth = 340;
     private const double DetailCompactBreakpoint = 390;
+    // Below this content width the detail panel switches from a side-by-side column to a full-width
+    // overlay over the timeline (matching TaskListPage). The hysteresis band prevents edge chatter.
+    private const double SideBySideMinWidth = 600;
+    private const double LayoutHysteresis = 24;
     private const double KeyboardScrollStep = 440;
     private const double WheelScrollMultiplier = 2.0;
 
@@ -40,6 +44,7 @@ public sealed partial class TimelinePage : Page
     private double _detailPreferredWidth = DetailDefaultWidth;
     private double _resizeStartX;
     private double _resizeStartWidth;
+    private bool _detailOverlay;
 
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
@@ -346,6 +351,7 @@ public sealed partial class TimelinePage : Page
 
         panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
         {
+            UpdateContentObscured();
             var shown = panel.Visibility == Visibility.Visible;
             if (!_animationsEnabled)
             {
@@ -360,10 +366,68 @@ public sealed partial class TimelinePage : Page
     }
 
     private void ContentSplitGrid_SizeChanged(object sender, SizeChangedEventArgs e)
-        => ApplyDetailPanelWidth();
+        => UpdateSplitLayout();
 
     private void DetailPanel_SizeChanged(object sender, SizeChangedEventArgs e)
         => UpdateDetailResponsiveLayout();
+
+    /// <summary>
+    /// Picks the master/detail arrangement for the current content width: timeline and panel side by
+    /// side when there's room, or the panel as a full-width overlay over the timeline when narrow.
+    /// </summary>
+    private void UpdateSplitLayout()
+    {
+        var width = ContentSplitGrid.ActualWidth;
+        if (width <= 0)
+            return;
+
+        var overlay = _detailOverlay
+            ? width < SideBySideMinWidth + LayoutHysteresis
+            : width < SideBySideMinWidth;
+
+        if (overlay != _detailOverlay)
+            ApplyDetailLayoutMode(overlay);
+        else
+            ApplyDetailPanelWidth();
+    }
+
+    /// <summary>
+    /// Moves the detail panel between its side-by-side column and a full-width overlay over the timeline.
+    /// The panel's opaque background covers the timeline in overlay mode, so closing it reveals the
+    /// timeline again — the window is never resized on the user's behalf.
+    /// </summary>
+    private void ApplyDetailLayoutMode(bool overlay)
+    {
+        _detailOverlay = overlay;
+        if (overlay)
+        {
+            Grid.SetColumn(DetailPanel, 0);
+            Grid.SetColumnSpan(DetailPanel, 2);
+            DetailPanel.Width = double.NaN;
+            DetailResizeHitArea.Visibility = Visibility.Collapsed;
+            SetDetailResizeGripVisible(false);
+        }
+        else
+        {
+            Grid.SetColumn(DetailPanel, 1);
+            Grid.SetColumnSpan(DetailPanel, 1);
+            DetailResizeHitArea.Visibility = Visibility.Visible;
+        }
+        UpdateContentObscured();
+        ApplyDetailPanelWidth();
+    }
+
+    /// <summary>
+    /// In overlay mode the open panel covers the timeline. Hide the timeline while it's covered so the
+    /// translucent panel composites over the bare page exactly as it does side by side — identical color,
+    /// no see-through. Opacity (not Collapsed) preserves the timeline's scroll position.
+    /// </summary>
+    private void UpdateContentObscured()
+    {
+        var obscured = _detailOverlay && DetailPanel.Visibility == Visibility.Visible;
+        ContentContainer.Opacity = obscured ? 0 : 1;
+        ContentContainer.IsHitTestVisible = !obscured;
+    }
 
     private void DetailResizeHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
@@ -419,6 +483,14 @@ public sealed partial class TimelinePage : Page
 
     private void ApplyDetailPanelWidth()
     {
+        // In overlay mode the panel stretches across both columns (Width = NaN); leave it and only
+        // refresh the panel's internal one-/two-column responsive state.
+        if (_detailOverlay)
+        {
+            UpdateDetailResponsiveLayout();
+            return;
+        }
+
         if (ContentSplitGrid.ActualWidth <= 0)
             return;
 

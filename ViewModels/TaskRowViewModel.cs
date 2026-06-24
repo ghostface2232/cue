@@ -54,6 +54,8 @@ public partial class TaskRowViewModel : ObservableObject
     /// <summary>The row's group name, shown as a chip at the right edge; empty when the task is unfiled.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasGroup))]
+    [NotifyPropertyChangedFor(nameof(ShowRightMeta))]
+    [NotifyPropertyChangedFor(nameof(ShowInlineMeta))]
     public partial string GroupName { get; set; } = string.Empty;
 
     /// <summary>The group's sidebar glyph for the row chip (default folder glyph when the group set none).</summary>
@@ -64,7 +66,27 @@ public partial class TaskRowViewModel : ObservableObject
 
     /// <summary>The row's tags (color + name), shown as chips at the right edge; empty when untagged.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRightMeta))]
+    [NotifyPropertyChangedFor(nameof(ShowInlineMeta))]
     public partial IReadOnlyList<TaskRowTag> Tags { get; set; } = Array.Empty<TaskRowTag>();
+
+    /// <summary>
+    /// True when the list is narrow enough that the right-edge group/tag chips should reflow to a line
+    /// beneath the title instead of sitting at the row's right edge. Set by the page as the list resizes;
+    /// new rows inherit the list's current state (see <c>TaskListViewModel.SetRowsCompact</c>).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRightMeta))]
+    [NotifyPropertyChangedFor(nameof(ShowInlineMeta))]
+    public partial bool IsCompact { get; set; }
+
+    private bool HasGroupOrTags => HasGroup || Tags.Count > 0;
+
+    /// <summary>Group/tag chips sit at the right edge in the roomy layout…</summary>
+    public bool ShowRightMeta => !IsCompact && HasGroupOrTags;
+
+    /// <summary>…and reflow under the title once the list is compact.</summary>
+    public bool ShowInlineMeta => IsCompact && HasGroupOrTags;
 
     // Matches the sidebar's default group glyph (Segoe Fluent folder) when a group carries no icon.
     private const string DefaultGroupGlyph = "";

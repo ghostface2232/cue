@@ -353,9 +353,22 @@ public partial class TaskListViewModel : ObservableObject
 
     private TaskRowViewModel CreateRow(TaskListItem item)
     {
-        var row = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r));
+        var row = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r)) { IsCompact = _rowsCompact };
         SyncChecklistRows(row, item);
         return row;
+    }
+
+    // Tracks the list's current narrow/wide layout so rows created during a reload (a save, a task
+    // switch) inherit it without waiting for the next resize.
+    private bool _rowsCompact;
+
+    /// <summary>Sets whether rows reflow their right-edge group/tag chips beneath the title. The page
+    /// calls this as the list column resizes; the state is remembered so freshly created rows match.</summary>
+    public void SetRowsCompact(bool compact)
+    {
+        _rowsCompact = compact;
+        foreach (var row in AllRows())
+            row.IsCompact = compact;
     }
 
     // Fixed priority buckets for the 중요도 view, in display order. A bucket is shown only when it has rows.

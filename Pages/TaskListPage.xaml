@@ -124,6 +124,33 @@
                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap12}" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
                             </StackPanel>
+                            <!-- Compact reflow: when the list is too narrow for right-edge chips, the same
+                                 group/tag metadata drops to its own line under the title (driven by IsCompact). -->
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap12}" Visibility="{x:Bind ShowInlineMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="{StaticResource CueGap4}"
+                                    VerticalAlignment="Center"
+                                    Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
+                                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:TaskRowTag">
+                                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                                                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind Color, Converter={StaticResource HexToBrush}}" />
+                                                <TextBlock MaxWidth="140" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </StackPanel>
                         <!-- Right edge: the task's group (icon + name) and tags (color dot + name).
                              Each chunk hides itself when the task has no group / no tags. -->
@@ -132,14 +159,15 @@
                             Margin="12,0,2,0"
                             VerticalAlignment="Center"
                             Orientation="Horizontal"
-                            Spacing="{StaticResource CueGap12}">
+                            Spacing="{StaticResource CueGap12}"
+                            Visibility="{x:Bind ShowRightMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                             <StackPanel
                                 Orientation="Horizontal"
                                 Spacing="{StaticResource CueGap4}"
                                 VerticalAlignment="Center"
                                 Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                 <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
-                                <TextBlock FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" />
+                                <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                             <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}">
                                 <ItemsControl.ItemsPanel>
@@ -151,7 +179,7 @@
                                     <DataTemplate x:DataType="vm:TaskRowTag">
                                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
                                             <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind Color, Converter={StaticResource HexToBrush}}" />
-                                            <TextBlock FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Name}" />
+                                            <TextBlock MaxWidth="140" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -248,7 +276,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Grid>
+            <Grid x:Name="ListContainer" SizeChanged="ListContainer_SizeChanged">
                 <ScrollViewer behaviors:ScrollBarAutoHide.IsEnabled="True" Visibility="{x:Bind ViewModel.IsStandardList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <StackPanel>
                         <ItemsRepeater
@@ -322,6 +350,7 @@
                 </Border.Resources>
                 <Grid>
                     <Rectangle
+                        x:Name="DetailResizeHitArea"
                         Width="10"
                         Margin="-18,0,0,0"
                         HorizontalAlignment="Left"

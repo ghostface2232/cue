@@ -28,6 +28,16 @@ public sealed partial class TaskListPage : Page
     private const double DetailPrimaryMinWidth = 340;
     private const double DetailCompactBreakpoint = 390;
 
+    // Below this content width the list + detail panel can't sit side by side comfortably, so the panel
+    // switches to a full-width overlay over the list. Set near the floor where the list can still hold
+    // its primary min beside a shrunk panel, so the side-by-side (and its resize handle) survives as far
+    // down as it usefully can. A small hysteresis band keeps the switch from chattering at the edge.
+    private const double SideBySideMinWidth = 600;
+    private const double LayoutHysteresis = 24;
+    // The list reflows each row's right-edge group/tag chips beneath the title once its column gets this
+    // narrow — independent of the panel, since the list also narrows when the panel is open side by side.
+    private const double ListCompactWidth = 500;
+
     public TaskListViewModel ViewModel { get; }
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
@@ -38,6 +48,8 @@ public sealed partial class TaskListPage : Page
     private double _detailPreferredWidth = DetailDefaultWidth;
     private double _resizeStartX;
     private double _resizeStartWidth;
+    private bool _detailOverlay;
+    private bool _listCompact;
 
     // Set while a drag-reorder commits, so the row that moves in the bound collection does not also
     // play the list's entrance animation on top of the drop settle.
@@ -247,6 +259,7 @@ public sealed partial class TaskListPage : Page
 
         panel.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
         {
+            UpdateListObscured();
             var shown = panel.Visibility == Visibility.Visible;
             if (!_animationsEnabled)
             {
@@ -261,10 +274,86 @@ public sealed partial class TaskListPage : Page
     }
 
     private void ContentSplitGrid_SizeChanged(object sender, SizeChangedEventArgs e)
-        => ApplyDetailPanelWidth();
+        => UpdateSplitLayout();
 
     private void DetailPanel_SizeChanged(object sender, SizeChangedEventArgs e)
         => UpdateDetailResponsiveLayout();
+
+    private void ListContainer_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var width = e.NewSize.Width;
+        var compact = _listCompact
+            ? width < ListCompactWidth + LayoutHysteresis
+            : width < ListCompactWidth;
+        SetListCompact(compact);
+    }
+
+    private void SetListCompact(bool compact)
+    {
+        if (compact == _listCompact)
+            return;
+        _listCompact = compact;
+        ViewModel.SetRowsCompact(compact);
+    }
+
+    /// <summary>
+    /// Picks the master/detail arrangement for the current content width: list and panel side by side
+    /// when there's room, or the panel as a full-width overlay over the list when narrow. Runs on resize.
+    /// </summary>
+    private void UpdateSplitLayout()
+    {
+        var width = ContentSplitGrid.ActualWidth;
+        if (width <= 0)
+            return;
+
+        var overlay = _detailOverlay
+            ? width < SideBySideMinWidth + LayoutHysteresis
+            : width < SideBySideMinWidth;
+
+        if (overlay != _detailOverlay)
+            ApplyDetailLayoutMode(overlay);
+        else
+            ApplyDetailPanelWidth();
+    }
+
+    /// <summary>
+    /// Moves the detail panel between its side-by-side column and a full-width overlay over the list. The
+    /// panel's own opaque background covers the list in overlay mode, so closing it simply reveals the list
+    /// again — the window is never resized on the user's behalf.
+    /// </summary>
+    private void ApplyDetailLayoutMode(bool overlay)
+    {
+        _detailOverlay = overlay;
+        if (overlay)
+        {
+            Grid.SetColumn(DetailPanel, 0);
+            Grid.SetColumnSpan(DetailPanel, 2);   // stretch across the list + panel columns
+            DetailPanel.Width = double.NaN;
+            DetailResizeHitArea.Visibility = Visibility.Collapsed;
+            SetDetailResizeGripVisible(false);
+        }
+        else
+        {
+            Grid.SetColumn(DetailPanel, 1);
+            Grid.SetColumnSpan(DetailPanel, 1);
+            DetailResizeHitArea.Visibility = Visibility.Visible;
+        }
+        UpdateListObscured();
+        ApplyDetailPanelWidth();
+    }
+
+    /// <summary>
+    /// In overlay mode the open panel sits over the list. Rather than tint or back the translucent panel —
+    /// which can't reproduce the Mica-tinted surface it normally floats on — we hide the list while it's
+    /// covered: the panel then composites over the bare page exactly as it does side by side, so its color
+    /// is identical and nothing shows through. Opacity (not Collapsed) preserves the list's scroll state.
+    /// </summary>
+    private void UpdateListObscured()
+    {
+        var obscured = _detailOverlay && DetailPanel.Visibility == Visibility.Visible;
+        ListContainer.Opacity = obscured ? 0 : 1;
+        ListContainer.IsHitTestVisible = !obscured;
+    }
 
     private void DetailResizeHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
@@ -320,6 +409,14 @@ public sealed partial class TaskListPage : Page
 
     private void ApplyDetailPanelWidth()
     {
+        // In overlay mode the panel stretches to fill both columns (Width = NaN); leave it be and only
+        // refresh the panel's internal one-/two-column responsive state.
+        if (_detailOverlay)
+        {
+            UpdateDetailResponsiveLayout();
+            return;
+        }
+
         if (ContentSplitGrid.ActualWidth <= 0)
             return;
 

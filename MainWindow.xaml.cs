@@ -8,6 +8,7 @@ using Cue.Storage.Index;
 using Cue.ViewModels;
 using Cue.Services;
 using Windows.System;
+using System.Runtime.InteropServices;
 
 namespace Cue;
 
@@ -17,6 +18,11 @@ public sealed partial class MainWindow : Window
     // Windows App SDK default. Once the user resizes, their placement is restored on next launch.
     private const int DefaultWindowWidth = 900;
     private const int DefaultWindowHeight = 640;
+
+    // Floor below which the window can't be shrunk. Sized for the single-pane (overlay) layout so Cue
+    // stays usable as a narrow column. DIPs; scaled to physical pixels per the window's DPI.
+    private const int MinWindowWidth = 480;
+    private const int MinWindowHeight = 540;
 
     private TaskListNavigation? _currentNavigation;
     private readonly DialogService _dialogs;
@@ -48,6 +54,7 @@ public sealed partial class MainWindow : Window
         NormalizeSidebarItems();
 
         RestoreOrSetDefaultPlacement();
+        ApplyMinimumWindowSize();
         Closed += OnWindowClosed;
 
         // The system caption buttons (minimize/maximize/close) are drawn by AppWindow, not XAML, so
@@ -85,6 +92,23 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonPressedBackgroundColor = isDark
             ? Windows.UI.Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)
             : Windows.UI.Color.FromArgb(0x28, 0x00, 0x00, 0x00);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    /// <summary>Pins a minimum window size so the responsive layout never has to cope with an unusably
+    /// tiny window. Sized for the single-pane layout; converted from DIPs to physical pixels per DPI.</summary>
+    private void ApplyMinimumWindowSize()
+    {
+        if (AppWindow.Presenter is not OverlappedPresenter presenter)
+            return;
+
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var dpi = GetDpiForWindow(hwnd);
+        var scale = dpi == 0 ? 1.0 : dpi / 96.0;
+        presenter.PreferredMinimumWidth = (int)Math.Round(MinWindowWidth * scale);
+        presenter.PreferredMinimumHeight = (int)Math.Round(MinWindowHeight * scale);
     }
 
     /// <summary>Restores the last saved window placement, or centers a compact default on first run.</summary>
