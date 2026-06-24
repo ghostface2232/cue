@@ -319,15 +319,22 @@ public partial class TaskListViewModel : ObservableObject
         await _toggleGate.WaitAsync();
         try
         {
-            var parent = await _store.GetAsync<TaskItem>(row.ParentTaskId);
-            var item = parent?.Checklist.FirstOrDefault(i => i.Id == row.Id);
-            if (parent is null || parent.IsDeleted || item is null)
+            // Atomic read-modify-write through the store: flip just this item on the latest persisted
+            // task, so a concurrent detail-panel metadata save (a different save path) can't clobber the
+            // checklist, nor this toggle the metadata. MutateAsync returns null when the task or item is
+            // gone, in which case the checkbox is put back.
+            var saved = await _store.MutateAsync<TaskItem>(row.ParentTaskId, task =>
+            {
+                var item = task.Checklist.FirstOrDefault(i => i.Id == row.Id);
+                if (item is null) return false;
+                item.IsChecked = isChecked;
+                return true;
+            });
+            if (saved is null)
             {
                 row.SetCheckedSilently(!isChecked);
                 return;
             }
-            item.IsChecked = isChecked;
-            await _store.SaveAsync(parent);
             await LoadAsync();
         }
         catch
@@ -520,21 +527,28 @@ public partial class TaskListViewModel : ObservableObject
     /// null, then refreshes. A no-op if the task is gone or already there.</summary>
     public async Task MoveTaskToTaskGroupAsync(Guid taskId, Guid? taskGroupId)
     {
-        var task = await _store.GetAsync<TaskItem>(taskId);
-        if (task is null || task.IsDeleted || task.TaskGroupId == taskGroupId) return;
-        task.TaskGroupId = taskGroupId;
-        await _store.SaveAsync(task);
-        await LoadAsync();
+        // Atomic read-modify-write so moving the task touches only TaskGroupId on the latest record,
+        // never overwriting a field a concurrent save path changed. Returning false leaves it a no-op
+        // (and skips the reload) when the task is already in the target group.
+        var moved = await _store.MutateAsync<TaskItem>(taskId, task =>
+        {
+            if (task.TaskGroupId == taskGroupId) return false;
+            task.TaskGroupId = taskGroupId;
+            return true;
+        });
+        if (moved is not null) await LoadAsync();
     }
 
     /// <summary>Adds the tag if absent, removes it if present, then refreshes.</summary>
     public async Task ToggleTaskTagAsync(Guid taskId, Guid tagId)
     {
-        var task = await _store.GetAsync<TaskItem>(taskId);
-        if (task is null || task.IsDeleted) return;
-        if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
-        await _store.SaveAsync(task);
-        await LoadAsync();
+        // Atomic read-modify-write so the tag toggle touches only TagIds on the latest record.
+        var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
+        {
+            if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
+            return true;
+        });
+        if (changed is not null) await LoadAsync();
     }
 
     /// <summary>Renames a task, then refreshes. A blank name is ignored.</summary>
@@ -542,11 +556,9 @@ public partial class TaskListViewModel : ObservableObject
     {
         var trimmed = title.Trim();
         if (trimmed.Length == 0) return;
-        var task = await _store.GetAsync<TaskItem>(taskId);
-        if (task is null || task.IsDeleted) return;
-        task.Title = trimmed;
-        await _store.SaveAsync(task);
-        await LoadAsync();
+        // Atomic read-modify-write so the rename touches only Title on the latest record.
+        var renamed = await _store.MutateAsync<TaskItem>(taskId, task => { task.Title = trimmed; return true; });
+        if (renamed is not null) await LoadAsync();
     }
 
     /// <summary>Soft-deletes a task (its embedded checklist goes with it), closes the detail panel if
@@ -597,12 +609,9 @@ public partial class TaskListViewModel : ObservableObject
             }
             else
             {
-                var task = await _store.GetAsync<TaskItem>(row.Id);
-                if (task is not null)
-                {
-                    task.CompletedAt = null;
-                    await _store.SaveAsync(task);
-                }
+                // Atomic read-modify-write so clearing completion touches only CompletedAt on the
+                // latest record, never overwriting a field a concurrent save path just changed.
+                await _store.MutateAsync<TaskItem>(row.Id, task => { task.CompletedAt = null; return true; });
             }
             // Keep the row in place for this session so completion has a visible, reversible
             // acknowledgement. Index-backed navigation/reload naturally removes it later.

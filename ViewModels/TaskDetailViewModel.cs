@@ -120,9 +120,6 @@ public partial class TaskDetailViewModel : ObservableObject
     private readonly Func<Task> _refreshOwner;
     private readonly INavDataChangeNotifier _navNotifier;
 
-    // Serializes checklist writes (add/remove/edit/tick) so a fast run of edits can't interleave their
-    // load-modify-save of the parent task.
-    private readonly SemaphoreSlim _checklistGate = new(1, 1);
     private Guid? _taskId;
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
     private WhenEditorMode _loadedWhenMode;
@@ -144,6 +141,13 @@ public partial class TaskDetailViewModel : ObservableObject
     // not just the latest. Links are appended on the UI thread, so the store write and owner refresh
     // resume on the captured UI context.
     private Task _saveChain = Task.CompletedTask;
+
+    // Checklist writes (add/remove/tick/title) run on their own serial chain, parallel to _saveChain.
+    // Each link captures the rows synchronously when the edit happens and persists through the store's
+    // atomic MutateAsync, so it replaces only the checklist and never clobbers a concurrent metadata
+    // save. The tail is tracked here (not fire-and-forget) so DrainPendingSaveAsync — and therefore a
+    // task switch or close — waits for pending checklist writes too, never stranding one.
+    private Task _checklistChain = Task.CompletedTask;
 
     public IReadOnlyList<Priority> Priorities { get; } = Enum.GetValues<Priority>();
     public IReadOnlyList<TimeOption> Hours { get; } = Enumerable.Range(0, 24).Select(value => new TimeOption(value, value.ToString("00"))).ToArray();
@@ -386,11 +390,19 @@ public partial class TaskDetailViewModel : ObservableObject
         if (CaptureSnapshot() is { } snapshot) Enqueue(snapshot);
     }
 
-    /// <summary>Awaits every autosave queued so far. A test/diagnostic seam: production code fires
-    /// autosaves and forgets them (the chain keeps them ordered); only callers that need to observe the
-    /// persisted result deterministically — or a task switch that must not strand a pending write — await
-    /// this. The chain's tail completes only after every link before it, so this drains the full queue.</summary>
-    internal Task DrainPendingSaveAsync() => _saveChain;
+    /// <summary>Awaits every autosave queued so far across <i>both</i> save paths — metadata edits on
+    /// <see cref="_saveChain"/> and checklist edits on <see cref="_checklistChain"/>. A test/diagnostic
+    /// seam: production code fires autosaves and forgets them (the chains keep each path ordered); only
+    /// callers that need to observe the persisted result deterministically — or a task switch/close that
+    /// must not strand a pending write — await this. Each chain's tail completes only after every link
+    /// before it, so this drains both queues in full. Faults are swallowed (each save logs its own).</summary>
+    internal async Task DrainPendingSaveAsync()
+    {
+        var metadata = _saveChain;
+        var checklist = _checklistChain;
+        try { await metadata; } catch { /* logged by the failing save */ }
+        try { await checklist; } catch { /* logged by the failing save */ }
+    }
 
     /// <summary>Captures the panel's current edits as an immutable snapshot, or <c>null</c> when no task is
     /// open. Reads every field (and resolves When via <see cref="BuildWhen"/>) on the calling thread so the
@@ -452,18 +464,21 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         try
         {
-            var task = await _store.GetAsync<TaskItem>(snapshot.Id);
-            if (task is null || task.IsDeleted) return;
-
-            task.Title = snapshot.Title;
-            task.Notes = snapshot.Notes;
-            task.Priority = snapshot.Priority;
-            task.When = snapshot.When;
-            task.TaskGroupId = snapshot.TaskGroupId;
-            task.TagIds = snapshot.TagIds.ToList();
-
-            await _store.SaveAsync(task);
-            await _refreshOwner();
+            // Read-modify-write the metadata fields atomically: MutateAsync re-reads the live record
+            // under the store's write lock and the closure replaces only the snapshot's fields. The
+            // embedded checklist is left untouched, so a checklist save that committed in between is
+            // preserved rather than overwritten with the copy this save happened to load.
+            var saved = await _store.MutateAsync<TaskItem>(snapshot.Id, task =>
+            {
+                task.Title = snapshot.Title;
+                task.Notes = snapshot.Notes;
+                task.Priority = snapshot.Priority;
+                task.When = snapshot.When;
+                task.TaskGroupId = snapshot.TaskGroupId;
+                task.TagIds = snapshot.TagIds.ToList();
+                return true;
+            });
+            if (saved is not null) await _refreshOwner();
         }
         catch (Exception ex)
         {
@@ -472,26 +487,22 @@ public partial class TaskDetailViewModel : ObservableObject
     }
 
     /// <summary>Appends a checklist item to the open task (title from the inline box), persists the
-    /// parent, and adds the matching row to the panel without a full reload (so focus is undisturbed).</summary>
+    /// parent, and adds the matching row to the panel without a full reload (so focus is undisturbed).
+    /// Runs on the serial checklist chain so it can't interleave with a tick/title save, and persists
+    /// through the store's atomic MutateAsync so it appends to the latest checklist on disk.</summary>
     [RelayCommand]
-    private async Task AddChecklistItemAsync()
+    private Task AddChecklistItemAsync()
     {
-        if (_taskId is not { } id || string.IsNullOrWhiteSpace(NewChecklistItemTitle)) return;
-        await _checklistGate.WaitAsync();
-        try
+        if (_taskId is not { } id || string.IsNullOrWhiteSpace(NewChecklistItemTitle)) return Task.CompletedTask;
+        var item = new ChecklistItem { Title = NewChecklistItemTitle.Trim() };
+        return EnqueueChecklistOp(async () =>
         {
-            var parent = await _store.GetAsync<TaskItem>(id);
-            if (parent is null || parent.IsDeleted) return;
-
-            var item = new ChecklistItem { Title = NewChecklistItemTitle.Trim() };
-            parent.Checklist.Add(item);
-            await _store.SaveAsync(parent);
-
+            var saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist.Add(item); return true; });
+            if (saved is null) return;
             Checklist.Add(CreateChecklistRow(item));
             NewChecklistItemTitle = string.Empty;
             await _refreshOwner();
-        }
-        finally { _checklistGate.Release(); }
+        });
     }
 
     /// <summary>Reveals the inline "new tag" field in the tag card (the + 새 태그 affordance).</summary>
@@ -575,53 +586,58 @@ public partial class TaskDetailViewModel : ObservableObject
     /// <summary>Removes one checklist item from the open task, persists the parent, and drops its row
     /// from the panel. Embedded items have no tombstone — they are removed outright.</summary>
     [RelayCommand]
-    private async Task DeleteChecklistItemAsync(Guid id)
+    private Task DeleteChecklistItemAsync(Guid id)
     {
-        if (_taskId is not { } taskId) return;
-        await _checklistGate.WaitAsync();
-        try
+        if (_taskId is not { } taskId) return Task.CompletedTask;
+        return EnqueueChecklistOp(async () =>
         {
-            var parent = await _store.GetAsync<TaskItem>(taskId);
-            if (parent is null || parent.IsDeleted) return;
-
-            parent.Checklist.RemoveAll(item => item.Id == id);
-            await _store.SaveAsync(parent);
-
+            var saved = await _store.MutateAsync<TaskItem>(taskId, task => { task.Checklist.RemoveAll(item => item.Id == id); return true; });
+            if (saved is null) return;
             if (Checklist.FirstOrDefault(item => item.Id == id) is { } row) Checklist.Remove(row);
             await _refreshOwner();
-        }
-        finally { _checklistGate.Release(); }
+        });
     }
 
-    /// <summary>Persists the checklist after a tick / title edit: rebuilds the parent task's
-    /// checklist from the panel's current rows and saves. Does not reload the rows, so an in-progress
-    /// edit keeps focus. Serialized through the checklist gate; failures are logged, not thrown.</summary>
-    private async Task SaveChecklistAsync()
+    /// <summary>Persists the checklist after a tick / title edit: captures the panel's current rows and
+    /// replaces the parent task's checklist with them through the store's atomic MutateAsync (which
+    /// preserves metadata edited concurrently). Does not reload the rows, so an in-progress edit keeps
+    /// focus. The row snapshot is captured synchronously by the caller before the chained save runs, so
+    /// a task switch that repopulates the collection can't make this write one task's items onto
+    /// another. Serialized on the checklist chain; failures are logged, not thrown.</summary>
+    private void QueueChecklistSave()
     {
         if (_taskId is not { } id) return;
-        // Snapshot the rows synchronously (before any await), so a task switch that repopulates the
-        // Checklist collection can't make this save write one task's items onto another.
+        // Snapshot the rows synchronously (on the UI thread, before any await) so the values are bound
+        // to this edit and can't shift under a later save or a task switch.
         var snapshot = Checklist.Select(row => new ChecklistItem
         {
             Id = row.Id,
             Title = row.Title.Trim(),
             IsChecked = row.IsChecked,
         }).ToList();
-        await _checklistGate.WaitAsync();
-        try
+        _ = EnqueueChecklistOp(async () =>
         {
-            var parent = await _store.GetAsync<TaskItem>(id);
-            if (parent is null || parent.IsDeleted) return;
+            var saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist = snapshot; return true; });
+            if (saved is not null) await _refreshOwner();
+        });
+    }
 
-            parent.Checklist = snapshot;
-            await _store.SaveAsync(parent);
-            await _refreshOwner();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[Cue] Checklist save failed: {ex.Message}");
-        }
-        finally { _checklistGate.Release(); }
+    /// <summary>Appends one checklist operation to the serial checklist chain and returns its completion.
+    /// Awaiting the previous link first keeps add/remove/tick/title writes strictly ordered; a prior
+    /// link's failure is swallowed here so it can't stall the queue behind it (each op logs its own).
+    /// Called on the UI thread, so the op's store write and owner refresh resume on the UI context.</summary>
+    private Task EnqueueChecklistOp(Func<Task> op)
+    {
+        var next = ChainChecklistAsync(_checklistChain, op);
+        _checklistChain = next;
+        return next;
+    }
+
+    private static async Task ChainChecklistAsync(Task previous, Func<Task> op)
+    {
+        try { await previous; } catch { /* logged by the failing op */ }
+        try { await op(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Cue] Checklist save failed: {ex.Message}"); }
     }
 
     private ScheduledWhen BuildWhen()
@@ -748,8 +764,9 @@ public partial class TaskDetailViewModel : ObservableObject
             Checklist.Add(CreateChecklistRow(item));
     }
 
-    // The change callback is fire-and-forget; the explicit discard documents that the save Task is
-    // intentionally unobserved (SaveChecklistAsync swallows its own failures, so no unobserved exception).
+    // A tick/title edit queues a checklist save on the serial chain (captured synchronously here, so it
+    // records the row's edited values). The chain tail is tracked in _checklistChain, so the save is no
+    // longer truly fire-and-forget — DrainPendingSaveAsync/FlushAsync wait for it on switch and close.
     private ChecklistItemViewModel CreateChecklistRow(ChecklistItem item)
-        => new(item, changed => { _ = SaveChecklistAsync(); });
+        => new(item, changed => QueueChecklistSave());
 }

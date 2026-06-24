@@ -81,6 +81,56 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         finally { _mutationGate.Release(); }
     }
 
+    /// <summary>
+    /// Atomic read-modify-write: holds <see cref="_mutationGate"/> across the file read, the caller's
+    /// mutation, and the write+index reflect — the same lock <see cref="SaveAsync"/> takes. Several
+    /// callers updating different fields of one task (detail metadata, the embedded checklist, a list
+    /// completion/checklist toggle) therefore each see the latest persisted record and write back only
+    /// their own change, so none can resurrect another's stale copy.
+    /// </summary>
+    public async Task<T?> MutateAsync<T>(Guid id, Func<T, bool> mutate, CancellationToken cancellationToken = default)
+        where T : RecordBase
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _files.GetAsync<T>(id, cancellationToken).ConfigureAwait(false);
+            if (record is null || record.IsDeleted) return null;
+            if (!mutate(record)) return null;
+            await SaveCoreAsync(record, cancellationToken).ConfigureAwait(false);
+            return record;
+        }
+        finally { _mutationGate.Release(); }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> as one atomic unit while holding <see cref="_mutationGate"/>, the
+    /// same lock <see cref="SaveAsync"/>/<see cref="MutateAsync"/> take. The scope's reads and saves use
+    /// the un-gated core (the gate is already held), so a multi-record operation — recurrence completion
+    /// writes the Logbook copy and then advances the original — commits together and cannot interleave
+    /// with another save path that would clobber a shared record.
+    /// </summary>
+    public async Task RunInTransactionAsync(Func<ITaskMutationScope, CancellationToken, Task> work, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await work(new GatedScope(this), cancellationToken).ConfigureAwait(false); }
+        finally { _mutationGate.Release(); }
+    }
+
+    /// <summary>The transaction scope handed to <see cref="RunInTransactionAsync"/>: reads come from the
+    /// files and saves go through <see cref="SaveCoreAsync"/>, both <i>without</i> re-taking the mutation
+    /// gate (the transaction already holds it), so an inner save can't deadlock on the held lock.</summary>
+    private sealed class GatedScope(IndexedTaskStore store) : ITaskMutationScope
+    {
+        public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
+            => store._files.GetAsync<T>(id, cancellationToken);
+
+        public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
+            => store.SaveCoreAsync(record, cancellationToken);
+    }
+
     private async Task SaveCoreAsync<T>(T record, CancellationToken cancellationToken) where T : RecordBase
     {
         var existing = await _files.GetAsync<T>(record.Id, cancellationToken).ConfigureAwait(false);

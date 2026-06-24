@@ -186,6 +186,139 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task MutateAsync_SerializesReadModifyWrite_SoConcurrentFieldUpdatesDoNotClobber()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "parent", Priority = Priority.None };
+        task.Checklist.Add(new ChecklistItem { Title = "X" });
+        await store.SaveAsync(task);
+
+        // Two read-modify-writes of the same task, each touching a different field, launched without a
+        // barrier between them. Because MutateAsync holds the store's write lock across the whole
+        // read-modify-write, each one reads the other's committed result and writes back only its own
+        // field — so neither resurrects a stale copy that drops the other's change.
+        var metadata = store.MutateAsync<TaskItem>(task.Id, t => { t.Priority = Priority.P1; return true; });
+        var checklist = store.MutateAsync<TaskItem>(task.Id, t => { t.Checklist[0].IsChecked = true; return true; });
+        await Task.WhenAll(metadata, checklist);
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);        // the metadata update survived
+        Assert.True(saved.Checklist[0].IsChecked);          // the checklist update survived
+    }
+
+    [Fact]
+    public async Task MutateAsync_ReturningFalse_SkipsTheSave_AndLeavesUpdatedAtUntouched()
+    {
+        using var temp = new TempDirectory();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "parent" };
+        await store.SaveAsync(task);
+        var before = (await store.GetAsync<TaskItem>(task.Id))!.UpdatedAt;
+
+        clock.Now = new DateTimeOffset(2026, 6, 23, 5, 0, 0, TimeSpan.Zero);
+        var result = await store.MutateAsync<TaskItem>(task.Id, _ => false);
+
+        Assert.Null(result); // declined to save
+        Assert.Equal(before, (await store.GetAsync<TaskItem>(task.Id))!.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task DetailChecklistEditAndMetadataAutoSave_Interleaved_NeitherClobbersTheOther()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "parent", Priority = Priority.None };
+        task.Checklist.Add(new ChecklistItem { Title = "X" });
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Tick the checklist item (queues a checklist save) and change the priority (queues a metadata
+        // save) back to back, without awaiting either — the exact cross the two independent save paths
+        // could take. Draining both must leave each edit intact: the metadata save must not write back
+        // an old checklist, and the checklist save must not write back an old priority.
+        vm.Detail.Checklist[0].IsChecked = true;
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);
+        Assert.True(Assert.Single(saved.Checklist).IsChecked);
+    }
+
+    [Fact]
+    public async Task FlushAsync_WaitsForPendingChecklistSave_NotJustMetadata()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "parent" };
+        task.Checklist.Add(new ChecklistItem { Title = "X" });
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        // A checklist tick is fired and forgotten; the close/switch flush must still wait for it. Before
+        // the fix FlushAsync only drained the metadata chain, so a tick made right before a switch could
+        // be stranded and lost.
+        vm.Detail.Checklist[0].IsChecked = true;
+        await vm.Detail.FlushAsync();
+
+        Assert.True(Assert.Single((await store.GetAsync<TaskItem>(task.Id))!.Checklist).IsChecked);
+    }
+
+    [Fact]
+    public async Task ListCompletion_AndDetailMetadataEdit_Concurrent_NeitherClobbersTheOther()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "task", Priority = Priority.None };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Change the priority from the detail panel (queues a metadata autosave, which writes Priority
+        // but never CompletedAt) and complete the same task from the list (which writes CompletedAt but
+        // never Priority). Run through the completion service and drain the autosave. Because both go
+        // through the store's atomic read-modify-write, the completion can't write back a stale priority
+        // and the metadata save can't write back a stale (uncompleted) state.
+        vm.Detail.SelectedPriority = Priority.P1;
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);   // the detail edit survived the completion
+        Assert.True(saved.IsCompleted);               // the completion survived the detail edit
+    }
+
+    [Fact]
     public async Task SegmentedTimeEditorSavesExactChosenTime()
     {
         using var temp = new TempDirectory();
