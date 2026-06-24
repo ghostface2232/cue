@@ -85,10 +85,10 @@
     <!-- Sidebar group/tag rows: the hover/selection pill, the icon, and the label are positioned
          independently (see NavRow_Loaded, which sets these directly on the presenter's LayoutRoot /
          ContentGrid / ContentPresenter so they actually apply over the NavigationView nesting indent).
-         Left-to-right the order is pill ◂ icon ◂ label, each value below being the left offset (px):
-         pill-left within the row, icon-left from the pill, label-left from the icon column. Tune these
-         three to set the gaps. -->
-    <x:Double x:Key="CueNavPillLeft">16</x:Double>
+         The highlight pill starts from the stock 4px NavigationView row gutter. The right side gets
+         a 1px optical compensation because it sits against the content separator. -->
+    <x:Double x:Key="CueNavPillLeft">4</x:Double>
+    <x:Double x:Key="CueNavPillRight">5</x:Double>
     <!-- The accent selection bar + content sit inside PresenterContentRootGrid, which the NavigationView
          indents on its own — leaving a gap between the highlight's left edge and the accent bar. This is
          that gap (0 = bar flush to the highlight's left edge). -->
@@ -202,6 +202,7 @@
     <!-- NavigationView: flatten the selected-item text to primary (calmer, Things-3-like).
          Mirrors Files/Settings NavigationViewItemButtonStyle. Overrides the stock keys app-wide;
          theme-correct because the Color is itself a ThemeResource. -->
+    <Thickness x:Key="NavigationViewItemContentPresenterMargin">4,-1,4,-1</Thickness>
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="{ThemeResource TextFillColorPrimary}" />
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPressed" Color="{ThemeResource TextFillColorPrimary}" />
@@ -299,11 +300,7 @@
                         <Grid
                             x:Name="CheckContainer"
                             Width="20"
-                            Height="20"
-                            RenderTransformOrigin="0.5,0.5">
-                            <Grid.RenderTransform>
-                                <ScaleTransform x:Name="CheckScale" />
-                            </Grid.RenderTransform>
+                            Height="20">
                             <Ellipse
                                 x:Name="Outline"
                                 Width="20"
@@ -362,28 +359,6 @@
                                             Storyboard.TargetProperty="Opacity"
                                             To="0"
                                             Duration="0:0:0.12" />
-                                        <DoubleAnimationUsingKeyFrames Storyboard.TargetName="CheckScale" Storyboard.TargetProperty="ScaleX">
-                                            <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="0.6" />
-                                            <SplineDoubleKeyFrame
-                                                KeySpline="0.1,0.9 0.2,1.0"
-                                                KeyTime="0:0:0.18"
-                                                Value="1.15" />
-                                            <SplineDoubleKeyFrame
-                                                KeySpline="0.2,0 0,1"
-                                                KeyTime="0:0:0.28"
-                                                Value="1.0" />
-                                        </DoubleAnimationUsingKeyFrames>
-                                        <DoubleAnimationUsingKeyFrames Storyboard.TargetName="CheckScale" Storyboard.TargetProperty="ScaleY">
-                                            <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="0.6" />
-                                            <SplineDoubleKeyFrame
-                                                KeySpline="0.1,0.9 0.2,1.0"
-                                                KeyTime="0:0:0.18"
-                                                Value="1.15" />
-                                            <SplineDoubleKeyFrame
-                                                KeySpline="0.2,0 0,1"
-                                                KeyTime="0:0:0.28"
-                                                Value="1.0" />
-                                        </DoubleAnimationUsingKeyFrames>
                                     </Storyboard>
                                 </VisualState>
                                 <VisualState x:Name="CheckedPointerOver">

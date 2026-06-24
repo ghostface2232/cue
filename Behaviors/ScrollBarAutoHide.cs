@@ -37,6 +37,13 @@ public static class ScrollBarAutoHide
     public static void SetIsEnabled(DependencyObject element, bool value) => element.SetValue(IsEnabledProperty, value);
     public static bool GetIsEnabled(DependencyObject element) => (bool)element.GetValue(IsEnabledProperty);
 
+    public static readonly DependencyProperty ReserveGutterProperty =
+        DependencyProperty.RegisterAttached(
+            "ReserveGutter", typeof(bool), typeof(ScrollBarAutoHide), new PropertyMetadata(true));
+
+    public static void SetReserveGutter(DependencyObject element, bool value) => element.SetValue(ReserveGutterProperty, value);
+    public static bool GetReserveGutter(DependencyObject element) => (bool)element.GetValue(ReserveGutterProperty);
+
     // One controller per ScrollViewer; the table lets the controller die with its ScrollViewer.
     private static readonly ConditionalWeakTable<ScrollViewer, Controller> Controllers = new();
 
@@ -56,23 +63,24 @@ public static class ScrollBarAutoHide
 
     private static void Hook(FrameworkElement element)
     {
+        var reserveGutter = GetReserveGutter(element);
         // The behavior may sit on the ScrollViewer itself, or on a host whose template owns one or more
         // (a ListView has one; a NavigationView has several). Wiring is idempotent — the weak table
         // skips any ScrollViewer already managed — so a host and an inner element can both opt in.
         if (element is ScrollViewer scrollViewer)
         {
-            Wire(scrollViewer);
+            Wire(scrollViewer, reserveGutter);
             return;
         }
         var found = new List<ScrollViewer>();
         CollectDescendants(element, found);
-        foreach (var inner in found) Wire(inner);
+        foreach (var inner in found) Wire(inner, reserveGutter);
     }
 
-    private static void Wire(ScrollViewer scrollViewer)
+    private static void Wire(ScrollViewer scrollViewer, bool reserveGutter)
     {
         if (Controllers.TryGetValue(scrollViewer, out _)) return;
-        var controller = new Controller(scrollViewer);
+        var controller = new Controller(scrollViewer, reserveGutter);
         Controllers.Add(scrollViewer, controller);
         controller.Attach();
     }
@@ -118,14 +126,16 @@ public static class ScrollBarAutoHide
         private readonly List<ScrollBar> _bars = new();
         private readonly HashSet<ScrollBar> _indicatorHooked = new();
         private readonly Thickness _basePadding;
+        private readonly bool _reserveGutter;
         private bool _scrollViewerIndicatorHooked;
         private bool _hovering;
         private bool _shown;
         private bool _forcing;
 
-        public Controller(ScrollViewer scrollViewer)
+        public Controller(ScrollViewer scrollViewer, bool reserveGutter)
         {
             _scrollViewer = scrollViewer;
+            _reserveGutter = reserveGutter;
             _basePadding = scrollViewer.Padding;
             _idle.Tick += (_, _) =>
             {
@@ -165,6 +175,9 @@ public static class ScrollBarAutoHide
 
         private void ReserveScrollBarGutter()
         {
+            if (!_reserveGutter)
+                return;
+
             var right = _scrollViewer.VerticalScrollBarVisibility == ScrollBarVisibility.Disabled
                 ? _basePadding.Right
                 : Math.Max(_basePadding.Right, ScrollBarGutter);

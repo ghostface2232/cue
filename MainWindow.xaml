@@ -35,6 +35,7 @@
             x:Name="NavView"
             Grid.Row="1"
             behaviors:ScrollBarAutoHide.IsEnabled="True"
+            behaviors:ScrollBarAutoHide.ReserveGutter="False"
             FontFamily="{StaticResource CueFontFamily}"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"

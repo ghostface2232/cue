@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly AppPreferences _preferences;
+    private readonly HashSet<NavigationViewItem> _insetNavItems = new();
 
     // While the sidebar makes its own group/tag edit it refreshes the pane directly, so it ignores the
     // notification it triggers (the detail panels still react to it). A detail-panel edit leaves this
@@ -44,6 +45,7 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon("Assets/AppIcon.ico");
+        NormalizeSidebarItems();
 
         RestoreOrSetDefaultPlacement();
         Closed += OnWindowClosed;
@@ -56,6 +58,7 @@ public sealed partial class MainWindow : Window
         ApplyCaptionButtonColors();
 
         NavView.Loaded += NavView_Loaded;
+        NavView.DisplayModeChanged += (_, _) => UpdateNavRowInsets();
     }
 
     /// <summary>Tints the system caption buttons to match the current theme (transparent backgrounds,
@@ -138,6 +141,7 @@ public sealed partial class MainWindow : Window
     private void TitleBar_PaneToggleRequested(TitleBar sender, object args)
     {
         NavView.IsPaneOpen = !NavView.IsPaneOpen;
+        DispatcherQueue.TryEnqueue(UpdateNavRowInsets);
     }
 
     private void TitleBar_BackRequested(TitleBar sender, object args)
@@ -264,6 +268,7 @@ public sealed partial class MainWindow : Window
         };
 
         section.MenuItems.Add(item);
+        NormalizeSidebarItem(item);
         section.IsExpanded = true;
         box.Loaded += (_, _) => box.Focus(FocusState.Programmatic);
     }
@@ -313,6 +318,33 @@ public sealed partial class MainWindow : Window
             "태그 없음", TaskListMode.NoTag, ViewModel.NoTagTaskCount));
         foreach (var tag in ViewModel.Tags)
             TagsSection.MenuItems.Add(CreateTagItem(tag));
+        NormalizeSidebarItems();
+        UpdateNavRowInsets();
+    }
+
+    private void NormalizeSidebarItems()
+    {
+        foreach (var item in NavView.MenuItems)
+            NormalizeSidebarObject(item);
+        foreach (var item in NavView.FooterMenuItems)
+            NormalizeSidebarObject(item);
+    }
+
+    private void NormalizeSidebarObject(object item)
+    {
+        if (item is not NavigationViewItem navItem)
+            return;
+
+        NormalizeSidebarItem(navItem);
+        foreach (var child in navItem.MenuItems)
+            NormalizeSidebarObject(child);
+    }
+
+    private void NormalizeSidebarItem(NavigationViewItem item)
+    {
+        item.HorizontalAlignment = HorizontalAlignment.Stretch;
+        item.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        ApplyNavRowInset(item);
     }
 
     /// <summary>The 그룹 없음 / 태그 없음 collection points: a fixed entry per section that re-gathers
@@ -326,7 +358,7 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(mode, null, title),
             Icon = new FontIcon { Glyph = "" },
         };
-        ApplyNavRowInset(item);
+        NormalizeSidebarItem(item);
         if (openCount > 0)
             item.InfoBadge = CreateCountBadge(openCount);
         return item;
@@ -453,10 +485,10 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(TaskListMode.TaskGroup, taskGroup.Id, taskGroup.Name),
             Icon = icon,
         };
+        NormalizeSidebarItem(item);
         // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
         // tap from also navigating into the group.
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTaskGroupIconPicker((FrameworkElement)sender, taskGroup.Id, taskGroup.Icon); };
-        ApplyNavRowInset(item);
         if (ViewModel.TaskGroupTaskCounts.TryGetValue(taskGroup.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(taskGroup, isGroup: true, item);
@@ -474,9 +506,9 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(TaskListMode.Tag, tag.Id, tag.Name),
             Icon = icon,
         };
+        NormalizeSidebarItem(item);
         // Tapping the glyph opens the color picker directly (no right-click depth).
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTagColorPicker((FrameworkElement)sender, tag.Id, tag.Color); };
-        ApplyNavRowInset(item);
         if (ViewModel.TagTaskCounts.TryGetValue(tag.Id, out var count) && count > 0)
             item.InfoBadge = CreateCountBadge(count);
         item.ContextFlyout = CreateRecordMenu(tag, isGroup: false, item);
@@ -499,29 +531,52 @@ public sealed partial class MainWindow : Window
         catch { return null; }
     }
 
-    /// <summary>Positions a group/tag row's hover/selection pill, icon, and label independently so the
-    /// pill sits left of the (indented) icon, then the icon, then the label. Resource overrides don't
-    /// reach the nesting indent the NavigationView puts on the inner ContentGrid, so this sets the three
-    /// presenter elements directly once the row is realized. Idempotent, so it's safe on container reuse.</summary>
-    private void ApplyNavRowInset(NavigationViewItem item) => item.Loaded += NavRow_Loaded;
+    /// <summary>Positions a sidebar row's hover/selection pill, icon, and label independently. Resource
+    /// overrides don't reach the NavigationView presenter's built-in right margin and nesting indent, so
+    /// this sets the relevant template parts directly once the row is realized. Idempotent, so it's safe
+    /// on container reuse.</summary>
+    private void ApplyNavRowInset(NavigationViewItem item)
+    {
+        if (!_insetNavItems.Add(item))
+            return;
+
+        item.Loaded += NavRow_Loaded;
+        if (item.IsLoaded)
+            ApplyNavRowInsetForCurrentPane(item);
+    }
 
     private void NavRow_Loaded(object sender, RoutedEventArgs e)
     {
-        if (sender is not DependencyObject root) return;
+        if (sender is not NavigationViewItem item) return;
+        ApplyNavRowInsetForCurrentPane(item);
+    }
+
+    private void UpdateNavRowInsets()
+    {
+        foreach (var item in _insetNavItems)
+        {
+            if (item.IsLoaded)
+                ApplyNavRowInsetForCurrentPane(item);
+        }
+    }
+
+    private void ApplyNavRowInsetForCurrentPane(DependencyObject root)
+    {
+        var compact = !NavView.IsPaneOpen;
         // LayoutRoot = the pill (hover/selection background + the accent indicator);
         // ContentGrid = the icon + label block (carries the nesting indent we override);
         // ContentPresenter = the label.
         if (FindDescendantByName(root, "LayoutRoot") is { } pill)
-            pill.Margin = new Thickness(NavD("CueNavPillLeft", 8), 2, 4, 2);
+            pill.Margin = new Thickness(NavD("CueNavPillLeft", 4), 2, NavD("CueNavPillRight", 5), 2);
         // PresenterContentRootGrid holds the accent bar + content and gets its own nesting indent from
         // the NavigationView, which is the gap between the highlight's left edge and the content. Override
         // it so the bar/content sit close to that edge.
         if (FindDescendantByName(root, "PresenterContentRootGrid") is { } inner)
-            inner.Margin = new Thickness(NavD("CueNavBarInset", 0), 0, 0, 0);
+            inner.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavBarInset", 0), 0, 0, 0);
         if (FindDescendantByName(root, "ContentGrid") is { } content)
-            content.Margin = new Thickness(NavD("CueNavIconLeft", 20), 0, 14, 0);
+            content.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavIconLeft", 20), 0, 4, 0);
         if (FindDescendantByName(root, "ContentPresenter") is { } label)
-            label.Margin = new Thickness(NavD("CueNavLabelLeft", 4), -1, 8, -1);
+            label.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavLabelLeft", 4), -1, 4, -1);
     }
 
     private static double NavD(string key, double fallback)
