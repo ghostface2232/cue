@@ -26,6 +26,8 @@ public sealed partial class MainWindow : Window
     private const int MinWindowHeight = 540;
 
     private TaskListNavigation? _currentNavigation;
+    // The nav item shown just before the Settings page was opened, so its back button can return there.
+    private NavigationViewItem? _backTargetItem;
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly AppPreferences _preferences;
@@ -214,6 +216,10 @@ public sealed partial class MainWindow : Window
         if (args.SelectedItem is not NavigationViewItem item)
             return;
 
+        // Remember the last non-Settings selection so the Settings page's back button can return to it.
+        if (item.Tag is not string s || s != "settings")
+            _backTargetItem = item;
+
         if (item.Tag is string fixedView && fixedView == "timeline")
         {
             _currentNavigation = null;
@@ -270,6 +276,7 @@ public sealed partial class MainWindow : Window
     private void BeginInlineCreate(bool isGroup)
     {
         CancelInlineCreate(); // only one inline editor at a time
+        CancelInlineRename();
         var section = isGroup ? GroupsSection : TagsSection;
 
         var box = new TextBox
@@ -340,19 +347,23 @@ public sealed partial class MainWindow : Window
 
     private void RebuildLiveNavigation()
     {
-        // A rebuild replaces the section items wholesale, so any open inline-create editor is gone.
+        // A rebuild replaces the section items wholesale, so any open inline editor is gone.
         _inlineCreateItem = null;
+        _inlineRenameItem = null;
+        _inlineRenameOriginalContent = null;
+        // The 그룹 없음 / 태그 없음 catch-all rows always sit at the very bottom of their section, below the
+        // real (user-reorderable) groups/tags, so they read as the section's trailing "everything else" bucket.
         GroupsSection.MenuItems.Clear();
-        GroupsSection.MenuItems.Add(CreateUnfiledItem(
-            "그룹 없음", TaskListMode.NoTaskGroup, ViewModel.NoTaskGroupTaskCount));
         foreach (var taskGroup in ViewModel.TaskGroups)
             GroupsSection.MenuItems.Add(CreateTaskGroupItem(taskGroup));
+        GroupsSection.MenuItems.Add(CreateUnfiledItem(
+            "그룹 없음", TaskListMode.NoTaskGroup, ViewModel.NoTaskGroupTaskCount));
 
         TagsSection.MenuItems.Clear();
-        TagsSection.MenuItems.Add(CreateUnfiledItem(
-            "태그 없음", TaskListMode.NoTag, ViewModel.NoTagTaskCount));
         foreach (var tag in ViewModel.Tags)
             TagsSection.MenuItems.Add(CreateTagItem(tag));
+        TagsSection.MenuItems.Add(CreateUnfiledItem(
+            "태그 없음", TaskListMode.NoTag, ViewModel.NoTagTaskCount));
         NormalizeSidebarItems();
         UpdateNavRowInsets();
     }
@@ -625,6 +636,10 @@ public sealed partial class MainWindow : Window
         // left edge and don't shift when the pane toggles. Only the trailing spacing (right gutter, label
         // gap) differs by pane state. PresenterContentRootGrid holds the accent bar + content and the
         // NavigationView would otherwise indent it on its own — pin it to 0 so it can't drift.
+        // Pin the content root to a zero left inset in both pane states so the icon, highlight, and accent
+        // bar sit at the rail's natural position and don't drift when the pane toggles. The title bar's
+        // pane-toggle glyph is aligned to THIS natural position from its own side (its button margin), so
+        // the nav rows are left untouched here.
         if (FindDescendantByName(root, "PresenterContentRootGrid") is { } inner)
             inner.Margin = new Thickness(0);
         if (FindDescendantByName(root, "ContentGrid") is { } content)
@@ -664,7 +679,8 @@ public sealed partial class MainWindow : Window
     {
         var rename = new MenuFlyoutItem { Text = "이름 변경", Tag = record };
         var delete = new MenuFlyoutItem { Text = "삭제", Tag = record };
-        rename.Click += isGroup ? RenameTaskGroup_Click : RenameTag_Click;
+        // Rename edits the name inline in the row (like creating a group/tag), not in a modal dialog.
+        rename.Click += (_, _) => BeginInlineRename(owner, isGroup, record);
         // Delete confirms in a popover anchored to the owning row — same flow the Delete key triggers.
         delete.Click += (_, _) =>
         {
@@ -801,32 +817,94 @@ public sealed partial class MainWindow : Window
         ("", "고정"), ("", "미디어"), ("", "웹"), ("", "잠금"),
     };
 
-    private async void RenameTaskGroup_Click(object sender, RoutedEventArgs e)
+    // Inline rename: swaps the row's label for a focused TextBox (the same affordance creating a group/tag
+    // uses), so renaming never opens a modal. Enter or blur-with-text commits, Escape or blur-empty cancels.
+    private NavigationViewItem? _inlineRenameItem;
+    private object? _inlineRenameOriginalContent;
+    private bool _inlineRenameIsGroup;
+    private Guid _inlineRenameId;
+    private bool _inlineRenameCommitting;
+
+    private void BeginInlineRename(NavigationViewItem item, bool isGroup, object record)
     {
-        await RunSafelyAsync(async () =>
+        CancelInlineCreate();   // only one inline editor at a time
+        CancelInlineRename();
+        var (id, name) = record switch
         {
-            if (sender is not MenuFlyoutItem { Tag: TaskGroupListItem taskGroup }) return;
-            var name = await PromptNameAsync("그룹 이름 변경", "그룹 이름", taskGroup.Name);
-            if (name is null) return;
-            var isCurrent = _currentNavigation?.Mode == TaskListMode.TaskGroup && _currentNavigation.FilterId == taskGroup.Id;
-            await MutateNavAsync(() => ViewModel.RenameTaskGroupCommand.ExecuteAsync(new RenameRecordRequest(taskGroup.Id, name)));
-            RebuildLiveNavigation();
-            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.TaskGroup, taskGroup.Id, name));
-        });
+            TaskGroupListItem taskGroup => (taskGroup.Id, taskGroup.Name),
+            TagListItem tag => (tag.Id, tag.Name),
+            _ => (Guid.Empty, string.Empty),
+        };
+        if (id == Guid.Empty) return;
+
+        _inlineRenameItem = item;
+        _inlineRenameOriginalContent = item.Content;
+        _inlineRenameIsGroup = isGroup;
+        _inlineRenameId = id;
+
+        var box = new TextBox
+        {
+            Text = name,
+            Margin = new Thickness(0, 2, 4, 2),
+        };
+        box.KeyDown += async (_, args) =>
+        {
+            if (args.Key == VirtualKey.Enter) { args.Handled = true; await CommitInlineRenameAsync(box.Text); }
+            else if (args.Key == VirtualKey.Escape) { args.Handled = true; CancelInlineRename(); }
+        };
+        box.LostFocus += async (_, _) =>
+        {
+            // Enter commits, which rebuilds the row and fires a second LostFocus — bail unless this is still
+            // the live editor (mirrors the inline-create guard) so a rename can't fire twice.
+            if (!ReferenceEquals(_inlineRenameItem, item)) return;
+            if (string.IsNullOrWhiteSpace(box.Text)) CancelInlineRename();
+            else await CommitInlineRenameAsync(box.Text);
+        };
+
+        item.Content = box;
+        box.Loaded += (_, _) => { box.Focus(FocusState.Programmatic); box.SelectAll(); };
     }
 
-    private async void RenameTag_Click(object sender, RoutedEventArgs e)
+    private void CancelInlineRename()
     {
-        await RunSafelyAsync(async () =>
+        if (_inlineRenameItem is null) return;
+        _inlineRenameItem.Content = _inlineRenameOriginalContent;
+        _inlineRenameItem = null;
+        _inlineRenameOriginalContent = null;
+    }
+
+    private async Task CommitInlineRenameAsync(string text)
+    {
+        if (_inlineRenameCommitting) return;
+        _inlineRenameCommitting = true;
+        try
         {
-            if (sender is not MenuFlyoutItem { Tag: TagListItem tag }) return;
-            var name = await PromptNameAsync("태그 이름 변경", "태그 이름", tag.Name);
-            if (name is null) return;
-            var isCurrent = _currentNavigation?.Mode == TaskListMode.Tag && _currentNavigation.FilterId == tag.Id;
-            await MutateNavAsync(() => ViewModel.RenameTagCommand.ExecuteAsync(new RenameRecordRequest(tag.Id, name)));
-            RebuildLiveNavigation();
-            if (isCurrent) Navigate(new TaskListNavigation(TaskListMode.Tag, tag.Id, name));
-        });
+            var item = _inlineRenameItem;
+            if (item is null) return;
+            var isGroup = _inlineRenameIsGroup;
+            var id = _inlineRenameId;
+            var name = text.Trim();
+            // Clear the live-editor reference first so the LostFocus that Enter triggers bails out.
+            _inlineRenameItem = null;
+            if (name.Length == 0)
+            {
+                item.Content = _inlineRenameOriginalContent;
+                _inlineRenameOriginalContent = null;
+                return;
+            }
+            _inlineRenameOriginalContent = null;
+            await RunSafelyAsync(async () =>
+            {
+                var mode = isGroup ? TaskListMode.TaskGroup : TaskListMode.Tag;
+                var isCurrent = _currentNavigation?.Mode == mode && _currentNavigation.FilterId == id;
+                await MutateNavAsync(() => isGroup
+                    ? ViewModel.RenameTaskGroupCommand.ExecuteAsync(new RenameRecordRequest(id, name))
+                    : ViewModel.RenameTagCommand.ExecuteAsync(new RenameRecordRequest(id, name)));
+                RebuildLiveNavigation();
+                if (isCurrent) Navigate(new TaskListNavigation(mode, id, name));
+            });
+        }
+        finally { _inlineRenameCommitting = false; }
     }
 
     /// <summary>Wires the Delete key on a sidebar group/tag row to its delete flow, anchored to that
@@ -894,6 +972,17 @@ public sealed partial class MainWindow : Window
         NavFrame.BackStack.Clear();
     }
 
+    /// <summary>Returns from the Settings page to the view that was showing before it was opened (the
+    /// Settings page has its own back-arrow button; navigation here is flat, so there is no Frame back
+    /// stack to walk). Re-selecting the remembered nav item drives the normal selection flow.</summary>
+    public void NavigateBackFromSettings()
+    {
+        var target = _backTargetItem ?? CueItem;
+        if (ReferenceEquals(NavView.SelectedItem, target))
+            return;
+        NavView.SelectedItem = target;
+    }
+
     private void NavigateHome()
     {
         _currentNavigation = null;
@@ -904,23 +993,6 @@ public sealed partial class MainWindow : Window
             NavFrame.Navigate(typeof(TaskListPage), "alltasks");
             NavFrame.BackStack.Clear();
         }
-    }
-
-    private async Task<string?> PromptNameAsync(string title, string placeholder, string initial = "")
-    {
-        var input = new TextBox { Text = initial, PlaceholderText = placeholder, MinWidth = 320 };
-        var dialog = new ContentDialog
-        {
-            XamlRoot = NavView.XamlRoot,
-            Title = title,
-            Content = input,
-            PrimaryButtonText = "저장",
-            CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-        var result = await _dialogs.ShowAsync(dialog);
-        var name = input.Text.Trim();
-        return result == ContentDialogResult.Primary && name.Length > 0 ? name : null;
     }
 
     private async Task RunSafelyAsync(Func<Task> operation)

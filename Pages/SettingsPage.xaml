@@ -162,10 +162,12 @@
             <Setter Property="ColumnSpacing" Value="{StaticResource CueGap24}" />
         </Style>
 
-        <!-- Trailing control sits centered and flush to the card's inner edge, at a shared fixed
-             width and the small (4px) control radius so every section's control aligns and rounds
-             the same. -->
-        <Style x:Key="SettingsControlStyle" TargetType="Control">
+        <!-- Trailing combo sits centered and flush to the card's inner edge, at a shared fixed width and
+             the small (4px) control radius so every section's control aligns and rounds the same.
+             CRITICAL: BasedOn the stock DefaultComboBoxStyle — an explicit Style with no BasedOn replaces
+             the framework default wholesale, stripping the WinUI 3 template (rounded dropdown popup,
+             Fluent visual states) and leaving a flat Windows-10-looking control. -->
+        <Style x:Key="SettingsControlStyle" TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
             <Setter Property="Width" Value="{StaticResource CueSettingsControlWidth}" />
             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
             <Setter Property="HorizontalAlignment" Value="Right" />
@@ -188,8 +190,11 @@
             <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
         </Style>
 
-        <!-- Calm toggle: strip the framework's English On/Off content; the label lives on the left. -->
-        <Style x:Key="SettingsToggleStyle" TargetType="ToggleSwitch">
+        <!-- Calm toggle: strip the framework's English On/Off content; the label lives on the left.
+             CRITICAL: BasedOn the stock DefaultToggleSwitchStyle — without it the explicit Style replaces
+             the default wholesale and the ToggleSwitch loses its WinUI 3 template (Fluent knob, hover/press
+             states), rendering as a flat Windows-10-style switch with no interaction feedback. -->
+        <Style x:Key="SettingsToggleStyle" TargetType="ToggleSwitch" BasedOn="{StaticResource DefaultToggleSwitchStyle}">
             <Setter Property="MinWidth" Value="0" />
             <Setter Property="OnContent" Value="" />
             <Setter Property="OffContent" Value="" />
@@ -205,10 +210,43 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock
-            Margin="4,0,0,2"
-            Style="{StaticResource CuePageTitleTextStyle}"
-            Text="설정" />
+        <!-- Back-arrow returns to the view shown before Settings was opened. Sits immediately left of the
+             title, sized/styled as the shared icon button (CueIconButtonStyle). -->
+        <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}">
+            <HyperlinkButton
+                VerticalAlignment="Center"
+                Click="Back_Click"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CueIconButtonStyle}"
+                ToolTipService.ToolTip="뒤로"
+                AutomationProperties.Name="뒤로">
+                <!-- Segoe Fluent's back glyph (E72B) has no bold/weight variant, so the arrow is traced as a
+                     line-art Path with a heavier 2px stroke — bigger and bolder than the glyph, matching the
+                     line-art icon style while sitting with the SemiBold title. Round caps/joins keep it soft.
+                     Nudged up 2px for optical centering against the title's cap height. -->
+                <Path
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                    StrokeThickness="2"
+                    StrokeStartLineCap="Round"
+                    StrokeEndLineCap="Round"
+                    StrokeLineJoin="Round"
+                    Data="M 10,4 L 4,11 L 10,18 M 4,11 L 22,11">
+                    <!-- Optical up-nudge via RenderTransform (visual only): a top Margin would be halved by
+                         VerticalAlignment="Center", so the correction never fully applied. This moves only
+                         the arrow, never the title text. -->
+                    <Path.RenderTransform>
+                        <TranslateTransform Y="-4" />
+                    </Path.RenderTransform>
+                </Path>
+            </HyperlinkButton>
+            <TextBlock
+                VerticalAlignment="Center"
+                Margin="0,0,0,2"
+                Style="{StaticResource CuePageTitleTextStyle}"
+                Text="설정" />
+        </StackPanel>
 
         <Grid Grid.Row="1" Margin="4,0,0,0" ColumnSpacing="{StaticResource CueGap24}">
             <Grid.ColumnDefinitions>
@@ -294,12 +332,16 @@
                             Style="{StaticResource CueSectionHeaderTextStyle}"
                             Text="시간" />
 
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <!-- Stacked rows: symmetric vertical padding fixes the gap to the divider so a
-                                 one-line caption (주 시작 요일) and a wrapping one (기본 시간대) read the same.
-                                 Centering inside MinHeight alone broke this — the taller row lost its top slack. -->
+                        <!-- Stacked-row card: vertical padding is 0 (kept 16 on the sides). Each row owns its
+                             own 22px vertical padding, and the divider between rows splits the inter-row gap
+                             into two 22px halves. With card vertical padding 0, the card-edge→content gap is
+                             also exactly 22, so EVERY visible gap (top, each side of the divider, bottom)
+                             reads as the same 22 — matching the ~22px content inset of the single-row cards
+                             (CuePadCard 16 + the 52px row min-height centering). A documented settings
+                             exception (see DESIGN.md "Settings form"). -->
+                        <Border Style="{StaticResource SettingsCardStyle}" Padding="16,0">
                             <StackPanel Spacing="0">
-                                <Grid Padding="0,8" Style="{StaticResource SettingsRowStyle}">
+                                <Grid Padding="0,22" MinHeight="0" Style="{StaticResource SettingsRowStyle}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -317,7 +359,7 @@
 
                                 <Border Style="{StaticResource SettingsDividerStyle}" />
 
-                                <Grid Padding="0,8" Style="{StaticResource SettingsRowStyle}">
+                                <Grid Padding="0,22" MinHeight="0" Style="{StaticResource SettingsRowStyle}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -471,19 +513,6 @@
                                     Style="{StaticResource SettingsControlStyle}"
                                     SelectionChanged="ThemeCombo_SelectionChanged" />
                             </Grid>
-                        </Border>
-
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="{StaticResource CueGap16}">
-                                <StackPanel Spacing="{StaticResource CueGap4}">
-                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="강조 컬러" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="선택 표시, 체크, 포커스 링에만 사용" />
-                                </StackPanel>
-                                <StackPanel
-                                    x:Name="AccentSwatches"
-                                    Orientation="Horizontal"
-                                    Spacing="{StaticResource CueGap8}" />
-                            </StackPanel>
                         </Border>
                     </StackPanel>
 

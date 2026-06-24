@@ -121,6 +121,14 @@ public static class ConfirmPopover
                 button.Resources["AccentButtonBackground"] = new SolidColorBrush(danger);
                 button.Resources["AccentButtonBackgroundPointerOver"] = new SolidColorBrush(danger) { Opacity = 0.9 };
                 button.Resources["AccentButtonBackgroundPressed"] = new SolidColorBrush(danger) { Opacity = 0.8 };
+                // Force white label across all states: the stock accent foreground (TextOnAccentFillColor)
+                // resolves to near-black in dark theme, which is unreadable on the red fill. White reads
+                // on both the light (#C42B1C) and dark (#D13438) danger reds.
+                var onDanger = new SolidColorBrush(Microsoft.UI.Colors.White);
+                button.Foreground = onDanger;
+                button.Resources["AccentButtonForeground"] = onDanger;
+                button.Resources["AccentButtonForegroundPointerOver"] = onDanger;
+                button.Resources["AccentButtonForegroundPressed"] = onDanger;
             }
             actionButtons.Add(button);
             buttons.Children.Add(button);

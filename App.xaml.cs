@@ -39,7 +39,7 @@ public partial class App : Application
             Services = ConfigureServices(store, preferences, timeZone);
             _window = new MainWindow();
             CurrentWindow = _window;
-            AppPreferences.ApplyThemeAndAccent(_window, preferences);
+            AppPreferences.ApplyTheme(_window, preferences);
             _window.Activate();
         }
         catch (Exception exception)

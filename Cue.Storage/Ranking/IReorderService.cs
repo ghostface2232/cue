@@ -40,6 +40,13 @@ public interface IReorderService
     string AppendRank(IEnumerable<string?> existingRanks);
 
     /// <summary>
+    /// Computes a rank that places a new record at the <b>start</b> of a list whose current items carry
+    /// <paramref name="existingRanks"/> (in any order — the minimum is used). The caller assigns the
+    /// returned rank to the new record before saving it.
+    /// </summary>
+    string PrependRank(IEnumerable<string?> existingRanks);
+
+    /// <summary>
     /// Persists a reorder. <paramref name="orderedItems"/> is the full list in its new display order
     /// (including the moved record at its target position), each with its current rank. The moved
     /// record is re-ranked to fit strictly between its new neighbors and saved; nothing else is

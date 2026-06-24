@@ -17,6 +17,10 @@
             <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource ControlFillColorSecondary}" />
             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource ControlFillColorDefault}" />
+            <!-- Destructive (delete/confirm) red. Light keeps the system critical tone, which is a proper
+                 deep red here. Dark splits to its own literal red because the system critical color in dark
+                 is a washed-out pink (#FF99A4) — too soft to read as a destructive action. -->
+            <SolidColorBrush x:Key="CueDangerFillBrush" Color="{ThemeResource SystemFillColorCritical}" />
             <!-- Selected sidebar item + hover/press must DEEPEN, matching the main list (where a
                  selected row's hover stacks two SubtleFillColorSecondary layers). The stock
                  NavigationView selected-pointer-over tone is lighter than the selected tone, which
@@ -29,11 +33,14 @@
             <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource ControlFillColorSecondary}" />
             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource ControlFillColorDefault}" />
+            <SolidColorBrush x:Key="CueDangerFillBrush" Color="{ThemeResource SystemFillColorCritical}" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="TextControlBackground" Color="#18000000" />
             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#24000000" />
             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#18000000" />
+            <!-- A clean, saturated red for dark surfaces (the system critical color is pink here). -->
+            <SolidColorBrush x:Key="CueDangerFillBrush" Color="#D13438" />
             <!-- Dark counterpart of the deepen-on-hover selection (white overlay). See Light note. -->
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#1DFFFFFF" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#28FFFFFF" />
@@ -191,9 +198,9 @@
     <!-- DetailCardBrush is kept page-local in TaskListPage so the page code-behind can resolve it
          via this.Resources. -->
 
-    <!-- Destructive action tone. The shared red for delete/confirm surfaces (context-menu 삭제,
-         the confirm popover's primary button). Theme-aware via ThemeResource on Color. -->
-    <SolidColorBrush x:Key="CueDangerFillBrush" Color="{ThemeResource SystemFillColorCritical}" />
+    <!-- Destructive action tone (CueDangerFillBrush) is theme-split in the ThemeDictionaries at the top
+         of this file: Light uses the system critical red; Dark uses a clean literal red because the system
+         critical color is a washed-out pink on dark surfaces. -->
 
     <!-- Priority cue colors (Todoist-style row dot). Theme-aware via ThemeResource on Color;
          resolved by PriorityToBrushConverter. -->
@@ -221,6 +228,60 @@
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="{ThemeResource TextFillColorPrimary}" />
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPressed" Color="{ThemeResource TextFillColorPrimary}" />
+
+    <!-- Title bar pane-toggle (hamburger) button. The stock TitleBarPaneToggleButtonStyle is 40 wide
+         (NavigationBackButtonWidth) with a 2px margin — wider than the app's 34px icon buttons and the
+         sidebar rows, and its glyph sits a couple px left of the nav rail's natural icon column. Override it
+         to a 34px button that shares the sidebar's hover/press language (CueHoverFill / CuePressedFill), and
+         set the left margin to 7.5 so the centered glyph lands exactly on the nav icons' natural x — the nav
+         rows themselves are left untouched, so alignment holds in both pane states. -->
+    <Style x:Key="TitleBarPaneToggleButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+        <Setter Property="FontFamily" Value="{ThemeResource SymbolThemeFontFamily}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Margin" Value="7.5,2,2,2" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
+        <Setter Property="Content" Value="&#xE700;" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid x:Name="RootGrid" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+                        <Grid.BackgroundTransition>
+                            <BrushTransition Duration="0:0:0.083" />
+                        </Grid.BackgroundTransition>
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootGrid.Background" Value="{ThemeResource CueHoverFillBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootGrid.Background" Value="{ThemeResource CuePressedFillBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled" />
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <FontIcon
+                            FontFamily="{TemplateBinding FontFamily}"
+                            FontSize="{TemplateBinding FontSize}"
+                            Foreground="{TemplateBinding Foreground}"
+                            Glyph="&#xE700;"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
     <!-- Shared icon button (transparent at rest, colored glyph) -->
     <Style x:Key="CueIconButtonStyle" TargetType="HyperlinkButton">

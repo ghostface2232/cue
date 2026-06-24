@@ -403,6 +403,10 @@ public partial class TaskDetailViewModel : ObservableObject
         SelectedWhenHour = null;
         SelectedWhenMinute = null;
         SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
+        // 반복 is anchored to the date, so removing the date clears the recurrence too — the 반복 field
+        // hides with the When editor (IsWhenEditorVisible) and must not leave a now-meaningless rule behind.
+        if (RecurrenceOptions.Count > 0)
+            SelectedRecurrence = RecurrenceOptions[0];
         resume();
     }
 
@@ -580,7 +584,8 @@ public partial class TaskDetailViewModel : ObservableObject
         {
             Name = name,
             Color = TagColors.ForNewTag(existing.Count),
-            SortOrder = _reorder.AppendRank(existing.Select(item => item.SortOrder)),
+            // New tags land at the top of the sidebar tag list (matches sidebar creation).
+            SortOrder = _reorder.PrependRank(existing.Select(item => item.SortOrder)),
         };
         await _store.SaveAsync(tag);
 

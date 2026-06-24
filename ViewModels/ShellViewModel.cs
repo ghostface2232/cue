@@ -59,7 +59,8 @@ public partial class ShellViewModel : ObservableObject
         await _store.SaveAsync(new TaskGroup
         {
             Name = name.Trim(),
-            SortOrder = _reorder.AppendRank(TaskGroups.Select(group => group.SortOrder)),
+            // New groups land at the top of the list (the '없음' catch-all still sorts last, in the UI).
+            SortOrder = _reorder.PrependRank(TaskGroups.Select(group => group.SortOrder)),
         });
         await LoadAsync();
         _notifier.NotifyChanged();
@@ -133,7 +134,8 @@ public partial class ShellViewModel : ObservableObject
         {
             Name = name.Trim(),
             Color = TagColors.ForNewTag(Tags.Count),
-            SortOrder = _reorder.AppendRank(Tags.Select(tag => tag.SortOrder)),
+            // New tags land at the top of the list (the '없음' catch-all still sorts last, in the UI).
+            SortOrder = _reorder.PrependRank(Tags.Select(tag => tag.SortOrder)),
         });
         await LoadAsync();
         _notifier.NotifyChanged();

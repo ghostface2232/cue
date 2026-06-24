@@ -13,17 +13,6 @@ namespace Cue.Pages;
 
 public sealed partial class SettingsPage : Page
 {
-    private static readonly (string Name, string Value)[] AccentOptions =
-    {
-        ("시스템", "System"),
-        ("파랑", "#2563EB"),
-        ("민트", "#0F766E"),
-        ("초록", "#15803D"),
-        ("보라", "#7C3AED"),
-        ("빨강", "#DC2626"),
-        ("주황", "#EA580C"),
-    };
-
     private static readonly IReadOnlyDictionary<string, string> TimeZoneLabels = new Dictionary<string, string>
     {
         ["Korea Standard Time"] = "서울",
@@ -62,7 +51,6 @@ public sealed partial class SettingsPage : Page
         PopulateFirstDays();
         PopulateTimeZones();
         PopulateThemes();
-        BuildAccentSwatches();
         ReloadCustomDateRows();
         AutoAfternoonSwitch.IsOn = _preferences.AutoAfternoonForBareOneToSix;
         ApplySelectedSection();
@@ -135,84 +123,6 @@ public sealed partial class SettingsPage : Page
             combo.SelectedIndex = 0;
     }
 
-    private void BuildAccentSwatches()
-    {
-        AccentSwatches.Children.Clear();
-        var controlStroke = (Brush)Application.Current.Resources["ControlStrokeColorDefaultBrush"];
-        var accent = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
-        var ringStrong = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
-        var onAccent = (Brush)Application.Current.Resources["TextOnAccentFillColorPrimaryBrush"];
-
-        foreach (var (name, value) in AccentOptions)
-        {
-            var selected = string.Equals(_preferences.AccentColor, value, StringComparison.OrdinalIgnoreCase);
-            var isSystem = string.Equals(value, "System", StringComparison.Ordinal);
-
-            Button button;
-            if (isSystem)
-            {
-                // System keeps the OS accent — a labelled chip rather than a color dot.
-                button = new Button
-                {
-                    Content = new TextBlock { Text = name, Margin = new Thickness(10, 0, 10, 0) },
-                    Height = 34,
-                    MinWidth = 64,
-                    Padding = new Thickness(0),
-                    CornerRadius = new CornerRadius(17),
-                    BorderThickness = new Thickness(selected ? 2 : 1),
-                    BorderBrush = selected ? accent : controlStroke,
-                };
-            }
-            else
-            {
-                // Color swatch: a saturated dot; the current pick is ringed (high-contrast, per the
-                // selection-popup pattern) with a confirming check, never covered by a theme fill.
-                var dot = new Border
-                {
-                    Width = 24,
-                    Height = 24,
-                    CornerRadius = new CornerRadius(12),
-                    Background = BrushFromHex(value),
-                };
-                var check = new FontIcon
-                {
-                    Glyph = "",
-                    FontSize = 12,
-                    Foreground = onAccent,
-                    Opacity = selected ? 1 : 0,
-                };
-                var content = new Grid();
-                content.Children.Add(dot);
-                content.Children.Add(check);
-
-                button = new Button
-                {
-                    Content = content,
-                    Width = 34,
-                    Height = 34,
-                    Padding = new Thickness(0),
-                    CornerRadius = new CornerRadius(17),
-                    BorderThickness = new Thickness(selected ? 2 : 0),
-                    BorderBrush = selected ? ringStrong : null,
-                };
-            }
-
-            button.Tag = value;
-            button.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            ToolTipService.SetToolTip(button, name);
-            button.Click += AccentSwatch_Click;
-            AccentSwatches.Children.Add(button);
-        }
-    }
-
-    private static Brush BrushFromHex(string hex)
-    {
-        var r = Convert.ToByte(hex[1..3], 16);
-        var g = Convert.ToByte(hex[3..5], 16);
-        var b = Convert.ToByte(hex[5..7], 16);
-        return new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, r, g, b));
-    }
-
     private void ReloadCustomDateRows()
     {
         _customDateRows.Clear();
@@ -223,6 +133,9 @@ public sealed partial class SettingsPage : Page
         CustomDatesList.Visibility = hasRows ? Visibility.Visible : Visibility.Collapsed;
         CustomDatesEmptyHint.Visibility = hasRows ? Visibility.Collapsed : Visibility.Visible;
     }
+
+    private void Back_Click(object sender, RoutedEventArgs e)
+        => (App.CurrentWindow as MainWindow)?.NavigateBackFromSettings();
 
     private void SectionNav_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => ApplySelectedSection();
@@ -318,7 +231,7 @@ public sealed partial class SettingsPage : Page
         if (_loading || ThemeCombo.SelectedItem is not ComboBoxItem { Tag: CueThemeMode mode })
             return;
         _preferences.ThemeMode = mode;
-        AppPreferences.ApplyThemeAndAccent(App.CurrentWindow, _preferences);
+        AppPreferences.ApplyTheme(App.CurrentWindow, _preferences);
     }
 
     private void AutoAfternoonSwitch_Toggled(object sender, RoutedEventArgs e)
@@ -326,15 +239,6 @@ public sealed partial class SettingsPage : Page
         if (_loading)
             return;
         _preferences.AutoAfternoonForBareOneToSix = AutoAfternoonSwitch.IsOn;
-    }
-
-    private void AccentSwatch_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: string value })
-            return;
-        _preferences.AccentColor = value;
-        AppPreferences.ApplyThemeAndAccent(App.CurrentWindow, _preferences);
-        BuildAccentSwatches();
     }
 
     private void AddCustomDate_Click(object sender, RoutedEventArgs e)

@@ -55,9 +55,12 @@
 
         <DataTemplate x:Key="TaskRowTemplate" x:DataType="vm:TaskRowViewModel">
             <StackPanel HorizontalAlignment="Stretch">
+                <!-- The hover/selection surface wraps BOTH the task row and its nested checklist, so the
+                     highlight (and the persistent selected fill) reads as one region covering the whole task
+                     — hovering or selecting the parent lights up its checklist rows too. The row's inner
+                     padding and the checklist's indent are unchanged; only the highlight area was widened. -->
                 <Border
                     Margin="4,1"
-                    Padding="12,12"
                     Background="Transparent"
                     CornerRadius="{StaticResource CueRadiusRow}"
                     IsTabStop="True"
@@ -77,22 +80,26 @@
                             <RepositionThemeTransition />
                         </TransitionCollection>
                     </Border.Transitions>
-                    <Grid ColumnSpacing="{StaticResource CueGap12}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <!-- Selected task gets a persistent fill (the hover tone) spanning the row + checklist,
+                             so the open task reads as selected even while the pointer is elsewhere. -->
+                        <Rectangle
+                            Grid.RowSpan="2"
+                            Fill="{StaticResource TaskHoverBrush}"
+                            RadiusX="8"
+                            RadiusY="8"
+                            Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                    <Grid Padding="12,12" ColumnSpacing="{StaticResource CueGap12}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="3" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <!-- Selected row gets a persistent fill (the hover tone) in addition to the accent
-                             bar, so the open task reads as selected even while the pointer is elsewhere. -->
-                        <Rectangle
-                            Grid.ColumnSpan="4"
-                            Margin="-12,-12"
-                            Fill="{StaticResource TaskHoverBrush}"
-                            RadiusX="8"
-                            RadiusY="8"
-                            Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                         <Rectangle
                             VerticalAlignment="Stretch"
                             Fill="{ThemeResource AccentFillColorDefaultBrush}"
@@ -196,20 +203,22 @@
                             </ItemsControl>
                         </StackPanel>
                     </Grid>
+                    <!-- Nested checklist (row 1 of the highlight grid), kept at its existing indent. -->
+                    <Grid Grid.Row="1" Margin="40,0,0,7" Visibility="{x:Bind HasChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Rectangle Margin="0,2,0,3" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <ItemsRepeater
+                            Grid.Column="1"
+                            ElementClearing="TaskRepeater_ElementClearing"
+                            ElementPrepared="TaskRepeater_ElementPrepared"
+                            ItemTemplate="{StaticResource ChecklistRowTemplate}"
+                            ItemsSource="{x:Bind ChecklistItems}" />
+                    </Grid>
+                    </Grid>
                 </Border>
-                <Grid Margin="44,0,0,7" Visibility="{x:Bind HasChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="1" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Rectangle Margin="0,2,0,3" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                    <ItemsRepeater
-                        Grid.Column="1"
-                        ElementClearing="TaskRepeater_ElementClearing"
-                        ElementPrepared="TaskRepeater_ElementPrepared"
-                        ItemTemplate="{StaticResource ChecklistRowTemplate}"
-                        ItemsSource="{x:Bind ChecklistItems}" />
-                </Grid>
                 <!-- Thin separator between list rows for clear row-to-row division. -->
                 <Rectangle Height="1" Margin="8,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
             </StackPanel>
@@ -482,12 +491,16 @@
                                     <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
 
-                                <!-- 반복 (recurrence) field. Always visible — a task can repeat whether or not
-                                     it carries a concrete date, matching the quick-add parser. A plain field
-                                     label (like 중요도 / 그룹), not a card header, so it doesn't read as a second
-                                     card title. The picker offers common presets; a parsed rule with no preset
-                                     shows as its own summarized entry so it round-trips. -->
-                                <StackPanel Spacing="{StaticResource CueGap4}">
+                                <!-- 반복 (recurrence) field. Shown only when the task carries a concrete 일시 —
+                                     a recurrence with no date to anchor it doesn't read as meaningful, so
+                                     removing the date removes this field too (and clears the rule, see
+                                     ClearWhen). A plain field label (like 중요도 / 그룹), not a card header, so
+                                     it doesn't read as a second card title. The picker offers common presets;
+                                     a parsed rule with no preset shows as its own summarized entry so it
+                                     round-trips. -->
+                                <StackPanel
+                                    Spacing="{StaticResource CueGap4}"
+                                    Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock Text="반복" />
                                     <ComboBox
                                         HorizontalAlignment="Stretch"

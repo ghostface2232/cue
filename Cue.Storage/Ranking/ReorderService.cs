@@ -31,6 +31,19 @@ public sealed class ReorderService : IReorderService
         return FractionalRank.Between(max, null);
     }
 
+    public string PrependRank(IEnumerable<string?> existingRanks)
+    {
+        ArgumentNullException.ThrowIfNull(existingRanks);
+        // Order-independent: prepend before the smallest existing rank.
+        string? min = null;
+        foreach (var rank in existingRanks)
+        {
+            if (string.IsNullOrEmpty(rank)) continue;
+            if (min is null || string.CompareOrdinal(rank, min) < 0) min = rank;
+        }
+        return FractionalRank.Between(null, min);
+    }
+
     public async Task<ReorderResult> MoveAsync<T>(
         Guid movedId,
         IReadOnlyList<RankedItem> orderedItems,
