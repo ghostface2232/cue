@@ -238,6 +238,8 @@ public sealed partial class SettingsPage : Page
         AppearanceSection.Visibility = selected == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
         NotificationsSection.Visibility = selected == "Notifications" ? Visibility.Visible : Visibility.Collapsed;
 
+        UpdateNavGlyphs();
+
         var section = selected switch
         {
             "Parsing" => ParsingSection,
@@ -246,6 +248,25 @@ public sealed partial class SettingsPage : Page
             _ => (FrameworkElement)TimeSection,
         };
         AnimateSectionIn(section);
+    }
+
+    /// <summary>
+    /// Brighten the selected section's glyph to primary (matching its label, and the sidebar's
+    /// selected-icon behavior); unselected glyphs stay secondary. The icon lives in each item's
+    /// content, so the container template can't drive it — we set it here on selection change.
+    /// </summary>
+    private void UpdateNavGlyphs()
+    {
+        if (Application.Current.Resources["TextFillColorPrimaryBrush"] is not Brush primary ||
+            Application.Current.Resources["TextFillColorSecondaryBrush"] is not Brush secondary)
+            return;
+
+        foreach (var item in SectionNav.Items.OfType<ListViewItem>())
+        {
+            if (item.Content is Grid grid &&
+                grid.Children.OfType<FontIcon>().FirstOrDefault() is FontIcon glyph)
+                glyph.Foreground = item.IsSelected ? primary : secondary;
+        }
     }
 
     /// <summary>

@@ -12,16 +12,112 @@
 
     <Page.Resources>
         <!-- Section navigation: mirrors the sidebar's calm, flattened selection (subtle fill +
-             primary text, no accent text) so the two nav surfaces read the same. -->
+             primary text, no accent text) so the two nav surfaces read the same. The 4px side inset
+             floats the rounded highlight inside the column (same as the main list's 4,1 row margin and
+             the sidebar's item inset) so all four corners round visibly instead of running flush to —
+             and being clipped at — the nav's edges.
+
+             Custom template (replacing the stock ListViewItemPresenter) so the highlight reads exactly
+             like the rest of the app:
+               • Hover/press fill fades on the SAME 83ms BrushTransition as the main list rows, instead
+                 of the presenter's slower stock timing.
+               • A selected item DEEPENS on hover/press (Secondary → Tertiary), matching the documented
+                 cross-surface rule the sidebar and main list follow (see DesignTokens "deepen").
+               • Selection is shown by a left accent bar (same language as the sidebar/main list). -->
         <Style x:Key="SettingsNavItemStyle" TargetType="ListViewItem">
             <Setter Property="MinHeight" Value="38" />
-            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="Margin" Value="4,2" />
             <Setter Property="Padding" Value="12,0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusRow}" />
             <Setter Property="FocusVisualMargin" Value="2" />
             <Setter Property="FocusVisualPrimaryThickness" Value="1" />
             <Setter Property="FocusVisualSecondaryThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Grid x:Name="Root" Background="Transparent" Control.IsTemplateFocusTarget="True">
+                            <!-- The hover/selection pill. BackgroundTransition gives the same soft 83ms
+                                 fade the main list rows use; VisualState.Setters swap the fill per state. -->
+                            <Border x:Name="HoverBg" Background="Transparent" CornerRadius="{TemplateBinding CornerRadius}">
+                                <Border.BackgroundTransition>
+                                    <BrushTransition Duration="0:0:0.083" />
+                                </Border.BackgroundTransition>
+                            </Border>
+                            <!-- Left accent bar shown on selection (sidebar/main-list language). Stretches
+                                 with the item height, inset top/bottom so it reads as a short pill. -->
+                            <Rectangle
+                                x:Name="SelectionBar"
+                                Width="3"
+                                Margin="0,8"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Stretch"
+                                Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                Opacity="0"
+                                RadiusX="1.5"
+                                RadiusY="1.5" />
+                            <ContentPresenter
+                                x:Name="ContentPresenter"
+                                Padding="{TemplateBinding Padding}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                ContentTransitions="{TemplateBinding ContentTransitions}" />
+
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverBg.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverBg.Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Selected">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverBg.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                            <Setter Target="SelectionBar.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <!-- Selected + hover/press DEEPEN to Tertiary (the cross-surface rule). -->
+                                    <VisualState x:Name="PointerOverSelected">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverBg.Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                            <Setter Target="SelectionBar.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="PressedSelected">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverBg.Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                            <Setter Target="SelectionBar.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <!-- Keep the bar lit when the selected item loses focus (e.g. clicking a control). -->
+                                    <VisualState x:Name="SelectedUnfocused">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverBg.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                            <Setter Target="SelectionBar.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                                <VisualStateGroup x:Name="DisabledStates">
+                                    <VisualState x:Name="Enabled" />
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Opacity" Value="0.5" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="SettingsNavTextStyle" TargetType="TextBlock">
@@ -131,16 +227,6 @@
                 SelectionChanged="SectionNav_SelectionChanged"
                 SelectionMode="Single"
                 SelectedIndex="0">
-                <ListView.Resources>
-                    <CornerRadius x:Key="ListViewItemCornerRadius">8</CornerRadius>
-                    <CornerRadius x:Key="ListViewItemSelectionIndicatorCornerRadius">2</CornerRadius>
-                    <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="{ThemeResource SubtleFillColorSecondary}" />
-                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
-                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
-                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="{ThemeResource SubtleFillColorTertiary}" />
-                    <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="{ThemeResource TextFillColorPrimary}" />
-                    <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="{ThemeResource TextFillColorPrimary}" />
-                </ListView.Resources>
                 <ListViewItem Tag="Time">
                     <Grid ColumnSpacing="{StaticResource CueGap8}">
                         <Grid.ColumnDefinitions>
@@ -188,10 +274,13 @@
                 Padding="0,0,0,8"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-                <!-- Stretch (capped at the shared max-width token) so every section's cards fill the
-                     same measure: the label column gets a bounded width, captions wrap instead of
-                     running on one line, and section-to-section width never drifts. -->
-                <Grid MaxWidth="{StaticResource CueSettingsContentMaxWidth}" HorizontalAlignment="Stretch">
+                <!-- Left-anchored and capped at the shared max-width token: cards stay flush beside the
+                     section nav (no widening gap on a wide window) and never drift right under the
+                     scrollbar. Below the cap they shrink uniformly, so the label column stays bounded,
+                     captions wrap instead of running on one line, and section-to-section width never
+                     drifts. (Stretch + MaxWidth centers in WinUI, which both opened the nav gap and
+                     pushed the right cards under the vertical scrollbar — clipping them.) -->
+                <Grid MaxWidth="{StaticResource CueSettingsContentMaxWidth}" HorizontalAlignment="Left">
                     <!-- 시간 -->
                     <StackPanel
                         x:Name="TimeSection"
@@ -203,8 +292,11 @@
                             Text="시간" />
 
                         <Border Style="{StaticResource SettingsCardStyle}">
+                            <!-- Stacked rows: symmetric vertical padding fixes the gap to the divider so a
+                                 one-line caption (주 시작 요일) and a wrapping one (기본 시간대) read the same.
+                                 Centering inside MinHeight alone broke this — the taller row lost its top slack. -->
                             <StackPanel Spacing="0">
-                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                <Grid Padding="0,8" Style="{StaticResource SettingsRowStyle}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -222,7 +314,7 @@
 
                                 <Border Style="{StaticResource SettingsDividerStyle}" />
 
-                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                <Grid Padding="0,8" Style="{StaticResource SettingsRowStyle}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
