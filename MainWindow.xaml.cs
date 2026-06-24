@@ -13,9 +13,15 @@ namespace Cue;
 
 public sealed partial class MainWindow : Window
 {
+    // First-run window size: deliberately compact (narrow and short) rather than the oversized
+    // Windows App SDK default. Once the user resizes, their placement is restored on next launch.
+    private const int DefaultWindowWidth = 900;
+    private const int DefaultWindowHeight = 640;
+
     private TaskListNavigation? _currentNavigation;
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
+    private readonly AppPreferences _preferences;
 
     // While the sidebar makes its own group/tag edit it refreshes the pane directly, so it ignores the
     // notification it triggers (the detail panels still react to it). A detail-panel edit leaves this
@@ -29,6 +35,7 @@ public sealed partial class MainWindow : Window
         ViewModel = App.Services.GetRequiredService<ShellViewModel>();
         _dialogs = App.Services.GetRequiredService<DialogService>();
         _navNotifier = App.Services.GetRequiredService<INavDataChangeNotifier>();
+        _preferences = App.Services.GetRequiredService<AppPreferences>();
         InitializeComponent();
         // A group/tag created/edited in a detail panel reloads the sidebar lists at once.
         _navNotifier.Changed += OnNavDataChanged;
@@ -37,6 +44,9 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon("Assets/AppIcon.ico");
+
+        RestoreOrSetDefaultPlacement();
+        Closed += OnWindowClosed;
 
         // The system caption buttons (minimize/maximize/close) are drawn by AppWindow, not XAML, so
         // their glyph color must be set per theme — otherwise they stay dark in dark mode. Re-apply
@@ -72,6 +82,57 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonPressedBackgroundColor = isDark
             ? Windows.UI.Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)
             : Windows.UI.Color.FromArgb(0x28, 0x00, 0x00, 0x00);
+    }
+
+    /// <summary>Restores the last saved window placement, or centers a compact default on first run.</summary>
+    private void RestoreOrSetDefaultPlacement()
+    {
+        var saved = _preferences.WindowPlacement;
+        if (saved is not null)
+        {
+            // Clamp against the display the window was last on, so a removed monitor or a changed
+            // resolution can't strand the window off-screen.
+            var work = DisplayArea.GetFromPoint(
+                new Windows.Graphics.PointInt32(saved.X, saved.Y), DisplayAreaFallback.Nearest).WorkArea;
+            AppWindow.MoveAndResize(ClampToWorkArea(saved, work));
+            if (saved.Maximized && AppWindow.Presenter is OverlappedPresenter presenter)
+                presenter.Maximize();
+            return;
+        }
+
+        var primary = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        var width = Math.Min(DefaultWindowWidth, primary.Width);
+        var height = Math.Min(DefaultWindowHeight, primary.Height);
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(
+            primary.X + ((primary.Width - width) / 2),
+            primary.Y + ((primary.Height - height) / 2),
+            width,
+            height));
+    }
+
+    private static Windows.Graphics.RectInt32 ClampToWorkArea(WindowPlacement p, Windows.Graphics.RectInt32 work)
+    {
+        var width = Math.Clamp(p.Width, 480, work.Width);
+        var height = Math.Clamp(p.Height, 360, work.Height);
+        var x = Math.Clamp(p.X, work.X, work.X + work.Width - width);
+        var y = Math.Clamp(p.Y, work.Y, work.Y + work.Height - height);
+        return new Windows.Graphics.RectInt32(x, y, width, height);
+    }
+
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        // AppWindow reports the maximized bounds while maximized; persisting them alongside the flag
+        // means the next launch reopens maximized and un-maximizes to a sensible size.
+        var pos = AppWindow.Position;
+        var size = AppWindow.Size;
+        _preferences.WindowPlacement = new WindowPlacement
+        {
+            X = pos.X,
+            Y = pos.Y,
+            Width = size.Width,
+            Height = size.Height,
+            Maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized },
+        };
     }
 
     private void TitleBar_PaneToggleRequested(TitleBar sender, object args)

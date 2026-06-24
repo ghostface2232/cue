@@ -21,6 +21,16 @@ public sealed class CustomDateMeaning
     public int DayOfMonth { get; set; }
 }
 
+/// <summary>Last window position and size in physical pixels, used to restore placement across launches.</summary>
+public sealed class WindowPlacement
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public bool Maximized { get; set; }
+}
+
 /// <summary>
 /// App-local preferences. Task/project/label data still lives exclusively in the file-backed store.
 /// </summary>
@@ -96,6 +106,32 @@ public sealed class AppPreferences
                 .OrderBy(meaning => meaning.Name, StringComparer.Ordinal)
                 .ToList();
             Set(nameof(CustomDateMeanings), JsonSerializer.Serialize(normalized, JsonOptions));
+        }
+    }
+
+    /// <summary>The last saved window placement, or null when the app has never persisted one (first run).</summary>
+    public WindowPlacement? WindowPlacement
+    {
+        get
+        {
+            var json = StringValue(nameof(WindowPlacement), string.Empty);
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+
+            try
+            {
+                var placement = JsonSerializer.Deserialize<WindowPlacement>(json, JsonOptions);
+                return placement is { Width: > 0, Height: > 0 } ? placement : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        set
+        {
+            if (value is { Width: > 0, Height: > 0 })
+                Set(nameof(WindowPlacement), JsonSerializer.Serialize(value, JsonOptions));
         }
     }
 

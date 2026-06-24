@@ -37,6 +37,7 @@
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"
             IsSettingsVisible="False"
+            OpenPaneLength="216"
             RightTapped="NavView_RightTapped"
             SelectionChanged="NavView_SelectionChanged">
             <NavigationView.MenuItems>
