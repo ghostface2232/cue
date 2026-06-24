@@ -274,13 +274,18 @@
                 Padding="0,0,0,8"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-                <!-- Left-anchored and capped at the shared max-width token: cards stay flush beside the
-                     section nav (no widening gap on a wide window) and never drift right under the
-                     scrollbar. Below the cap they shrink uniformly, so the label column stays bounded,
-                     captions wrap instead of running on one line, and section-to-section width never
-                     drifts. (Stretch + MaxWidth centers in WinUI, which both opened the nav gap and
-                     pushed the right cards under the vertical scrollbar — clipping them.) -->
-                <Grid MaxWidth="{StaticResource CueSettingsContentMaxWidth}" HorizontalAlignment="Left">
+                <!-- A single star column capped at the shared max-width token: the column fills the
+                     available width and the cards stretch to it (so every section reads at the SAME
+                     measure — no section-to-section width drift), but it caps at the token and leaves
+                     the surplus to its right, keeping the content flush beside the nav. This is the
+                     left-anchored alternative to Stretch + MaxWidth, which WinUI CENTERS once capped —
+                     that both opened the nav gap on a wide window and pushed the right cards under the
+                     vertical scrollbar, clipping them. Below the cap the column shrinks uniformly, so
+                     the label column stays bounded and captions wrap instead of running on one line. -->
+                <Grid HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MaxWidth="{StaticResource CueSettingsContentMaxWidth}" />
+                    </Grid.ColumnDefinitions>
                     <!-- 시간 -->
                     <StackPanel
                         x:Name="TimeSection"
