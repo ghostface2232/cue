@@ -102,11 +102,10 @@
     <x:Double x:Key="CueNavBarInset">2</x:Double>
     <x:Double x:Key="CueNavIconLeft">4</x:Double>
     <x:Double x:Key="CueNavLabelLeft">4</x:Double>
-    <!-- The group/tag section expand-collapse chevron otherwise sits flush against the row's right
-         edge; nudge it in by this much so it has a little breathing room. -->
-    <x:Double x:Key="CueNavChevronRight">2</x:Double>
+    <!-- Right inset for the group/tag section expand-collapse chevron (0 = flush to the row's edge). -->
+    <x:Double x:Key="CueNavChevronRight">0</x:Double>
     <!-- The open-task count badge on group/tag rows otherwise hugs the row's right edge; inset it. -->
-    <x:Double x:Key="CueNavBadgeRight">4</x:Double>
+    <x:Double x:Key="CueNavBadgeRight">8</x:Double>
     <!-- Opacity for the 그룹 없음 / 태그 없음 rows' icon — a faded group/tag glyph marks them as the
          catch-all bucket without the harder visual weight of a real group/tag. -->
     <x:Double x:Key="CueNavUnfiledIconOpacity">0.4</x:Double>
