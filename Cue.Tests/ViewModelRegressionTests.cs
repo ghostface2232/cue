@@ -287,6 +287,38 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task ListCompletion_AndDetailMetadataEdit_Concurrent_NeitherClobbersTheOther()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "task", Priority = Priority.None };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Change the priority from the detail panel (queues a metadata autosave, which writes Priority
+        // but never CompletedAt) and complete the same task from the list (which writes CompletedAt but
+        // never Priority). Run through the completion service and drain the autosave. Because both go
+        // through the store's atomic read-modify-write, the completion can't write back a stale priority
+        // and the metadata save can't write back a stale (uncompleted) state.
+        vm.Detail.SelectedPriority = Priority.P1;
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);   // the detail edit survived the completion
+        Assert.True(saved.IsCompleted);               // the completion survived the detail edit
+    }
+
+    [Fact]
     public async Task SegmentedTimeEditorSavesExactChosenTime()
     {
         using var temp = new TempDirectory();

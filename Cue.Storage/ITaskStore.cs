@@ -63,4 +63,50 @@ public interface ITaskStore
         await SaveAsync(record, cancellationToken).ConfigureAwait(false);
         return record;
     }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> as one atomic unit under the store's write lock: every read and
+    /// save it performs through the supplied <see cref="ITaskMutationScope"/> is held under the same
+    /// lock that serializes <see cref="SaveAsync"/> and <see cref="MutateAsync"/>, so the whole
+    /// sequence commits together and cannot interleave with another mutation. Use this for the rare
+    /// multi-record operation that must be consistent across writes — e.g. recurrence completion, which
+    /// writes a Logbook copy and then advances the original. A single read-modify-write should use the
+    /// simpler <see cref="MutateAsync"/>.
+    /// <para>
+    /// The default implementation forwards the scope straight to this store (correct, but with no
+    /// isolation) for simple stores; the indexed store overrides it to hold its mutation lock across
+    /// the whole unit.
+    /// </para>
+    /// </summary>
+    Task RunInTransactionAsync(Func<ITaskMutationScope, CancellationToken, Task> work, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        return work(new ForwardingMutationScope(this), cancellationToken);
+    }
+}
+
+/// <summary>
+/// The read/save surface available inside <see cref="ITaskStore.RunInTransactionAsync"/>. A sequence
+/// of calls on one scope is performed under the transaction's lock, so they commit as a single atomic
+/// unit. Mirrors the read-by-id and save halves of <see cref="ITaskStore"/>.
+/// </summary>
+public interface ITaskMutationScope
+{
+    /// <inheritdoc cref="ITaskStore.GetAsync{T}"/>
+    Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase;
+
+    /// <inheritdoc cref="ITaskStore.SaveAsync{T}"/>
+    Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase;
+}
+
+/// <summary>A scope that forwards straight to an <see cref="ITaskStore"/> — the default
+/// (non-isolating) transaction surface for stores that don't override
+/// <see cref="ITaskStore.RunInTransactionAsync"/>.</summary>
+internal sealed class ForwardingMutationScope(ITaskStore store) : ITaskMutationScope
+{
+    public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
+        => store.GetAsync<T>(id, cancellationToken);
+
+    public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
+        => store.SaveAsync(record, cancellationToken);
 }
