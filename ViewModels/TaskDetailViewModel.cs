@@ -19,6 +19,12 @@ public sealed record WhenEditorOption(WhenEditorMode Mode, string Name);
 public sealed record TaskGroupEditorOption(Guid? Id, string Name);
 public sealed record TimeOption(int Value, string Label);
 
+/// <summary>One choice in the 반복 (recurrence) picker: a display name and the RRULE it stands for.
+/// A <c>null</c> <see cref="Rule"/> is the "반복 안 함" (no recurrence) entry. The view model keeps the
+/// RRULE string only — turning it into a <see cref="RecurrenceRule"/> (with an anchor) happens on save,
+/// and evaluating it stays in the storage layer (invariant 9).</summary>
+public sealed record RecurrenceEditorOption(string? Rule, string Name);
+
 /// <summary>
 /// An immutable capture of everything an autosave writes, taken the moment an edit happens. Binding the
 /// target task id together with all field values means a queued save always persists the values that were
@@ -31,6 +37,7 @@ public sealed record TaskEditSnapshot(
     string? Notes,
     Priority Priority,
     ScheduledWhen When,
+    RecurrenceRule? Recurrence,
     Guid? TaskGroupId,
     IReadOnlyList<Guid> TagIds);
 
@@ -126,6 +133,10 @@ public partial class TaskDetailViewModel : ObservableObject
     private DateTimeOffset? _loadedWhenDate;
     private TimeSpan? _loadedWhenTime;
     private bool _loadedIsWhenAllDay;
+    // The recurrence the task loaded with, kept so an edit that never touched 반복 preserves the rule's
+    // exact original anchor instead of re-anchoring it (which would shift the series) on every save.
+    private RecurrenceRule? _originalRecurrence;
+    private string? _loadedRecurrenceRule;
     private bool _isLoading;
 
     // Coalesces a single user action that touches several properties into one save. Distinct from
@@ -159,9 +170,24 @@ public partial class TaskDetailViewModel : ObservableObject
         new(WhenEditorMode.SpecificDate, "날짜 지정"),
     ];
 
+    // The built-in 반복 presets, in display order. Their RRULEs match what the quick-add parser emits for
+    // the same phrases (see BuiltInRules), so a task created by typing "매주 ..." and one set here are
+    // interchangeable. A loaded task whose rule isn't one of these (e.g. a parsed 격주/특정 요일 rule) gets
+    // a synthetic "custom" entry prepended on open so it round-trips.
+    private static readonly RecurrenceEditorOption[] RecurrencePresets =
+    [
+        new(null, "반복 안 함"),
+        new("FREQ=DAILY", "매일"),
+        new("FREQ=WEEKLY", "매주"),
+        new("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", "평일 (월–금)"),
+        new("FREQ=MONTHLY", "매월"),
+        new("FREQ=YEARLY", "매년"),
+    ];
+
     public ObservableCollection<TaskGroupEditorOption> TaskGroups { get; } = new();
     public ObservableCollection<TagEditorOption> Tags { get; } = new();
     public ObservableCollection<ChecklistItemViewModel> Checklist { get; } = new();
+    public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
     [ObservableProperty]
@@ -198,6 +224,10 @@ public partial class TaskDetailViewModel : ObservableObject
 
     [ObservableProperty]
     public partial TaskGroupEditorOption? SelectedTaskGroup { get; set; }
+
+    /// <summary>The chosen 반복 (recurrence) preset, or the "반복 안 함" entry for none.</summary>
+    [ObservableProperty]
+    public partial RecurrenceEditorOption? SelectedRecurrence { get; set; }
 
     [ObservableProperty]
     public partial string NewChecklistItemTitle { get; set; } = string.Empty;
@@ -295,6 +325,7 @@ public partial class TaskDetailViewModel : ObservableObject
     partial void OnWhenTimeChanged(TimeSpan? value) => RequestAutoSave();
     partial void OnSelectedPriorityChanged(Priority value) => RequestAutoSave();
     partial void OnSelectedTaskGroupChanged(TaskGroupEditorOption? value) => RequestAutoSave();
+    partial void OnSelectedRecurrenceChanged(RecurrenceEditorOption? value) => RequestAutoSave();
 
     partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
     partial void OnSelectedWhenMinuteChanged(TimeOption? value) => SyncWhenTimeFromParts();
@@ -326,6 +357,10 @@ public partial class TaskDetailViewModel : ObservableObject
         _loadedWhenDate = WhenDate;
         _loadedWhenTime = WhenTime;
         _loadedIsWhenAllDay = IsWhenAllDay;
+
+        LoadRecurrence(task.Recurrence);
+        _originalRecurrence = task.Recurrence;
+        _loadedRecurrenceRule = task.Recurrence?.Rule;
 
         // Stay in the loading guard until the panel is fully populated — setting SelectedTaskGroup and the
         // tag rows below must not trip autosave (no save should fire just from opening a task).
@@ -417,12 +452,14 @@ public partial class TaskDetailViewModel : ObservableObject
     private TaskEditSnapshot? CaptureSnapshot()
     {
         if (_taskId is not { } id) return null;
+        var when = BuildWhen();
         return new TaskEditSnapshot(
             id,
             Title.Trim(),
             string.IsNullOrWhiteSpace(Notes) ? null : Notes,
             SelectedPriority,
-            BuildWhen(),
+            when,
+            BuildRecurrence(when),
             SelectedTaskGroup?.Id,
             Tags.Where(tag => tag.IsSelected && tag.Id != Guid.Empty).Select(tag => tag.Id).ToList());
     }
@@ -481,6 +518,7 @@ public partial class TaskDetailViewModel : ObservableObject
                 task.Notes = snapshot.Notes;
                 task.Priority = snapshot.Priority;
                 task.When = snapshot.When;
+                task.Recurrence = snapshot.Recurrence;
                 task.TaskGroupId = snapshot.TaskGroupId;
                 task.TagIds = snapshot.TagIds.ToList();
                 return true;
@@ -665,6 +703,33 @@ public partial class TaskDetailViewModel : ObservableObject
         };
     }
 
+    /// <summary>
+    /// Resolves the panel's 반복 selection to a <see cref="RecurrenceRule"/> (or <c>null</c> for none),
+    /// anchoring on the task's own date. When the rule string is unchanged from what loaded, the original
+    /// rule is returned verbatim so its exact anchor is preserved — re-anchoring on every save would
+    /// silently shift the series. A newly chosen rule anchors on the task's When date if it has one, else
+    /// on today (so a dateless recurring task still has a valid evaluable anchor).
+    /// </summary>
+    private RecurrenceRule? BuildRecurrence(ScheduledWhen when)
+    {
+        var rule = SelectedRecurrence?.Rule;
+        if (rule == _loadedRecurrenceRule)
+            return _originalRecurrence;
+        if (rule is null)
+            return null;
+
+        var anchor = when.Date ?? StartOfTodayAnchor();
+        return new RecurrenceRule(rule, anchor);
+    }
+
+    /// <summary>A zoned anchor at local start of day today — the fallback recurrence anchor for a task
+    /// that has no When date of its own.</summary>
+    private ZonedDateTime StartOfTodayAnchor()
+    {
+        var now = LocalNow();
+        return ZonedDateTime.FromLocal(new DateTime(now.Year, now.Month, now.Day), _zone.Id);
+    }
+
     /// <summary>Builds the OnDate When for a chosen day: an all-day (종일) date pinned to local start of
     /// day with the 종일 flag, or a timed date pinned to the chosen wall-clock time.</summary>
     private ScheduledWhen DatedWhen(DateTimeOffset selected)
@@ -768,6 +833,82 @@ public partial class TaskDetailViewModel : ObservableObject
         var none = Tags.FirstOrDefault(tag => tag.Id == Guid.Empty);
         if (none is not null)
             none.IsSelected = Tags.All(tag => tag.Id == Guid.Empty || !tag.IsSelected);
+    }
+
+    /// <summary>
+    /// Rebuilds the 반복 option list and selects the entry matching the loaded task. The built-in presets
+    /// always lead; a recurring task whose rule isn't one of them (e.g. a parsed 격주/특정 요일 rule) gets a
+    /// synthetic entry — labelled with a readable Korean summary — prepended after "반복 안 함", selected,
+    /// so its exact rule round-trips even though it has no preset.
+    /// </summary>
+    private void LoadRecurrence(RecurrenceRule? recurrence)
+    {
+        RecurrenceOptions.Clear();
+        foreach (var preset in RecurrencePresets)
+            RecurrenceOptions.Add(preset);
+
+        var rule = recurrence?.Rule;
+        var match = RecurrenceOptions.FirstOrDefault(option => option.Rule == rule);
+        if (match is null && rule is not null)
+        {
+            // Insert the custom rule right after "반복 안 함" so it reads as an alternative to the presets.
+            match = new RecurrenceEditorOption(rule, RecurrenceSummary(rule));
+            RecurrenceOptions.Insert(1, match);
+        }
+        SelectedRecurrence = match ?? RecurrenceOptions[0];
+    }
+
+    /// <summary>A short Korean summary of an RRULE, for labelling a non-preset rule in the picker. Covers
+    /// the shapes the quick-add parser emits; an unrecognized rule falls back to a generic "반복" label.</summary>
+    private static string RecurrenceSummary(string rule)
+    {
+        var parts = rule.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in parts)
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length == 2) fields[kv[0]] = kv[1];
+        }
+
+        fields.TryGetValue("FREQ", out var freq);
+        fields.TryGetValue("INTERVAL", out var intervalText);
+        var interval = int.TryParse(intervalText, out var n) ? n : 1;
+
+        switch (freq?.ToUpperInvariant())
+        {
+            case "DAILY":
+                return interval > 1 ? $"{interval}일마다" : "매일";
+            case "WEEKLY":
+            {
+                var days = fields.TryGetValue("BYDAY", out var byDay) ? KoreanDays(byDay) : null;
+                var every = interval > 1 ? "격주" : "매주";
+                if (byDay == "MO,TU,WE,TH,FR") return "평일 (월–금)";
+                return days is null ? every : $"{every} {days}";
+            }
+            case "MONTHLY":
+                return fields.TryGetValue("BYMONTHDAY", out var dom) ? $"매월 {dom}일" : "매월";
+            case "YEARLY":
+                return "매년";
+            case "MINUTELY":
+                return $"{interval}분마다";
+            case "HOURLY":
+                return $"{interval}시간마다";
+            default:
+                return "반복";
+        }
+    }
+
+    private static string KoreanDays(string byDay)
+    {
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["MO"] = "월", ["TU"] = "화", ["WE"] = "수", ["TH"] = "목",
+            ["FR"] = "금", ["SA"] = "토", ["SU"] = "일",
+        };
+        var labels = byDay
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(code => names.TryGetValue(code, out var label) ? label : code);
+        return string.Join("·", labels) + "요일";
     }
 
     /// <summary>Fills the checklist rows straight from the loaded task (the file source of truth) — the

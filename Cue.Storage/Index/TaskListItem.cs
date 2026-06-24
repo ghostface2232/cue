@@ -29,6 +29,7 @@ public sealed record TaskListItem(
     bool IsCompleted,
     Priority Priority,
     string SortOrder,
+    bool IsRecurring = false,
     string? TaskGroupName = null,
     string? TaskGroupIcon = null,
     IReadOnlyList<TaskListTag>? Tags = null,

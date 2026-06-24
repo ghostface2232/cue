@@ -622,6 +622,38 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task IsRecurring_IsMirroredInTheIndex_AndRebuildsFromFiles()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        var repeating = new TaskItem
+        {
+            Title = "매주 운동",
+            Recurrence = new RecurrenceRule("FREQ=WEEKLY;BYDAY=MO", OnDayZoned(Today)),
+        };
+        var oneOff = new TaskItem { Title = "한 번만" };
+        await store.SaveAsync(repeating);
+        await store.SaveAsync(oneOff);
+
+        var listed = await store.GetAllActiveAsync();
+        Assert.True(Assert.Single(listed, t => t.Id == repeating.Id).IsRecurring);
+        Assert.False(Assert.Single(listed, t => t.Id == oneOff.Id).IsRecurring);
+
+        // Clearing the recurrence flips the flag on the next reflect.
+        repeating.Recurrence = null;
+        await store.SaveAsync(repeating);
+        Assert.False(Assert.Single(await store.GetAllActiveAsync(), t => t.Id == repeating.Id).IsRecurring);
+
+        // The flag is derived, so it survives a full index rebuild from the files.
+        oneOff.Recurrence = new RecurrenceRule("FREQ=DAILY", OnDayZoned(Today));
+        await store.SaveAsync(oneOff);
+        await store.InitializeAsync();
+        Assert.True(Assert.Single(await store.GetAllActiveAsync(), t => t.Id == oneOff.Id).IsRecurring);
+    }
+
+    [Fact]
     public async Task DetailedTaskEdit_IsImmediatelyReflectedAcrossClassificationAndTimeViews()
     {
         var root = NewRoot();

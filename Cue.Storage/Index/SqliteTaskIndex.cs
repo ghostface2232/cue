@@ -33,7 +33,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     // correlate the tag set without column ambiguity.
     private const string TaskColumns =
         "t.id, t.title, t.group_id, t.checklist, t.when_kind, t.when_date, t.when_time, " +
-        "t.completed_at, t.priority, t.sort_order";
+        "t.completed_at, t.priority, t.sort_order, t.is_recurring";
 
     // The list projection: base columns + the row's group (name and icon, null when unfiled or the
     // group is deleted) + a packed tag set so a row can show its group and tags without a per-row
@@ -83,7 +83,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 6;
+    private const long SchemaVersion = 7;
 
     private void EnsureSchema()
     {
@@ -118,7 +118,8 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 completed_at    TEXT NULL,
                 deleted_at      TEXT NULL,
                 priority        INTEGER NOT NULL DEFAULT 0,
-                sort_order      TEXT NOT NULL DEFAULT ''
+                sort_order      TEXT NOT NULL DEFAULT '',
+                is_recurring    INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS task_tags (
                 task_id TEXT NOT NULL,
@@ -145,7 +146,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE INDEX IF NOT EXISTS ix_task_tags_tag ON task_tags(tag_id);
             CREATE INDEX IF NOT EXISTS ix_task_groups_active ON task_groups(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_tags_active ON tags(deleted_at);
-            PRAGMA user_version = 6;
+            PRAGMA user_version = 7;
             """;
         cmd.ExecuteNonQuery();
     }
@@ -253,10 +254,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 """
                 INSERT INTO tasks
                     (id, title, group_id, checklist, when_kind, when_date, when_time,
-                     completed_at, deleted_at, priority, sort_order)
+                     completed_at, deleted_at, priority, sort_order, is_recurring)
                 VALUES
                     ($id, $title, $group, $checklist, $whenKind, $whenDate, $whenTime,
-                     $completed, $deleted, $priority, $sort)
+                     $completed, $deleted, $priority, $sort, $recurring)
                 ON CONFLICT(id) DO UPDATE SET
                     title           = excluded.title,
                     group_id        = excluded.group_id,
@@ -267,7 +268,8 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                     completed_at    = excluded.completed_at,
                     deleted_at      = excluded.deleted_at,
                     priority        = excluded.priority,
-                    sort_order      = excluded.sort_order;
+                    sort_order      = excluded.sort_order,
+                    is_recurring    = excluded.is_recurring;
                 """;
             Bind(cmd, "$id", task.Id.ToString());
             Bind(cmd, "$title", task.Title);
@@ -284,6 +286,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             Bind(cmd, "$deleted", Instant(task.DeletedAt));
             Bind(cmd, "$priority", (int)task.Priority);
             Bind(cmd, "$sort", task.SortOrder);
+            // A pure derived flag: whether the task carries a recurrence rule. The rule itself stays in
+            // the file (the detail view loads the full task by id) — the index only needs the boolean so
+            // a list row can show the repeat indicator. Fully rebuildable from the file.
+            Bind(cmd, "$recurring", task.Recurrence is not null ? 1 : 0);
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -609,9 +615,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         IsCompleted: !r.IsDBNull(7),
         Priority: (Priority)r.GetInt64(8),
         SortOrder: r.GetString(9),
-        TaskGroupName: r.IsDBNull(10) ? null : r.GetString(10),
-        TaskGroupIcon: r.IsDBNull(11) ? null : r.GetString(11),
-        Tags: TagsFrom(r, 12),
+        IsRecurring: r.GetInt64(10) != 0,
+        TaskGroupName: r.IsDBNull(11) ? null : r.GetString(11),
+        TaskGroupIcon: r.IsDBNull(12) ? null : r.GetString(12),
+        Tags: TagsFrom(r, 13),
         Checklist: ChecklistFrom(r, 3));
 
     // Deserializes the checklist JSON blob mirrored in the tasks.checklist column (column 3, where

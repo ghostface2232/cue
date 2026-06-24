@@ -124,6 +124,15 @@
                             </Grid>
                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap12}" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
+                                <!-- Repeat indicator: a small sync/repeat glyph marks a recurring task. -->
+                                <FontIcon
+                                    VerticalAlignment="Center"
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Glyph="&#xE8EE;"
+                                    ToolTipService.ToolTip="반복"
+                                    AutomationProperties.Name="반복"
+                                    Visibility="{x:Bind IsRecurring, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
                             </StackPanel>
                             <!-- Compact reflow: when the list is too narrow for right-edge chips, the same
                                  group/tag metadata drops to its own line under the title (driven by IsCompact). -->
@@ -471,6 +480,20 @@
                                         </Grid>
                                     </Grid>
                                     <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+
+                                <!-- 반복 (recurrence) field. Always visible — a task can repeat whether or not
+                                     it carries a concrete date, matching the quick-add parser. A plain field
+                                     label (like 중요도 / 그룹), not a card header, so it doesn't read as a second
+                                     card title. The picker offers common presets; a parsed rule with no preset
+                                     shows as its own summarized entry so it round-trips. -->
+                                <StackPanel Spacing="{StaticResource CueGap4}">
+                                    <TextBlock Text="반복" />
+                                    <ComboBox
+                                        HorizontalAlignment="Stretch"
+                                        DisplayMemberPath="Name"
+                                        ItemsSource="{x:Bind ViewModel.Detail.RecurrenceOptions}"
+                                        SelectedItem="{x:Bind ViewModel.Detail.SelectedRecurrence, Mode=TwoWay}" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
