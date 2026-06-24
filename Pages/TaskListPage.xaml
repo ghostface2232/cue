@@ -263,8 +263,13 @@
 
         <!-- Quick-add styled after the Files Omnibar: a floating pill with a CircleElevation border for
              subtle elevation (no drop shadow), centered text/icon, control-fill tone that lifts on
-             hover and gains an accent ring on focus. -->
-        <Grid Grid.Row="2" Margin="4,2,4,14">
+             hover and gains an accent ring on focus. The whole pill is collapsed (not merely disabled)
+             in views that can't quick-add — the 완료/중요도 screens — so a dead control never crowns the
+             page and the header sits flush against the list. -->
+        <Grid
+            Grid.Row="2"
+            Margin="4,2,4,14"
+            Visibility="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
             <TextBox
                 MinHeight="48"
                 Padding="46,13,14,9"
@@ -275,7 +280,6 @@
                 BorderThickness="1"
                 CornerRadius="24"
                 FontSize="15"
-                IsEnabled="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay}"
                 KeyDown="QuickAdd_KeyDown"
                 Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                 <TextBox.Resources>
