@@ -81,6 +81,29 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         finally { _mutationGate.Release(); }
     }
 
+    /// <summary>
+    /// Atomic read-modify-write: holds <see cref="_mutationGate"/> across the file read, the caller's
+    /// mutation, and the write+index reflect — the same lock <see cref="SaveAsync"/> takes. Several
+    /// callers updating different fields of one task (detail metadata, the embedded checklist, a list
+    /// completion/checklist toggle) therefore each see the latest persisted record and write back only
+    /// their own change, so none can resurrect another's stale copy.
+    /// </summary>
+    public async Task<T?> MutateAsync<T>(Guid id, Func<T, bool> mutate, CancellationToken cancellationToken = default)
+        where T : RecordBase
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var record = await _files.GetAsync<T>(id, cancellationToken).ConfigureAwait(false);
+            if (record is null || record.IsDeleted) return null;
+            if (!mutate(record)) return null;
+            await SaveCoreAsync(record, cancellationToken).ConfigureAwait(false);
+            return record;
+        }
+        finally { _mutationGate.Release(); }
+    }
+
     private async Task SaveCoreAsync<T>(T record, CancellationToken cancellationToken) where T : RecordBase
     {
         var existing = await _files.GetAsync<T>(record.Id, cancellationToken).ConfigureAwait(false);
