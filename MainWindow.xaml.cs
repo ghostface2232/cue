@@ -31,6 +31,9 @@ public sealed partial class MainWindow : Window
     private readonly HashSet<NavigationViewItem> _insetNavItems = new();
     // Rows nested under the Groups/Tags sections — they get a deeper left gutter than top-level rows.
     private readonly HashSet<NavigationViewItem> _nestedNavItems = new();
+    // The framework's NavigationViewItemExpandChevronMargin (0,0,-14,0) that pulls the centered chevron
+    // glyph flush to the row's right edge; we keep this as the base and layer CueNavChevronRight on top.
+    private const double ChevronFlushRight = -14;
 
     // While the sidebar makes its own group/tag edit it refreshes the pane directly, so it ignores the
     // notification it triggers (the detail panels still react to it). A detail-panel edit leaves this
@@ -617,10 +620,13 @@ public sealed partial class MainWindow : Window
             content.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavIconLeft", 20), 0, 4, 0);
         if (FindDescendantByName(root, "ContentPresenter") is { } label)
             label.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavLabelLeft", 4), -1, 4, -1);
-        // The group/tag section's expand-collapse chevron otherwise hugs the row's right edge; inset it
-        // so it sits a touch off the edge. Only sections with children have this part, so other rows no-op.
+        // The expand-collapse chevron is a 40px-wide grid with a 12px glyph centered in it; the framework
+        // hides the resulting right-hand slack with a -14 right margin (NavigationViewItemExpandChevronMargin)
+        // so the glyph sits flush to the row's edge. Keep that -14 base and add our inset on top, so
+        // CueNavChevronRight reads directly as the glyph's gap from the right edge. Only sections with
+        // children have this part, so other rows no-op.
         if (FindDescendantByName(root, "ExpandCollapseChevron") is { } chevron)
-            chevron.Margin = new Thickness(0, 0, NavD("CueNavChevronRight", 4), 0);
+            chevron.Margin = new Thickness(0, 0, ChevronFlushRight + NavD("CueNavChevronRight", 8), 0);
     }
 
     private static double NavD(string key, double fallback)

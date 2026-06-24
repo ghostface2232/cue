@@ -102,8 +102,9 @@
     <x:Double x:Key="CueNavBarInset">2</x:Double>
     <x:Double x:Key="CueNavIconLeft">4</x:Double>
     <x:Double x:Key="CueNavLabelLeft">4</x:Double>
-    <!-- Right inset for the group/tag section expand-collapse chevron (0 = flush to the row's edge). -->
-    <x:Double x:Key="CueNavChevronRight">0</x:Double>
+    <!-- Gap between the group/tag section expand-collapse chevron glyph and the row's right edge, in px
+         (0 = flush). Layered on top of the framework's -14 flush margin in ApplyNavRowInsetForCurrentPane. -->
+    <x:Double x:Key="CueNavChevronRight">8</x:Double>
     <!-- The open-task count badge on group/tag rows otherwise hugs the row's right edge; inset it. -->
     <x:Double x:Key="CueNavBadgeRight">8</x:Double>
     <!-- Opacity for the 그룹 없음 / 태그 없음 rows' icon — a faded group/tag glyph marks them as the
