@@ -27,7 +27,15 @@
             IsPaneToggleButtonVisible="True"
             PaneToggleRequested="TitleBar_PaneToggleRequested">
             <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/AppIcon.ico" />
+                <!-- Use a high-res PNG (not the .ico, whose tiny 16px frame was being upscaled) and decode it
+                     at the title bar's 16-DIP icon slot in LOGICAL units, so WIC produces a crisp 1:1 bitmap
+                     at the current DPI with high-quality resampling — no GPU upscaling of a tiny frame and no
+                     downscale staircase. -->
+                <ImageIconSource>
+                    <ImageIconSource.ImageSource>
+                        <BitmapImage UriSource="ms-appx:///Assets/AppIconTitle.png" DecodePixelHeight="16" DecodePixelType="Logical" />
+                    </ImageIconSource.ImageSource>
+                </ImageIconSource>
             </TitleBar.IconSource>
         </TitleBar>
 
