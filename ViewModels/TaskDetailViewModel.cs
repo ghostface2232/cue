@@ -527,7 +527,13 @@ public partial class TaskDetailViewModel : ObservableObject
                 task.TagIds = snapshot.TagIds.ToList();
                 return true;
             });
-            if (saved is not null) await _refreshOwner();
+            if (saved is not null)
+            {
+                await _refreshOwner();
+                // The save may have moved the task between groups or changed its tags, shifting the
+                // sidebar counts. Counts-only signal (cheap to recompute) — the group/tag set is unchanged.
+                _navNotifier.NotifyCountsChanged();
+            }
         }
         catch (Exception ex)
         {
@@ -631,6 +637,8 @@ public partial class TaskDetailViewModel : ObservableObject
         await _store.DeleteAsync<TaskItem>(id);
         Close();
         await _refreshOwner();
+        // A deleted open task drops out of its group/tag counts in the sidebar.
+        _navNotifier.NotifyCountsChanged();
     }
 
     /// <summary>Removes one checklist item from the open task, persists the parent, and drops its row

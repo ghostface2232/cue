@@ -60,6 +60,7 @@ public partial class TaskListViewModel : ObservableObject
     private readonly TimeProvider _clock;
     private readonly string _timeZoneId;
     private readonly TimeZoneInfo _timeZone;
+    private readonly INavDataChangeNotifier _navNotifier;
 
     // Serializes reorder persists so a fast run of drops can't interleave their rank writes.
     private readonly SemaphoreSlim _reorderGate = new(1, 1);
@@ -128,6 +129,7 @@ public partial class TaskListViewModel : ObservableObject
         _clock = clock;
         _timeZoneId = zone.Id;
         _timeZone = zone;
+        _navNotifier = navNotifier;
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
@@ -230,6 +232,8 @@ public partial class TaskListViewModel : ObservableObject
         await _store.SaveAsync(task);
         QuickAddText = string.Empty;
         await LoadAsync();
+        // A new open task bumps its group/tag (or the 없음 bucket) count in the sidebar.
+        _navNotifier.NotifyCountsChanged();
     }
 
     /// <summary>Reloads the list from the index for the current mode.</summary>
@@ -562,7 +566,12 @@ public partial class TaskListViewModel : ObservableObject
             task.TaskGroupId = taskGroupId;
             return true;
         });
-        if (moved is not null) await LoadAsync();
+        if (moved is not null)
+        {
+            await LoadAsync();
+            // The task left one group's count and joined another's (or the 그룹 없음 bucket).
+            _navNotifier.NotifyCountsChanged();
+        }
     }
 
     /// <summary>Adds the tag if absent, removes it if present, then refreshes.</summary>
@@ -574,7 +583,12 @@ public partial class TaskListViewModel : ObservableObject
             if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
             return true;
         });
-        if (changed is not null) await LoadAsync();
+        if (changed is not null)
+        {
+            await LoadAsync();
+            // The tag gained or lost this task, shifting its sidebar count (and the 태그 없음 bucket).
+            _navNotifier.NotifyCountsChanged();
+        }
     }
 
     /// <summary>Renames a task, then refreshes. A blank name is ignored.</summary>
@@ -595,6 +609,8 @@ public partial class TaskListViewModel : ObservableObject
         await _store.DeleteAsync<TaskItem>(id);
         if (Detail.IsOpen && Detail.CurrentTaskId == id) Detail.Close();
         await LoadAsync();
+        // A deleted open task drops out of its group/tag counts in the sidebar.
+        _navNotifier.NotifyCountsChanged();
     }
 
     [RelayCommand]
@@ -641,6 +657,8 @@ public partial class TaskListViewModel : ObservableObject
             }
             // Keep the row in place for this session so completion has a visible, reversible
             // acknowledgement. Index-backed navigation/reload naturally removes it later.
+            // The open-task count for this task's group/tag just changed — refresh the sidebar badges.
+            _navNotifier.NotifyCountsChanged();
         }
         catch
         {

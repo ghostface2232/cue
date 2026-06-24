@@ -44,12 +44,20 @@ public partial class ShellViewModel : ObservableObject
     {
         var taskGroups = await _index.GetTaskGroupsAsync();
         var tags = await _index.GetTagsAsync();
+        await RefreshTaskCountsAsync();
+        Replace(TaskGroups, taskGroups);
+        Replace(Tags, tags);
+    }
+
+    /// <summary>Recomputes just the open-task counts from the index, leaving the group/tag lists alone.
+    /// The shell calls this when a task change (add, complete, delete, group/tag move) shifts the badge
+    /// numbers but not the record set, so it can re-stamp the badges in place without a list rebuild.</summary>
+    public async Task RefreshTaskCountsAsync()
+    {
         TaskGroupTaskCounts = await _index.GetOpenTaskCountsByTaskGroupAsync();
         TagTaskCounts = await _index.GetOpenTaskCountsByTagAsync();
         NoTaskGroupTaskCount = await _index.GetOpenTaskCountWithoutTaskGroupAsync();
         NoTagTaskCount = await _index.GetOpenTaskCountWithoutTagAsync();
-        Replace(TaskGroups, taskGroups);
-        Replace(Tags, tags);
     }
 
     [RelayCommand]

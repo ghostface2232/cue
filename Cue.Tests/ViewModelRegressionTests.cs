@@ -1010,6 +1010,44 @@ public sealed class ViewModelRegressionTests
         Assert.Equal("A", savedA.Title);               // the later live edit did NOT leak onto A
     }
 
+    [Fact]
+    public async Task TaskChangesAffectingCountsRaiseCountsChanged()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var group = new TaskGroup { Name = "G" };
+        await store.SaveAsync(group);
+
+        var notifier = new NavDataChangeNotifier();
+        var counts = 0;
+        notifier.CountsChanged += (_, _) => counts++;
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, notifier);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        // Quick-add a task → the sidebar's open-task counts shift, so a counts signal is raised.
+        vm.QuickAddText = "buy milk";
+        await vm.AddCommand.ExecuteAsync(null);
+        Assert.Equal(1, counts);
+        var row = Assert.Single(vm.Tasks);
+
+        // Moving it into a group shifts both the group's count and the 그룹 없음 bucket.
+        await vm.MoveTaskToTaskGroupAsync(row.Id, group.Id);
+        Assert.Equal(2, counts);
+
+        // Completing it drops it out of the open-task counts.
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        Assert.Equal(3, counts);
+
+        // Deleting it likewise changes the counts.
+        await vm.DeleteTaskCommand.ExecuteAsync(row.Id);
+        Assert.Equal(4, counts);
+    }
+
     /// <summary>Wraps a real store and blocks the first <c>GetAsync&lt;TaskItem&gt;</c> for an armed id until
     /// released, so a test can hold an autosave in flight and mutate the panel underneath it.</summary>
     private sealed class GatedTaskStore(ITaskStore inner) : ITaskStore

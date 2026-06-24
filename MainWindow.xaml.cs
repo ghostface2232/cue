@@ -54,6 +54,9 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         // A group/tag created/edited in a detail panel reloads the sidebar lists at once.
         _navNotifier.Changed += OnNavDataChanged;
+        // A task add/complete/delete/move changes the open-task counts but not the group/tag set, so the
+        // badges are re-stamped in place rather than rebuilding the lists.
+        _navNotifier.CountsChanged += OnNavCountsChanged;
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -220,14 +223,6 @@ public sealed partial class MainWindow : Window
         if (item.Tag is not string s || s != "settings")
             _backTargetItem = item;
 
-        if (item.Tag is string fixedView && fixedView == "timeline")
-        {
-            _currentNavigation = null;
-            NavFrame.Navigate(typeof(TimelinePage));
-            NavFrame.BackStack.Clear();
-            return;
-        }
-
         if (item.Tag is string settings && settings == "settings")
         {
             _currentNavigation = null;
@@ -252,6 +247,54 @@ public sealed partial class MainWindow : Window
             await ViewModel.LoadAsync();
             RebuildLiveNavigation();
         });
+    }
+
+    /// <summary>Reflects a task change (add, complete/reopen, delete, group/tag move) in the sidebar count
+    /// badges. Only the numbers shift — the group/tag set is unchanged — so this recomputes the counts and
+    /// updates each row's badge in place, leaving the realized items (and so selection, expansion, and
+    /// scroll) untouched. Cheaper and less disruptive than the full list rebuild a structural change does.</summary>
+    private async void OnNavCountsChanged(object? sender, EventArgs e)
+    {
+        await RunSafelyAsync(async () =>
+        {
+            await ViewModel.RefreshTaskCountsAsync();
+            UpdateCountBadges();
+        });
+    }
+
+    /// <summary>Re-stamps every group/tag row's open-task count badge from the freshly refreshed counts,
+    /// matching each realized nav item to its count by the navigation tag it carries.</summary>
+    private void UpdateCountBadges()
+    {
+        foreach (var item in GroupsSection.MenuItems) UpdateCountBadge(item);
+        foreach (var item in TagsSection.MenuItems) UpdateCountBadge(item);
+    }
+
+    private void UpdateCountBadge(object obj)
+    {
+        if (obj is not NavigationViewItem item || item.Tag is not TaskListNavigation nav)
+            return;
+        var count = nav.Mode switch
+        {
+            TaskListMode.TaskGroup when nav.FilterId is { } id =>
+                ViewModel.TaskGroupTaskCounts.TryGetValue(id, out var c) ? c : 0,
+            TaskListMode.Tag when nav.FilterId is { } id =>
+                ViewModel.TagTaskCounts.TryGetValue(id, out var c) ? c : 0,
+            TaskListMode.NoTaskGroup => ViewModel.NoTaskGroupTaskCount,
+            TaskListMode.NoTag => ViewModel.NoTagTaskCount,
+            _ => 0,
+        };
+        // Reuse the existing badge when present (just retarget its value) so the count can change without
+        // re-creating the control; drop it entirely once the row's open count falls to zero.
+        if (count > 0)
+        {
+            if (item.InfoBadge is { } badge) badge.Value = count;
+            else item.InfoBadge = CreateCountBadge(count);
+        }
+        else
+        {
+            item.InfoBadge = null;
+        }
     }
 
     /// <summary>Runs one of the pane's own group/tag mutations with the self-notification suppressed, so
@@ -430,14 +473,12 @@ public sealed partial class MainWindow : Window
         ("anytime", "", "언젠가 할 일"),
         ("logbook", "", "완료한 일"),
         ("priority", "", "중요도"),
-        ("timeline", "\uE9D2", "타임라인"),
     };
 
     private NavigationViewItem NavItemFor(string key) => key switch
     {
         "today" => TodayItem,
         "upcoming" => UpcomingItem,
-        "timeline" => TimelineItem,
         "anytime" => AnytimeItem,
         "logbook" => LogbookItem,
         "priority" => PriorityItem,
