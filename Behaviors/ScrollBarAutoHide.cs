@@ -110,12 +110,15 @@ public static class ScrollBarAutoHide
     {
         private const string IndicatorGroup = "ScrollingIndicatorStates";
         private const string ThickState = "MouseIndicator";
-        private const string ThinState = "NoIndicator";
+        private const string FullMouseState = "MouseIndicatorFull";
+        private const double ScrollBarGutter = 12;
 
         private readonly ScrollViewer _scrollViewer;
         private readonly DispatcherTimer _idle = new() { Interval = IdleBeforeHide };
         private readonly List<ScrollBar> _bars = new();
         private readonly HashSet<ScrollBar> _indicatorHooked = new();
+        private readonly Thickness _basePadding;
+        private bool _scrollViewerIndicatorHooked;
         private bool _hovering;
         private bool _shown;
         private bool _forcing;
@@ -123,6 +126,7 @@ public static class ScrollBarAutoHide
         public Controller(ScrollViewer scrollViewer)
         {
             _scrollViewer = scrollViewer;
+            _basePadding = scrollViewer.Padding;
             _idle.Tick += (_, _) =>
             {
                 _idle.Stop();
@@ -133,23 +137,44 @@ public static class ScrollBarAutoHide
 
         public void Attach()
         {
-            CollectOwnScrollBars(_scrollViewer, _bars);
-            foreach (var bar in _bars)
-            {
-                bar.PointerEntered += (_, _) => { _hovering = true; _idle.Stop(); Show(); };
-                bar.PointerExited += (_, _) => { _hovering = false; Bump(); };
-            }
+            ReserveScrollBarGutter();
+            RefreshBars();
 
             _scrollViewer.ViewChanged += (_, _) => Bump();
+            _scrollViewer.SizeChanged += (_, _) =>
+            {
+                ReserveScrollBarGutter();
+                RefreshBars();
+                if (!_shown) Fade(0f, TimeSpan.Zero);
+            };
             _scrollViewer.Unloaded += (_, _) => _idle.Stop();
 
             HookIndicators();
             // Parts realize only after the first layout pass, so hook again once it settles.
             _scrollViewer.DispatcherQueue.TryEnqueue(
-                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, HookIndicators);
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+                {
+                    RefreshBars();
+                    HookIndicators();
+                    if (!_shown) Fade(0f, TimeSpan.Zero);
+                });
 
             // Start hidden; the first scroll or hover reveals them.
             Fade(0f, TimeSpan.Zero);
+        }
+
+        private void ReserveScrollBarGutter()
+        {
+            var right = _scrollViewer.VerticalScrollBarVisibility == ScrollBarVisibility.Disabled
+                ? _basePadding.Right
+                : Math.Max(_basePadding.Right, ScrollBarGutter);
+            var bottom = _scrollViewer.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled
+                ? _basePadding.Bottom
+                : Math.Max(_basePadding.Bottom, ScrollBarGutter);
+
+            var reserved = new Thickness(_basePadding.Left, _basePadding.Top, right, bottom);
+            if (_scrollViewer.Padding != reserved)
+                _scrollViewer.Padding = reserved;
         }
 
         // Scroll or pointer-leave: reveal, then restart the idle countdown.
@@ -163,6 +188,7 @@ public static class ScrollBarAutoHide
         private void Show()
         {
             _shown = true;
+            RefreshBars();
             HookIndicators();
             ForceThick();
             Fade(1f, FadeIn);
@@ -174,15 +200,38 @@ public static class ScrollBarAutoHide
         private void ForceThick()
         {
             _forcing = true;
+            VisualStateManager.GoToState(_scrollViewer, ThickState, true);
             foreach (var bar in _bars)
+            {
+                bar.IndicatorMode = ScrollingIndicatorMode.MouseIndicator;
                 VisualStateManager.GoToState(bar, ThickState, true);
+            }
             _forcing = false;
         }
 
-        // If the framework drops the bar back to the thin state while we're still showing it, pull it
-        // back to the thick one. Guarded so our own state change can't recurse.
+        private void RefreshBars()
+        {
+            var found = new List<ScrollBar>();
+            CollectOwnScrollBars(_scrollViewer, found);
+            foreach (var bar in found)
+            {
+                if (_bars.Contains(bar)) continue;
+                _bars.Add(bar);
+                bar.PointerEntered += (_, _) => { _hovering = true; _idle.Stop(); Show(); };
+                bar.PointerExited += (_, _) => { _hovering = false; Bump(); };
+
+                var visual = ElementCompositionPreview.GetElementVisual(bar);
+                visual.Opacity = _shown ? 1f : 0f;
+                if (_shown) bar.IndicatorMode = ScrollingIndicatorMode.MouseIndicator;
+            }
+        }
+
+        // If the framework drops the scroll surface or a bar back to touch/thin/no-indicator while
+        // we're still showing it, pull it back to the mouse indicator. Guarded so our own state
+        // changes can't recurse.
         private void HookIndicators()
         {
+            HookScrollViewerIndicator();
             foreach (var bar in _bars)
             {
                 if (_indicatorHooked.Contains(bar)) continue;
@@ -195,16 +244,42 @@ public static class ScrollBarAutoHide
                     var target = bar;
                     group.CurrentStateChanged += (_, e) =>
                     {
-                        if (_shown && !_forcing && e.NewState?.Name == ThinState)
+                        if (_shown && !_forcing && e.NewState?.Name != ThickState)
+                        {
+                            target.IndicatorMode = ScrollingIndicatorMode.MouseIndicator;
                             VisualStateManager.GoToState(target, ThickState, true);
+                        }
                     };
                     _indicatorHooked.Add(bar);
                 }
             }
         }
 
+        private void HookScrollViewerIndicator()
+        {
+            if (_scrollViewerIndicatorHooked ||
+                VisualTreeHelper.GetChildrenCount(_scrollViewer) == 0 ||
+                VisualTreeHelper.GetChild(_scrollViewer, 0) is not FrameworkElement root)
+                return;
+
+            foreach (var group in VisualStateManager.GetVisualStateGroups(root))
+            {
+                if (group.Name != IndicatorGroup) continue;
+                group.CurrentStateChanged += (_, e) =>
+                {
+                    if (!_shown || _forcing) return;
+                    var stateName = e.NewState?.Name;
+                    if (stateName is ThickState or FullMouseState) return;
+                    ForceThick();
+                };
+                _scrollViewerIndicatorHooked = true;
+                break;
+            }
+        }
+
         private void Fade(float opacity, TimeSpan duration)
         {
+            RefreshBars();
             foreach (var bar in _bars)
             {
                 var visual = ElementCompositionPreview.GetElementVisual(bar);

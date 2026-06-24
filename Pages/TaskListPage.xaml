@@ -345,7 +345,7 @@
                         </Border.OpacityTransition>
                     </Border>
                     <ScrollViewer behaviors:ScrollBarAutoHide.IsEnabled="True" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="2,0,16,0" Spacing="{StaticResource CueGap12}">
+                        <StackPanel Margin="2,0,4,0" Spacing="{StaticResource CueGap12}">
                         <Grid ColumnSpacing="{StaticResource CueGap8}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

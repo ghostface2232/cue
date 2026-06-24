@@ -152,6 +152,18 @@
     <SolidColorBrush x:Key="CuePressedFillBrush" Color="{ThemeResource SubtleFillColorTertiary}" />
     <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
     <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+
+    <!-- Scrollbars: keep the stock Fluent template, but tune the visual thumb globally. The color is
+         the platform strong fill with opacity, so light/dark stay theme-correct while reading softer. -->
+    <x:Double x:Key="ScrollBarVerticalThumbMinWidth">4</x:Double>
+    <x:Double x:Key="ScrollBarHorizontalThumbMinHeight">4</x:Double>
+    <x:Double x:Key="ScrollBarThumbStrokeThickness">0</x:Double>
+    <SolidColorBrush x:Key="ScrollBarThumbBackground" Color="{ThemeResource ControlStrongFillColorDefault}" Opacity="0.50" />
+    <SolidColorBrush x:Key="ScrollBarPanningThumbBackground" Color="{ThemeResource ControlStrongFillColorDefault}" Opacity="0.50" />
+    <SolidColorBrush x:Key="ScrollBarThumbFill" Color="{ThemeResource ControlStrongFillColorDefault}" Opacity="0.50" />
+    <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{ThemeResource ControlStrongFillColorDefault}" Opacity="0.62" />
+    <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{ThemeResource ControlStrongFillColorDefault}" Opacity="0.74" />
+
     <!-- HyperlinkButton shares the exact same hover/press language as Button, so icon buttons
          (e.g. the detail panel close button) read identically to every other button: a quiet
          background fill, no accent-colored or specially-animated hover. Foreground deepens to
