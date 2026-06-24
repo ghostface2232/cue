@@ -51,6 +51,13 @@ public partial class TaskRowViewModel : ObservableObject
     public bool HasPriority => Priority != Priority.None;
     public string PriorityCaption => HasPriority ? Priority.ToString() : string.Empty;
 
+    /// <summary>True when the task repeats (carries a recurrence rule). Drives the row's repeat glyph.
+    /// The list only needs the flag — the rule itself lives in the file and is loaded by the detail
+    /// panel.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMetadata))]
+    public partial bool IsRecurring { get; set; }
+
     /// <summary>The row's group name, shown as a chip at the right edge; empty when the task is unfiled.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasGroup))]
@@ -92,7 +99,7 @@ public partial class TaskRowViewModel : ObservableObject
     private const string DefaultGroupGlyph = "";
     // Checklist items are rendered as their own indented sub-list, so their presence is already obvious —
     // they intentionally do not add a "체크리스트 N" caption to the parent row's metadata line.
-    public bool HasMetadata => HasSchedule || HasPriority;
+    public bool HasMetadata => HasSchedule || HasPriority || IsRecurring;
     public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
 
     /// <summary>The task's embedded checklist items as nested rows under it (read + toggle only). The
@@ -122,6 +129,7 @@ public partial class TaskRowViewModel : ObservableObject
         SortOrder = item.SortOrder;
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
+        IsRecurring = item.IsRecurring;
         ApplyGroupAndTags(item);
 
         _suppressToggle = true;       // initial state from the index, not a user action
@@ -141,6 +149,7 @@ public partial class TaskRowViewModel : ObservableObject
         Title = FormatTitle(item.Title);
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
+        IsRecurring = item.IsRecurring;
         SortOrder = item.SortOrder;
         ApplyGroupAndTags(item);
         SetCompletedSilently(item.IsCompleted);
