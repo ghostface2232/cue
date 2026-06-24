@@ -614,7 +614,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Deserializes the checklist JSON blob mirrored in the tasks.checklist column (column 3, where
     // the former parent_task_id lived — kept at that ordinal so the rest of Map is unchanged). Only
-    // the fields a nested list row needs are projected; the memo is left to the detail view.
+    // the fields a nested list row needs are projected (id, title, checked).
     private static IReadOnlyList<TaskListChecklistItem> ChecklistFrom(SqliteDataReader r, int i)
     {
         if (r.IsDBNull(i))
