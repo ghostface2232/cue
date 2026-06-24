@@ -50,6 +50,7 @@ public sealed partial class TaskListPage : Page
     private double _resizeStartWidth;
     private bool _detailOverlay;
     private bool _listCompact;
+    private bool _detailResizable;
 
     // Set while a drag-reorder commits, so the row that moves in the bound collection does not also
     // play the list's entrance animation on top of the drop settle.
@@ -110,6 +111,17 @@ public sealed partial class TaskListPage : Page
         // Give the row keyboard focus too, so a follow-up Delete acts on the just-selected task.
         element.Focus(FocusState.Pointer);
         await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(id));
+    }
+
+    /// <summary>Tapping a nested checklist row opens its parent task's detail (its <c>Tag</c> is the
+    /// parent id). The checkbox still just toggles — IsInteractiveElement guards that. A checklist item
+    /// isn't a task, so this row never grabs Delete-focus the way a task row does.</summary>
+    private async void ChecklistSurface_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: Guid parentId } || IsInteractiveElement(e.OriginalSource as DependencyObject))
+            return;
+        e.Handled = true;
+        await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(parentId));
     }
 
     /// <summary>Delete on a focused row soft-deletes that task (with confirmation).</summary>
@@ -329,17 +341,15 @@ public sealed partial class TaskListPage : Page
             Grid.SetColumn(DetailPanel, 0);
             Grid.SetColumnSpan(DetailPanel, 2);   // stretch across the list + panel columns
             DetailPanel.Width = double.NaN;
-            DetailResizeHitArea.Visibility = Visibility.Collapsed;
             SetDetailResizeGripVisible(false);
         }
         else
         {
             Grid.SetColumn(DetailPanel, 1);
             Grid.SetColumnSpan(DetailPanel, 1);
-            DetailResizeHitArea.Visibility = Visibility.Visible;
         }
         UpdateListObscured();
-        ApplyDetailPanelWidth();
+        ApplyDetailPanelWidth();   // owns the resize-handle visibility (hidden when not resizable)
     }
 
     /// <summary>
@@ -357,6 +367,7 @@ public sealed partial class TaskListPage : Page
 
     private void DetailResizeHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        if (!_detailResizable) return;   // pinned at its limit, or overlay — nothing to drag
         if (sender is not UIElement handle) return;
         var point = e.GetCurrentPoint(ContentSplitGrid);
         if (!point.Properties.IsLeftButtonPressed)
@@ -394,7 +405,10 @@ public sealed partial class TaskListPage : Page
     }
 
     private void DetailResizeHandle_PointerEntered(object sender, PointerRoutedEventArgs e)
-        => SetDetailResizeGripVisible(true);
+    {
+        if (_detailResizable)
+            SetDetailResizeGripVisible(true);
+    }
 
     private void DetailResizeHandle_PointerExited(object sender, PointerRoutedEventArgs e)
     {
@@ -410,9 +424,11 @@ public sealed partial class TaskListPage : Page
     private void ApplyDetailPanelWidth()
     {
         // In overlay mode the panel stretches to fill both columns (Width = NaN); leave it be and only
-        // refresh the panel's internal one-/two-column responsive state.
+        // refresh the panel's internal one-/two-column responsive state. No resizing here.
         if (_detailOverlay)
         {
+            _detailResizable = false;
+            SetDetailResizeGripVisible(false);
             UpdateDetailResponsiveLayout();
             return;
         }
@@ -420,18 +436,29 @@ public sealed partial class TaskListPage : Page
         if (ContentSplitGrid.ActualWidth <= 0)
             return;
 
-        var width = ClampDetailWidth(_detailPreferredWidth);
+        var (min, max) = DetailWidthRange();
+        var width = Math.Clamp(_detailPreferredWidth, min, max);
         if (Math.Abs(DetailPanel.Width - width) > 0.5)
             DetailPanel.Width = width;
+
+        // The panel is resizable only when the window leaves real drag room; otherwise it's pinned at its
+        // limit. The (transparent) hit area is kept permanently present — toggling its Visibility dropped
+        // its hit-testing after a layout change, which is why the handle went dead after a resize — so the
+        // drag start and the hover grip are gated on this flag instead, and the grip stays hidden when not
+        // resizable so no dead handle ever shows.
+        _detailResizable = max - min > 4;
+        if (!_detailResizable)
+            SetDetailResizeGripVisible(false);
+
         UpdateDetailResponsiveLayout();
     }
 
-    private double ClampDetailWidth(double desired)
+    private (double Min, double Max) DetailWidthRange()
     {
         var maxByWindow = ContentSplitGrid.ActualWidth - DetailPrimaryMinWidth - ContentSplitGrid.ColumnSpacing - 8;
         var max = Math.Min(DetailMaxWidth, Math.Max(DetailAbsoluteMinWidth, maxByWindow));
         var min = Math.Min(DetailMinWidth, max);
-        return Math.Clamp(desired, min, max);
+        return (min, max);
     }
 
     private void UpdateDetailResponsiveLayout()

@@ -110,16 +110,14 @@ public class DomainModelTests
     public void Checklist_HoldsLightweightItemsInOrder()
     {
         var task = new TaskItem { Title = "Plan trip" };
-        task.Checklist.Add(new ChecklistItem { Title = "Book flights", IsChecked = true, Note = "aisle seat" });
+        task.Checklist.Add(new ChecklistItem { Title = "Book flights", IsChecked = true });
         task.Checklist.Add(new ChecklistItem { Title = "Pack bags" });
 
         Assert.Equal(2, task.Checklist.Count);
         Assert.Equal("Book flights", task.Checklist[0].Title);
         Assert.True(task.Checklist[0].IsChecked);
-        Assert.Equal("aisle seat", task.Checklist[0].Note);
         Assert.Equal("Pack bags", task.Checklist[1].Title);
         Assert.False(task.Checklist[1].IsChecked);
-        Assert.Null(task.Checklist[1].Note);
         Assert.NotEqual(Guid.Empty, task.Checklist[0].Id);
         Assert.NotEqual(task.Checklist[0].Id, task.Checklist[1].Id);
     }

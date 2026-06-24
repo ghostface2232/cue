@@ -97,7 +97,7 @@ public sealed class RecurringTaskService : IRecurringTaskService
         // Deep-copy the checklist as it was checked at completion, so the Logbook keeps an accurate
         // record of what was ticked off this cycle (new item instances — the original's reset below).
         Checklist = original.Checklist
-            .Select(item => new ChecklistItem { Id = item.Id, Title = item.Title, IsChecked = item.IsChecked, Note = item.Note })
+            .Select(item => new ChecklistItem { Id = item.Id, Title = item.Title, IsChecked = item.IsChecked })
             .ToList(),
         TagIds = new List<Guid>(original.TagIds),
 

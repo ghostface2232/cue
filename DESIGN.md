@@ -84,7 +84,7 @@ typography:
     fontFamily: Pretendard JP
     fontSize: 14px
     fontWeight: 400
-  checklist-item-title:  # checklist item title (its note line below stays row-sub / Regular)
+  checklist-item-title:  # checklist item title (a checklist item is title + check only — no memo)
     fontFamily: Pretendard JP Medium
     fontSize: 14px
     fontWeight: 500
@@ -393,7 +393,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 - Columns: `[3px selection bar][circular check][title … priority pill][group · tags]`, with a one-line metadata row (schedule) below. The trailing right-edge column shows the task's group (tertiary glyph + secondary name) and its tags (8px color dot + secondary name each); each chunk hides itself when the task has no group / no tags. The schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time; an all-day (종일) task shows the date alone.
 - Selected → left 3px accent bar (`selection-bar`, radius 1.5, a dedicated column so it never shifts content) **plus a persistent row fill in the hover tone** (`{colors.hover-fill}`), so the open task reads as selected even when the pointer is elsewhere. Background hover transitions over 83ms. Radius `{rounded.md}`.
 - Rows are generously tall (12px vertical padding) with a larger, clearer title (`{typography.list-title}`, 16.5) and meta line (`{typography.list-meta}`, 13). A thin 1px `DividerStrokeColorDefault` separator sits between rows for clear row-to-row division.
-- A task's checklist items render as an indented nested list under it (with a 1px divider). Their presence is self-evident, so there is no "N items" caption. These rows reuse the same circular check and row-sub font; they are not tasks, so they cannot be opened, dragged, or carry a date/priority/group — just a checkbox and a title.
+- A task's checklist items render as an indented nested list under it, set in further from the task body (with a 1px vertical guide line) so they read as belonging to the task rather than as peers. Their presence is self-evident, so there is no "N items" caption. These rows reuse the same circular check and row-sub font; they are not tasks, so they cannot be dragged or carry a date/priority/group — just a checkbox and a title. The checkbox toggles the item in place; **tapping the rest of the row opens the parent task's detail** (a checklist item has no detail of its own).
 
 ### Completion state
 - Completing does not remove the row: it stays in place at **opacity 0.48** and sinks to the bottom of the list. This persists across views (the active query includes completed items, sorted last). Only the sidebar count badge counts open tasks.
@@ -490,7 +490,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## UX Writing
 
 - **Korean-first.** Write natural Korean where intent lands immediately.
-- **Domain term mapping:** TaskGroup → **그룹 (Group)**, Tag → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), ChecklistItem → **체크리스트 항목 (Checklist item)** (an embedded title + check + memo on a 할 일), the task's single date → **일시 (When)** (the detail card is titled 일시; the picker placeholder reads 날짜 선택). (There is no separate deadline; a task has one date.)
+- **Domain term mapping:** TaskGroup → **그룹 (Group)**, Tag → **태그 (Tag)**, Priority → **중요도 (Importance)** (P1–P4 = 매우 중요 / 중요 / 보통 / 사소), ChecklistItem → **체크리스트 항목 (Checklist item)** (an embedded title + check on a 할 일 — no memo), the task's single date → **일시 (When)** (the detail card is titled 일시; the picker placeholder reads 날짜 선택). (There is no separate deadline; a task has one date.)
 - **Time views:** 오늘 할 일 (Today) / 앞으로 할 일 (Upcoming) / 언젠가 할 일 (Anytime) / 완료한 일 (Logbook).
 - Drop redundant labels (e.g. omit self-evident card titles).
 

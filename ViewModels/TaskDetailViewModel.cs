@@ -73,9 +73,6 @@ public partial class ChecklistItemViewModel : ObservableObject
     [ObservableProperty]
     public partial string Title { get; set; }
 
-    [ObservableProperty]
-    public partial string Note { get; set; }
-
     public ChecklistItemViewModel(ChecklistItem item, Action<ChecklistItemViewModel> onChanged)
     {
         Id = item.Id;
@@ -83,7 +80,6 @@ public partial class ChecklistItemViewModel : ObservableObject
         _suppress = true;
         IsChecked = item.IsChecked;
         Title = item.Title;
-        Note = item.Note ?? string.Empty;
         _suppress = false;
     }
 
@@ -94,11 +90,6 @@ public partial class ChecklistItemViewModel : ObservableObject
     }
 
     partial void OnTitleChanged(string value)
-    {
-        if (!_suppress) _onChanged(this);
-    }
-
-    partial void OnNoteChanged(string value)
     {
         if (!_suppress) _onChanged(this);
     }
@@ -615,7 +606,6 @@ public partial class TaskDetailViewModel : ObservableObject
             Id = row.Id,
             Title = row.Title.Trim(),
             IsChecked = row.IsChecked,
-            Note = string.IsNullOrWhiteSpace(row.Note) ? null : row.Note,
         }).ToList();
         await _checklistGate.WaitAsync();
         try

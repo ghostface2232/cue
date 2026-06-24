@@ -23,10 +23,11 @@
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
-        <!-- A nested checklist item under a task: a checkbox and its (non-interactive) title only. It
-             is not a task — it cannot be opened, dragged, or carry a date/priority/group. -->
+        <!-- A nested checklist item under a task: a checkbox + title. It is not a task — it cannot be
+             dragged or carry a date/priority/group; tapping the row (anywhere but the checkbox) opens
+             its parent task's detail. -->
         <DataTemplate x:Key="ChecklistRowTemplate" x:DataType="vm:ChecklistRowViewModel">
-            <Border Margin="0,1,4,1" Padding="6,4" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+            <Border Margin="0,1,4,1" Padding="6,4" Background="Transparent" Tag="{x:Bind ParentTaskId}" Tapped="ChecklistSurface_Tapped" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
                 <Grid ColumnSpacing="6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="24" />
@@ -187,7 +188,7 @@
                         </StackPanel>
                     </Grid>
                 </Border>
-                <Grid Margin="31,0,0,7" Visibility="{x:Bind HasChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                <Grid Margin="44,0,0,7" Visibility="{x:Bind HasChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1" />
                         <ColumnDefinition Width="*" />
@@ -548,10 +549,7 @@
                                             <Grid Margin="0,1" Padding="0,2" ColumnSpacing="{StaticResource CueGap8}">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                 <CheckBox Width="24" Height="24" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,5,0,0" behaviors:CircleCheckBoxPop.IsEnabled="True" IsChecked="{x:Bind IsChecked, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
-                                                <StackPanel Grid.Column="1" Spacing="{StaticResource CueGap4}" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
-                                                    <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="{StaticResource CuePadInput}" FontFamily="{StaticResource CueFontFamilyMedium}" FontSize="{StaticResource CueFontRowSub}" />
-                                                    <TextBox PlaceholderText="메모" Text="{x:Bind Note, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" Padding="{StaticResource CuePadInput}" FontSize="{StaticResource CueFontRowSub}" />
-                                                </StackPanel>
+                                                <TextBox Grid.Column="1" PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Opacity="{x:Bind VisualOpacity, Mode=OneWay}" Background="Transparent" BorderThickness="0" Padding="{StaticResource CuePadInput}" FontFamily="{StaticResource CueFontFamilyMedium}" FontSize="{StaticResource CueFontRowSub}" />
                                                 <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteChecklistItem_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
                                             </Grid>
                                         </DataTemplate>

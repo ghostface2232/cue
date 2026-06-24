@@ -45,6 +45,7 @@ public sealed partial class TimelinePage : Page
     private double _resizeStartX;
     private double _resizeStartWidth;
     private bool _detailOverlay;
+    private bool _detailResizable;
 
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
@@ -404,17 +405,15 @@ public sealed partial class TimelinePage : Page
             Grid.SetColumn(DetailPanel, 0);
             Grid.SetColumnSpan(DetailPanel, 2);
             DetailPanel.Width = double.NaN;
-            DetailResizeHitArea.Visibility = Visibility.Collapsed;
             SetDetailResizeGripVisible(false);
         }
         else
         {
             Grid.SetColumn(DetailPanel, 1);
             Grid.SetColumnSpan(DetailPanel, 1);
-            DetailResizeHitArea.Visibility = Visibility.Visible;
         }
         UpdateContentObscured();
-        ApplyDetailPanelWidth();
+        ApplyDetailPanelWidth();   // owns the resize-handle visibility (hidden when not resizable)
     }
 
     /// <summary>
@@ -431,6 +430,7 @@ public sealed partial class TimelinePage : Page
 
     private void DetailResizeHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        if (!_detailResizable) return;   // pinned at its limit, or overlay — nothing to drag
         if (sender is not UIElement handle) return;
         var point = e.GetCurrentPoint(ContentSplitGrid);
         if (!point.Properties.IsLeftButtonPressed)
@@ -468,7 +468,10 @@ public sealed partial class TimelinePage : Page
     }
 
     private void DetailResizeHandle_PointerEntered(object sender, PointerRoutedEventArgs e)
-        => SetDetailResizeGripVisible(true);
+    {
+        if (_detailResizable)
+            SetDetailResizeGripVisible(true);
+    }
 
     private void DetailResizeHandle_PointerExited(object sender, PointerRoutedEventArgs e)
     {
@@ -484,9 +487,11 @@ public sealed partial class TimelinePage : Page
     private void ApplyDetailPanelWidth()
     {
         // In overlay mode the panel stretches across both columns (Width = NaN); leave it and only
-        // refresh the panel's internal one-/two-column responsive state.
+        // refresh the panel's internal responsive state. No resizing here.
         if (_detailOverlay)
         {
+            _detailResizable = false;
+            SetDetailResizeGripVisible(false);
             UpdateDetailResponsiveLayout();
             return;
         }
@@ -494,18 +499,27 @@ public sealed partial class TimelinePage : Page
         if (ContentSplitGrid.ActualWidth <= 0)
             return;
 
-        var width = ClampDetailWidth(_detailPreferredWidth);
+        var (min, max) = DetailWidthRange();
+        var width = Math.Clamp(_detailPreferredWidth, min, max);
         if (Math.Abs(DetailPanel.Width - width) > 0.5)
             DetailPanel.Width = width;
+
+        // Resizable only when the window leaves real drag room. The (transparent) hit area is kept
+        // permanently present — toggling its Visibility dropped its hit-testing after a layout change,
+        // leaving the handle dead — so the drag start and the hover grip are gated on this flag instead.
+        _detailResizable = max - min > 4;
+        if (!_detailResizable)
+            SetDetailResizeGripVisible(false);
+
         UpdateDetailResponsiveLayout();
     }
 
-    private double ClampDetailWidth(double desired)
+    private (double Min, double Max) DetailWidthRange()
     {
         var maxByWindow = ContentSplitGrid.ActualWidth - DetailPrimaryMinWidth - ContentSplitGrid.ColumnSpacing - 8;
         var max = Math.Min(DetailMaxWidth, Math.Max(DetailAbsoluteMinWidth, maxByWindow));
         var min = Math.Min(DetailMinWidth, max);
-        return Math.Clamp(desired, min, max);
+        return (min, max);
     }
 
     private void UpdateDetailResponsiveLayout()

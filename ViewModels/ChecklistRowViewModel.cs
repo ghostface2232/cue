@@ -8,9 +8,10 @@ namespace Cue.ViewModels;
 /// <see cref="TaskListChecklistItem"/> plus a checkbox that writes back through the owning task.
 /// </summary>
 /// <remarks>
-/// Unlike the old sub-task rows these are <i>not</i> tasks: they cannot be opened, dragged, or carry a
-/// date/priority/group of their own. Ticking the checkbox hands off to a callback the parent list owns,
-/// which loads the parent <see cref="Cue.Domain.TaskItem"/>, flips this item, and saves it.
+/// Unlike the old sub-task rows these are <i>not</i> tasks: they cannot be dragged or carry a
+/// date/priority/group of their own, and tapping a row opens its <em>parent</em> task's detail rather
+/// than the item itself. Ticking the checkbox hands off to a callback the parent list owns, which loads
+/// the parent <see cref="Cue.Domain.TaskItem"/>, flips this item, and saves it.
 /// </remarks>
 public partial class ChecklistRowViewModel : ObservableObject
 {
