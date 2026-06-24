@@ -39,6 +39,6 @@ public sealed record TaskListItem(
 public sealed record TaskListTag(string Name, string? Color);
 
 /// <summary>A checklist item as the list needs it to render the nested rows under a task: the id (to
-/// toggle it through its parent), its text, and whether it is ticked. The memo is omitted — it is
-/// edited only in the detail panel, which loads the full <see cref="TaskItem"/>.</summary>
+/// toggle it through its parent), its text, and whether it is ticked. Editing happens in the detail
+/// panel, which loads the full <see cref="TaskItem"/>.</summary>
 public sealed record TaskListChecklistItem(Guid Id, string Title, bool IsChecked);

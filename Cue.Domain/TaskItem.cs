@@ -8,7 +8,7 @@ namespace Cue.Domain;
 /// group or, when null, has no group. Either way it appears in the home 모든 할 일 (AllTasks) view.
 /// <para>
 /// A task carries an embedded <see cref="Checklist"/> of lightweight <see cref="ChecklistItem"/>s —
-/// each just a title, a checked flag, and an optional memo. Checklist items are not records: they
+/// each just a title and a checked flag. Checklist items are not records: they
 /// have no own file, no dates/tags/priority/recurrence, and cannot nest. They are persisted as part
 /// of this task's single JSON file.
 /// </para>
@@ -58,7 +58,7 @@ public sealed class TaskItem : RecordBase, ISortable
     public Guid? TaskGroupId { get; set; }
 
     /// <summary>
-    /// Embedded checklist — an ordered list of lightweight items (title + checked + memo). Order is
+    /// Embedded checklist — an ordered list of lightweight items (title + checked). Order is
     /// the list position; there is no nesting and each item is not a record of its own.
     /// </summary>
     public List<ChecklistItem> Checklist { get; set; } = new();

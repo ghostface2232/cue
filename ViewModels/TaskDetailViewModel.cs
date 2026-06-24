@@ -55,9 +55,9 @@ public partial class TagEditorOption : ObservableObject
 }
 
 /// <summary>
-/// One editable checklist item in the detail panel: a checkbox, an editable title, and an editable
-/// memo. Any change (tick, title edit, memo edit) invokes a single callback the detail view model owns,
-/// which rebuilds the parent task's <see cref="ChecklistItem"/> list and saves it.
+/// One editable checklist item in the detail panel: a checkbox and an editable title. Any change
+/// (tick, title edit) invokes a single callback the detail view model owns, which rebuilds the
+/// parent task's <see cref="ChecklistItem"/> list and saves it.
 /// </summary>
 public partial class ChecklistItemViewModel : ObservableObject
 {
@@ -593,7 +593,7 @@ public partial class TaskDetailViewModel : ObservableObject
         finally { _checklistGate.Release(); }
     }
 
-    /// <summary>Persists the checklist after a tick / title / memo edit: rebuilds the parent task's
+    /// <summary>Persists the checklist after a tick / title edit: rebuilds the parent task's
     /// checklist from the panel's current rows and saves. Does not reload the rows, so an in-progress
     /// edit keeps focus. Serialized through the checklist gate; failures are logged, not thrown.</summary>
     private async Task SaveChecklistAsync()
