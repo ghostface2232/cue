@@ -758,8 +758,8 @@ public partial class TaskDetailViewModel : ObservableObject
             Checklist.Add(CreateChecklistRow(item));
     }
 
-    // The change callback is fire-and-forget; SaveChecklistAsync swallows its own failures, so there is
-    // no unobserved task exception.
+    // The change callback is fire-and-forget; the explicit discard documents that the save Task is
+    // intentionally unobserved (SaveChecklistAsync swallows its own failures, so no unobserved exception).
     private ChecklistItemViewModel CreateChecklistRow(ChecklistItem item)
-        => new(item, _ => SaveChecklistAsync());
+        => new(item, changed => { _ = SaveChecklistAsync(); });
 }
