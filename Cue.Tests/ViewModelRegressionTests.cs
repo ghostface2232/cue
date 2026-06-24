@@ -546,6 +546,77 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task QuickAddDateOnlyRecurrence_IsAllDay_ButAnchorKeepsTime()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // No explicit time → the user means "every Friday, all-day", not "every Friday at 00:00".
+        vm.QuickAddText = "매주 금요일 주간 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(await store.GetAllAsync<TaskItem>());
+        // The task's own When is all-day (종일): the list shows the day alone, never a 00:00 fragment.
+        Assert.True(saved.When.IsAllDay);
+        Assert.Equal(new DateOnly(2026, 6, 26), DateOnly.FromDateTime(saved.When.Date!.Value.ToLocal().DateTime));
+        // The recurrence anchor still carries a concrete time (00:00) so the engine can evaluate it —
+        // the anchor's time and the task's all-day state are decoupled.
+        Assert.NotNull(saved.Recurrence);
+        Assert.Equal("FREQ=WEEKLY;BYDAY=FR", saved.Recurrence!.Rule);
+        Assert.Equal(TimeSpan.Zero, saved.Recurrence.Anchor.ToLocal().TimeOfDay);
+    }
+
+    [Fact]
+    public async Task QuickAddDateOnlyRecurrence_StaysAllDay_AcrossCompletion()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var recurring = new RecurringTaskService(store);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), recurring, clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        vm.QuickAddText = "매주 금요일 주간 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+        var task = Assert.Single(await store.GetAllAsync<TaskItem>());
+
+        // Completing the all-day recurrence advances one cycle and the next instance is still all-day.
+        await recurring.CompleteAsync(task.Id, clock.GetUtcNow());
+
+        var advanced = await store.GetAsync<TaskItem>(task.Id);
+        Assert.True(advanced!.When.IsAllDay);
+        Assert.Equal(new DateOnly(2026, 7, 3), DateOnly.FromDateTime(advanced.When.Date!.Value.ToLocal().DateTime)); // next Friday
+    }
+
+    [Fact]
+    public async Task QuickAddSomedayWithRecurrence_DropsTheUnanchorableRule()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // The explicit "언젠가" wins the When (Unscheduled), so the parsed recurrence has no date to
+        // repeat from. A dateless repeat is meaningless and must not be stored.
+        vm.QuickAddText = "언젠가 매주 금요일 주간 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(await store.GetAllAsync<TaskItem>());
+        Assert.Equal(WhenKind.Unscheduled, saved.When.Kind);
+        Assert.Null(saved.Recurrence);
+    }
+
+    [Fact]
     public async Task DetailClearWhen_SavesAsUnscheduled()
     {
         using var temp = new TempDirectory();
