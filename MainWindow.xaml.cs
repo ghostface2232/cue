@@ -385,7 +385,13 @@ public sealed partial class MainWindow : Window
         {
             Content = title,
             Tag = new TaskListNavigation(mode, null, title),
-            Icon = new FontIcon { Glyph = "" },
+            // Use a faded real group/tag glyph rather than a funnel: marks the catch-all bucket as
+            // belonging to the section without the full visual weight of an actual group/tag.
+            Icon = new FontIcon
+            {
+                Glyph = mode == TaskListMode.NoTaskGroup ? "" : "",
+                Opacity = NavD("CueNavUnfiledIconOpacity", 0.4),
+            },
         };
         NormalizeSidebarItem(item, nested: true);
         if (openCount > 0)
@@ -551,6 +557,8 @@ public sealed partial class MainWindow : Window
         var badge = new InfoBadge { Value = count };
         if (ThemeStyle("CueCountInfoBadgeStyle") is { } style)
             badge.Style = style;
+        // Inset from the row's right edge so the count doesn't hug it.
+        badge.Margin = new Thickness(0, 0, NavD("CueNavBadgeRight", 4), 0);
         return badge;
     }
 

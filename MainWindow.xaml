@@ -118,7 +118,7 @@
                                 CornerRadius="{StaticResource CueRadiusSmall}"
                                 AutomationProperties.Name="새 그룹"
                                 ToolTipService.ToolTip="새 그룹">
-                                <FontIcon FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE710;" />
+                                <FontIcon FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE948;" />
                             </Button>
                         </Grid>
                     </NavigationViewItem.Content>
@@ -155,7 +155,7 @@
                                 CornerRadius="{StaticResource CueRadiusSmall}"
                                 AutomationProperties.Name="새 태그"
                                 ToolTipService.ToolTip="새 태그">
-                                <FontIcon FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE710;" />
+                                <FontIcon FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE948;" />
                             </Button>
                         </Grid>
                     </NavigationViewItem.Content>
