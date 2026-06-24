@@ -131,12 +131,6 @@
     <x:Double x:Key="CueGap20">20</x:Double>
     <x:Double x:Key="CueGap24">24</x:Double>
 
-    <!-- Scrollbar thumb thickness (consumed by Behaviors/ScrollBarAutoHide). The stock fluent thumb
-         reads too thin; this nudges it a touch wider app-wide. The same behavior fades the bars out
-         after a brief idle (fade timing lives in that behavior, not as a token — it is motion, not
-         metric). -->
-    <x:Double x:Key="CueScrollBarThumbThickness">8</x:Double>
-
     <!-- Page body padding (uniform 20, = xl). The list, timeline, and settings pages share it. -->
     <Thickness x:Key="CuePadPage">20</Thickness>
     <!-- Detail inner-card padding (uniform 16, = lg). Sits beside CueRadiusCard on the same Border. -->

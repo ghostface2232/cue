@@ -9,26 +9,26 @@ using Microsoft.UI.Xaml.Media;
 namespace Cue.Behaviors;
 
 /// <summary>
-/// App-wide scrollbar polish, applied as an attached behavior so it needs no custom ScrollBar
-/// template (the stock template ships as compiled XBF, so retemplating it blind is risky). It reaches
-/// into a <see cref="ScrollViewer"/>'s realized scrollbar parts to:
+/// App-wide scrollbar auto-hide, applied as an attached behavior so it needs no custom ScrollBar
+/// template (the stock template ships as compiled XBF, so retemplating it blind is risky). For a
+/// <see cref="ScrollViewer"/> it:
 /// <list type="bullet">
-///   <item>nudge the thumb a touch thicker (the fluent default reads too thin), and</item>
-///   <item>keep the bars hidden at rest, fade them in on scroll or hover, and fade them back out after
-///   a short idle — regardless of the OS "auto-hide scrollbars" setting, which otherwise leaves them
-///   permanently visible.</item>
+///   <item>keeps the bars hidden at rest, fades them in on scroll or hover, and fades them back out a
+///   second after the last activity — regardless of the OS "auto-hide scrollbars" setting, which
+///   otherwise leaves them permanently visible; and</item>
+///   <item>holds the bar in its full-thickness "indicator" form for the whole reveal, so it doesn't
+///   collapse to the thin resting pill the framework reverts to shortly after a scroll (which made the
+///   bar look thin during the idle moment before it faded out).</item>
 /// </list>
 /// Attach with <c>behaviors:ScrollBarAutoHide.IsEnabled="True"</c> on a ScrollViewer, or on a control
-/// that hosts one (e.g. a ListView) to reach its inner ScrollViewer.
+/// that hosts one (e.g. a ListView or NavigationView) to reach its inner ScrollViewer(s).
 /// </summary>
 public static class ScrollBarAutoHide
 {
-    // Idle gap before the bars fade, and the fade in / out durations. Motion, not metric — kept here
-    // rather than as design tokens. The thumb thickness IS a token (CueScrollBarThumbThickness).
+    // Idle gap before the bars fade, and the fade in / out durations.
     private static readonly TimeSpan IdleBeforeHide = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan FadeIn = TimeSpan.FromMilliseconds(120);
     private static readonly TimeSpan FadeOut = TimeSpan.FromMilliseconds(360);
-    private const double FallbackThumbThickness = 8;
 
     public static readonly DependencyProperty IsEnabledProperty =
         DependencyProperty.RegisterAttached(
@@ -77,11 +77,6 @@ public static class ScrollBarAutoHide
         controller.Attach();
     }
 
-    private static double ThumbThickness =>
-        Application.Current.Resources.TryGetValue("CueScrollBarThumbThickness", out var value) && value is double thickness
-            ? thickness
-            : FallbackThumbThickness;
-
     private static void CollectDescendants<T>(DependencyObject root, List<T> into) where T : class
     {
         var count = VisualTreeHelper.GetChildrenCount(root);
@@ -107,16 +102,23 @@ public static class ScrollBarAutoHide
         }
     }
 
-    /// <summary>Per-ScrollViewer fade controller: tracks scroll activity and pointer hover, and drives
-    /// the bars' composition opacity. Composition opacity (not Visibility) is used so a hidden bar still
-    /// hit-tests — moving the pointer onto its strip brings it back so it can be grabbed.</summary>
+    /// <summary>Per-ScrollViewer controller: tracks scroll activity and pointer hover, drives the bars'
+    /// composition opacity, and holds them in the thick indicator form while shown. Composition opacity
+    /// (not Visibility) is used so a hidden bar still hit-tests — moving the pointer onto its strip
+    /// brings it back so it can be grabbed.</summary>
     private sealed class Controller
     {
+        private const string IndicatorGroup = "ScrollingIndicatorStates";
+        private const string ThickState = "MouseIndicator";
+        private const string ThinState = "NoIndicator";
+
         private readonly ScrollViewer _scrollViewer;
         private readonly DispatcherTimer _idle = new() { Interval = IdleBeforeHide };
         private readonly List<ScrollBar> _bars = new();
-        private readonly HashSet<ScrollBar> _thickened = new();
+        private readonly HashSet<ScrollBar> _indicatorHooked = new();
         private bool _hovering;
+        private bool _shown;
+        private bool _forcing;
 
         public Controller(ScrollViewer scrollViewer)
         {
@@ -124,6 +126,7 @@ public static class ScrollBarAutoHide
             _idle.Tick += (_, _) =>
             {
                 _idle.Stop();
+                _shown = false;
                 if (!_hovering) Fade(0f, FadeOut);
             };
         }
@@ -133,82 +136,71 @@ public static class ScrollBarAutoHide
             CollectOwnScrollBars(_scrollViewer, _bars);
             foreach (var bar in _bars)
             {
-                bar.PointerEntered += (_, _) => { _hovering = true; _idle.Stop(); Fade(1f, FadeIn); };
+                bar.PointerEntered += (_, _) => { _hovering = true; _idle.Stop(); Show(); };
                 bar.PointerExited += (_, _) => { _hovering = false; Bump(); };
             }
 
-            EnsureThickness();
             _scrollViewer.ViewChanged += (_, _) => Bump();
             _scrollViewer.Unloaded += (_, _) => _idle.Stop();
 
-            // The thumbs are realized only after the first layout pass, so a second attempt once it
-            // settles catches bars whose thumbs weren't there at attach (without needing a scroll).
+            HookIndicators();
+            // Parts realize only after the first layout pass, so hook again once it settles.
             _scrollViewer.DispatcherQueue.TryEnqueue(
-                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, EnsureThickness);
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, HookIndicators);
 
             // Start hidden; the first scroll or hover reveals them.
             Fade(0f, TimeSpan.Zero);
         }
 
-        // Scroll or pointer-leave: ensure visible, then restart the idle countdown.
+        // Scroll or pointer-leave: reveal, then restart the idle countdown.
         private void Bump()
         {
-            // A thumb is only realized once its bar has been shown, so re-attempt thickness here (cheap,
-            // and skipped once a bar is done) rather than via a Loaded retry, which can re-fire forever.
-            EnsureThickness();
-            Fade(1f, FadeIn);
+            Show();
             _idle.Stop();
             _idle.Start();
         }
 
-        private void EnsureThickness()
+        private void Show()
+        {
+            _shown = true;
+            HookIndicators();
+            ForceThick();
+            Fade(1f, FadeIn);
+        }
+
+        // Hold the bar in its thicker indicator form: the framework reverts to a thin resting pill a
+        // moment after scrolling stops, but we keep showing the bar for a second after that, and it
+        // should stay full-thickness for that whole reveal — not thin out just before it fades.
+        private void ForceThick()
+        {
+            _forcing = true;
+            foreach (var bar in _bars)
+                VisualStateManager.GoToState(bar, ThickState, true);
+            _forcing = false;
+        }
+
+        // If the framework drops the bar back to the thin state while we're still showing it, pull it
+        // back to the thick one. Guarded so our own state change can't recurse.
+        private void HookIndicators()
         {
             foreach (var bar in _bars)
             {
-                if (_thickened.Contains(bar)) continue;
-                var vertical = bar.Orientation == Orientation.Vertical;
-
-                // The fluent ScrollBar has TWO thumbs: a thin "panning" pill shown at rest / while
-                // scrolling (the one that read too thin), and a wider "interactive" thumb shown on hover.
-                // Widen the panning pill to the interactive thumb's size so the bar reads consistently
-                // thick whenever it is visible — not just on hover.
-                var panning = FindByName(bar, vertical ? "VerticalPanningThumb" : "HorizontalPanningThumb");
-                var interactive = FindByName(bar, vertical ? "VerticalThumb" : "HorizontalThumb");
-                if (panning is null && interactive is null) continue; // not realized yet — retry on next bump
-
-                Thicken(panning, vertical);
-                Thicken(interactive, vertical);
-                _thickened.Add(bar);
+                if (_indicatorHooked.Contains(bar)) continue;
+                if (VisualTreeHelper.GetChildrenCount(bar) == 0 ||
+                    VisualTreeHelper.GetChild(bar, 0) is not FrameworkElement root)
+                    continue;
+                foreach (var group in VisualStateManager.GetVisualStateGroups(root))
+                {
+                    if (group.Name != IndicatorGroup) continue;
+                    var target = bar;
+                    group.CurrentStateChanged += (_, e) =>
+                    {
+                        if (_shown && !_forcing && e.NewState?.Name == ThinState)
+                            VisualStateManager.GoToState(target, ThickState, true);
+                    };
+                    _indicatorHooked.Add(bar);
+                }
             }
-        }
-
-        private static void Thicken(FrameworkElement? thumb, bool vertical)
-        {
-            if (thumb is null) return;
-            if (vertical)
-            {
-                thumb.MinWidth = ThumbThickness;
-                thumb.Width = ThumbThickness;
-            }
-            else
-            {
-                thumb.MinHeight = ThumbThickness;
-                thumb.Height = ThumbThickness;
-            }
-            if (thumb is Border border)
-                border.CornerRadius = new CornerRadius(ThumbThickness / 2);
-        }
-
-        private static FrameworkElement? FindByName(DependencyObject root, string name)
-        {
-            var count = VisualTreeHelper.GetChildrenCount(root);
-            for (var i = 0; i < count; i++)
-            {
-                var child = VisualTreeHelper.GetChild(root, i);
-                if (child is FrameworkElement element && element.Name == name) return element;
-                if (FindByName(child, name) is { } nested) return nested;
-            }
-            return null;
         }
 
         private void Fade(float opacity, TimeSpan duration)
