@@ -356,8 +356,46 @@
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="vm:PrioritySectionViewModel">
                             <StackPanel Margin="0,0,0,16">
-                                <TextBlock Margin="14,5,8,7" Style="{StaticResource CuePriorityGroupHeaderTextStyle}" Text="{x:Bind Name}" />
-                                <ItemsRepeater ElementClearing="TaskRepeater_ElementClearing" ElementPrepared="TaskRepeater_ElementPrepared" ItemTemplate="{StaticResource TaskRowTemplate}" ItemsSource="{x:Bind Tasks}" Loaded="ReorderRepeater_Loaded" />
+                                <!-- Section header: tapping it collapses/expands the rows below. No add
+                                     button (unlike the sidebar's group/tag sections) — just the name, the
+                                     task count, and an expand/collapse chevron. -->
+                                <Button
+                                    Margin="0,5,8,2"
+                                    Padding="14,3,8,3"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Command="{x:Bind ToggleExpandedCommand}"
+                                    CornerRadius="{StaticResource CueRadiusRow}">
+                                    <Grid ColumnSpacing="{StaticResource CueGap8}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock VerticalAlignment="Center" Style="{StaticResource CuePriorityGroupHeaderTextStyle}" Text="{x:Bind Name}" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            FontSize="{StaticResource CueFontListMeta}"
+                                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                            Text="{x:Bind Count.ToString(), Mode=OneWay}" />
+                                        <FontIcon
+                                            Grid.Column="2"
+                                            HorizontalAlignment="Right"
+                                            FontSize="12"
+                                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                            Glyph="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToChevronGlyph}}" />
+                                    </Grid>
+                                </Button>
+                                <ItemsRepeater
+                                    ElementClearing="TaskRepeater_ElementClearing"
+                                    ElementPrepared="TaskRepeater_ElementPrepared"
+                                    ItemTemplate="{StaticResource TaskRowTemplate}"
+                                    ItemsSource="{x:Bind Tasks}"
+                                    Loaded="ReorderRepeater_Loaded"
+                                    Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </DataTemplate>
                     </ListView.ItemTemplate>

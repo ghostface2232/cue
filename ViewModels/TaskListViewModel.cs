@@ -408,11 +408,13 @@ public partial class TaskListViewModel : ObservableObject
             row.IsCompact = compact;
     }
 
-    // Fixed priority buckets for the 중요도 view, in display order. A bucket is shown only when it has rows.
-    // The trailing 없음 bucket collects unprioritized tasks (Priority.None) at the bottom.
+    // Fixed priority sections for the 중요도 view, in display order. A section is shown only when it has
+    // rows. Unprioritized tasks (Priority.None) are intentionally omitted: this view is a lens on ranked
+    // work only, and they stay visible in every other list. GetByPriorityAsync still returns them, but
+    // they match no section here and are dropped.
     private static readonly (Priority Priority, string Name)[] PriorityBuckets =
     [
-        (Priority.P1, "매우 중요"), (Priority.P2, "중요"), (Priority.P3, "보통"), (Priority.P4, "사소"), (Priority.None, "없음"),
+        (Priority.P1, "매우 중요"), (Priority.P2, "중요"), (Priority.P3, "보통"), (Priority.P4, "사소"),
     ];
 
     /// <summary>

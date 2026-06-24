@@ -909,6 +909,45 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task PriorityView_OmitsUnprioritizedTasks()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var p1 = new TaskItem { Title = "urgent", Priority = Priority.P1, SortOrder = "a" };
+        var none = new TaskItem { Title = "unranked", Priority = Priority.None, SortOrder = "b" };
+        await store.SaveAsync(p1);
+        await store.SaveAsync(none);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Priority));
+        await vm.LoadAsync();
+
+        // Only the 매우 중요 section appears: unprioritized tasks have no section in this view (the 없음
+        // bucket was removed), even though the index still returns them.
+        var section = Assert.Single(vm.PrioritySections);
+        Assert.Equal("매우 중요", section.Name);
+        Assert.Equal(1, section.Count);
+        Assert.DoesNotContain(none.Id, vm.PrioritySections.SelectMany(s => s.Tasks).Select(row => row.Id));
+    }
+
+    [Fact]
+    public void PrioritySection_StartsExpanded_AndTogglesCollapsed()
+    {
+        var section = new PrioritySectionViewModel("매우 중요");
+        Assert.True(section.IsExpanded);                 // sections start expanded, like the sidebar's
+
+        section.ToggleExpandedCommand.Execute(null);
+        Assert.False(section.IsExpanded);
+
+        section.ToggleExpandedCommand.Execute(null);
+        Assert.True(section.IsExpanded);
+    }
+
+    [Fact]
     public async Task TaskGroupList_MovingTaskOut_RemovesOnlyThatRow_PreservingOthers()
     {
         using var temp = new TempDirectory();
