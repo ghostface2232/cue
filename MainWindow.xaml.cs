@@ -561,7 +561,7 @@ public sealed partial class MainWindow : Window
         if (ThemeStyle("CueCountInfoBadgeStyle") is { } style)
             badge.Style = style;
         // Inset from the row's right edge so the count doesn't hug it.
-        badge.Margin = new Thickness(0, 0, NavD("CueNavBadgeRight", 4), 0);
+        badge.Margin = new Thickness(0, 0, NavD("CueNavBadgeRight", 8), 0);
         return badge;
     }
 
