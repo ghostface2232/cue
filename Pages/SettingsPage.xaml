@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:Cue.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:behaviors="using:Cue.Behaviors"
     Background="{ThemeResource LayerFillColorDefaultBrush}"
     FontFamily="{StaticResource CueFontFamily}"
     mc:Ignorable="d">
@@ -272,6 +273,7 @@
             <ScrollViewer
                 Grid.Column="1"
                 Padding="0,0,0,8"
+                behaviors:ScrollBarAutoHide.IsEnabled="True"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
                 <!-- Fill the whole column (variable width), exactly as the main content area fills the

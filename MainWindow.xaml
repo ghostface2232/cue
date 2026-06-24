@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:Cue"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:behaviors="using:Cue.Behaviors"
     Title="Cue"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
@@ -33,6 +34,7 @@
         <NavigationView
             x:Name="NavView"
             Grid.Row="1"
+            behaviors:ScrollBarAutoHide.IsEnabled="True"
             FontFamily="{StaticResource CueFontFamily}"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"

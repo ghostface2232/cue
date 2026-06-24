@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:Cue.ViewModels"
+    xmlns:behaviors="using:Cue.Behaviors"
     Background="{ThemeResource LayerFillColorDefaultBrush}"
     FontFamily="{StaticResource CueFontFamily}"
     mc:Ignorable="d">
@@ -243,7 +244,7 @@
             </Grid.ColumnDefinitions>
 
             <Grid>
-                <ScrollViewer Visibility="{x:Bind ViewModel.IsStandardList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                <ScrollViewer behaviors:ScrollBarAutoHide.IsEnabled="True" Visibility="{x:Bind ViewModel.IsStandardList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <StackPanel>
                         <ItemsRepeater
                             ElementClearing="TaskRepeater_ElementClearing"
@@ -255,6 +256,7 @@
                 </ScrollViewer>
 
                 <ListView
+                    behaviors:ScrollBarAutoHide.IsEnabled="True"
                     ItemsSource="{x:Bind ViewModel.Groups, Mode=OneWay}"
                     SelectionMode="None"
                     Visibility="{x:Bind ViewModel.IsGroupedList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -342,7 +344,7 @@
                             <ScalarTransition Duration="0:0:0.083" />
                         </Border.OpacityTransition>
                     </Border>
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer behaviors:ScrollBarAutoHide.IsEnabled="True" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="2,0,16,0" Spacing="{StaticResource CueGap12}">
                         <Grid ColumnSpacing="{StaticResource CueGap8}">
                             <Grid.ColumnDefinitions>
