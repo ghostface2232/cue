@@ -80,7 +80,12 @@ public sealed class RecurringTaskService : IRecurringTaskService
             // (invariants 4 and 8). The checklist is the recurring procedure for the cycle, so it resets
             // to unchecked here — last cycle's ticked state was frozen on the Logbook copy above. This is
             // part of the same idempotent save, so a crash-retry re-resets an already-reset list (a no-op).
-            task.When = ScheduledWhen.On(next.Value);
+            // Preserve the instance's all-day (종일) state across the advance: a 종일 recurring task must
+            // stay 종일 on every cycle, otherwise the first completion would silently turn it into a timed
+            // task (and an anchor at the start of the day would then surface as 12:00 AM in the list).
+            task.When = task.When.IsAllDay
+                ? ScheduledWhen.AllDay(next.Value)
+                : ScheduledWhen.On(next.Value);
             task.CompletedAt = null;
             foreach (var item in task.Checklist) item.IsChecked = false;
             await tx.SaveAsync(task, ct).ConfigureAwait(false);

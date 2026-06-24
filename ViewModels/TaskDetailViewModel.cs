@@ -718,15 +718,19 @@ public partial class TaskDetailViewModel : ObservableObject
 
     /// <summary>
     /// Resolves the panel's 반복 selection to a <see cref="RecurrenceRule"/> (or <c>null</c> for none),
-    /// anchoring on the task's own date. When the rule string is unchanged from what loaded, the original
-    /// rule is returned verbatim so its exact anchor is preserved — re-anchoring on every save would
-    /// silently shift the series. A newly chosen rule anchors on the task's When date if it has one, else
-    /// on today (so a dateless recurring task still has a valid evaluable anchor).
+    /// anchoring on the task's own date. The original rule is returned verbatim only when <i>both</i> the
+    /// rule string and the When are unchanged from what loaded — that is the metadata-only edit (priority,
+    /// notes, …) where re-anchoring would needlessly shift the series. The moment the user moves the task's
+    /// date or time, the anchor must follow: the anchor drives the series' cadence and wall-clock (a weekly
+    /// rule with no BYDAY repeats on the anchor's weekday at the anchor's time), so a stale anchor would
+    /// make the next occurrence land on the old day/time and contradict the edit. A re-anchored or newly
+    /// chosen rule anchors on the task's When date if it has one, else on today (so a dateless recurring
+    /// task still has a valid evaluable anchor).
     /// </summary>
     private RecurrenceRule? BuildRecurrence(ScheduledWhen when)
     {
         var rule = SelectedRecurrence?.Rule;
-        if (rule == _loadedRecurrenceRule)
+        if (rule == _loadedRecurrenceRule && when == _originalWhen)
             return _originalRecurrence;
         if (rule is null)
             return null;

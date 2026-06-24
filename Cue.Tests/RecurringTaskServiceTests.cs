@@ -49,6 +49,9 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     private static ScheduledWhen OnDay(DateOnly day, string tz = "UTC")
         => ScheduledWhen.On(OnDayZoned(day, tz));
 
+    private static ScheduledWhen AllDayOn(DateOnly day, string tz = "UTC")
+        => ScheduledWhen.AllDay(OnDayZoned(day, tz));
+
     private static RecurrenceRule Daily(DateOnly anchorDay, string tz = "UTC")
         => new("FREQ=DAILY", OnDayZoned(anchorDay, tz));
 
@@ -214,6 +217,52 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         var advanced = original!.When.Date!.Value;
         Assert.Equal("Asia/Seoul", advanced.TimeZoneId);
         Assert.Equal(9, advanced.ToLocal().Hour); // 09:00 local preserved
+    }
+
+    [Fact]
+    public async Task Advance_PreservesAllDayState()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        // A 종일 (all-day) recurring task: the advance must keep the next cycle all-day too, otherwise the
+        // first completion would silently turn it into a timed task and surface it as a 12:00 AM entry.
+        var task = new TaskItem
+        {
+            Title = "매일 종일",
+            When = AllDayOn(Today),
+            Recurrence = Daily(Today),
+        };
+        await store.SaveAsync(task);
+
+        await service.CompleteAsync(task.Id, Now);
+
+        var original = await store.GetAsync<TaskItem>(task.Id);
+        Assert.True(original!.When.IsAllDay); // next cycle stays 종일
+        Assert.Equal(Today.AddDays(1), DateOnly.FromDateTime(original.When.Date!.Value.Utc.UtcDateTime));
+
+        // The frozen Logbook copy of the completed instance is likewise all-day.
+        var copy = (await store.GetAllAsync<TaskItem>()).Single(t => t.Id != task.Id);
+        Assert.True(copy.When.IsAllDay);
+    }
+
+    [Fact]
+    public async Task Advance_KeepsTimedTaskTimed()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        // A timed recurring task stays timed across the advance — the all-day preservation must not flip
+        // a timed task into 종일.
+        var task = new TaskItem { Title = "매일 09시", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+
+        await service.CompleteAsync(task.Id, Now);
+
+        var original = await store.GetAsync<TaskItem>(task.Id);
+        Assert.False(original!.When.IsAllDay);
     }
 
     [Fact]

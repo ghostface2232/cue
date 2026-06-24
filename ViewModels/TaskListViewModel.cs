@@ -212,16 +212,23 @@ public partial class TaskListViewModel : ObservableObject
         var when = QuickAddContext.Apply(parsed.When, parsed.WhenAssigned, _mode, _clock.GetUtcNow(), _timeZone);
 
         // A task given only a date with no explicit time is registered as an all-day (종일) event —
-        // marked explicitly via ScheduledWhen.AllDay, which the detail panel reads back as 종일.
-        // Recurrence anchors keep their own time and are left untouched.
-        if (when.Kind == WhenKind.OnDate && !parsed.WhenHasTime && parsed.Recurrence is null)
+        // marked explicitly via ScheduledWhen.AllDay, which the detail panel reads back as 종일. This
+        // applies to a date-only recurrence too ("매주 금요일"): the rule's anchor keeps its concrete time
+        // (00:00) so the recurrence engine can evaluate it, but the task's own When carries no meaningful
+        // time, so the list shows the day alone and completion advances stay all-day (IsAllDay preserved).
+        if (when.Kind == WhenKind.OnDate && !parsed.WhenHasTime)
             when = AllDay(when);
+
+        // 반복 needs a date to repeat from. A line can parse a recurrence yet have no When — e.g. an
+        // explicit "언젠가 매주 금요일", where the Unscheduled marker wins and the anchor is never promoted
+        // to a When. An unanchorable repeat is meaningless, so drop the rule rather than store it.
+        var recurrence = when.Kind == WhenKind.OnDate ? parsed.Recurrence : null;
 
         var task = new TaskItem
         {
             Title = parsed.Title,
             When = when,
-            Recurrence = parsed.Recurrence,
+            Recurrence = recurrence,
             TaskGroupId = _mode == TaskListMode.TaskGroup ? _filterId : null,
             // New tasks append to the end of the list the user is currently looking at.
             SortOrder = _reorder.AppendRank(VisibleRowRanks()),

@@ -50,6 +50,15 @@ public sealed class QuickAddResult
     /// <summary>The recurrence, if a "매일/매주/…" expression was recognized.</summary>
     public RecurrenceRule? Recurrence { get; private set; }
 
+    /// <summary>
+    /// Whether the recurrence's anchor carries a meaningful time-of-day — true when the user typed an
+    /// explicit clock time ("매일 9시") or the frequency is sub-daily ("5분마다"/"3시간마다", whose anchor is
+    /// the current instant). False for a bare date-only recurrence ("매주 금요일"), whose anchor sits at
+    /// 00:00 only to be evaluable. Drives whether the anchor, when promoted to <see cref="When"/>, is
+    /// treated as timed or as an all-day (종일) date. Meaningless when <see cref="Recurrence"/> is null.
+    /// </summary>
+    public bool RecurrenceAnchorHasTime { get; private set; }
+
     /// <summary>Sets <see cref="When"/> once; returns false if it was already set.
     /// <paramref name="hasTime"/> records whether an explicit clock time was part of the recognition.</summary>
     public bool TrySetWhen(ScheduledWhen when, bool hasTime = false)
@@ -62,12 +71,15 @@ public sealed class QuickAddResult
         return true;
     }
 
-    /// <summary>Sets <see cref="Recurrence"/> once; returns false if it was already set.</summary>
-    public bool TrySetRecurrence(RecurrenceRule recurrence)
+    /// <summary>Sets <see cref="Recurrence"/> once; returns false if it was already set.
+    /// <paramref name="anchorHasTime"/> records whether the anchor carries a meaningful time-of-day
+    /// (see <see cref="RecurrenceAnchorHasTime"/>).</summary>
+    public bool TrySetRecurrence(RecurrenceRule recurrence, bool anchorHasTime = false)
     {
         if (Recurrence is not null)
             return false;
         Recurrence = recurrence;
+        RecurrenceAnchorHasTime = anchorHasTime;
         return true;
     }
 }

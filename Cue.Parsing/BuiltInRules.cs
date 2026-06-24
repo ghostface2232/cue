@@ -161,8 +161,19 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
             return false;
         }
 
-        return result.TrySetRecurrence(new RecurrenceRule(rule, anchor));
+        // The anchor carries a meaningful time when the user typed one, or when the frequency is
+        // sub-daily — a 분/시간 repeat anchors on the current instant and is inherently time-based, so it
+        // must not be flattened to an all-day (종일) date by the quick-add path.
+        var anchorHasTime = hasTime || ImpliesTimeOfDay(rule);
+        return result.TrySetRecurrence(new RecurrenceRule(rule, anchor), anchorHasTime);
     }
+
+    /// <summary>True for sub-daily frequencies, whose anchor (the current instant) always carries a
+    /// meaningful time even when the user typed no clock time.</summary>
+    private static bool ImpliesTimeOfDay(string rule)
+        => rule.Contains("FREQ=SECONDLY", StringComparison.OrdinalIgnoreCase)
+        || rule.Contains("FREQ=MINUTELY", StringComparison.OrdinalIgnoreCase)
+        || rule.Contains("FREQ=HOURLY", StringComparison.OrdinalIgnoreCase);
 
     private static ZonedDateTime AnchorOn(ParseContext ctx, DateOnly date, bool hasTime, int h, int m)
         => ctx.Zoned(date, hasTime ? h : 0, hasTime ? m : 0);

@@ -74,7 +74,7 @@ public sealed class KoreanDateParser : IDateParser
                 work = LibraryFallback(work, context, result);
 
             if (!result.WhenAssigned && result.Recurrence is { } recurrence)
-                result.TrySetWhen(ScheduledWhen.On(recurrence.Anchor));
+                result.TrySetWhen(ScheduledWhen.On(recurrence.Anchor), hasTime: result.RecurrenceAnchorHasTime);
 
             var title = CollapseWhitespace(work);
             if (title.Length == 0)

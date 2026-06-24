@@ -546,6 +546,99 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task QuickAddDateOnlyRecurrence_IsAllDay_ButAnchorKeepsTime()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // No explicit time → the user means "every Friday, all-day", not "every Friday at 00:00".
+        vm.QuickAddText = "매주 금요일 주간 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(await store.GetAllAsync<TaskItem>());
+        // The task's own When is all-day (종일): the list shows the day alone, never a 00:00 fragment.
+        Assert.True(saved.When.IsAllDay);
+        Assert.Equal(new DateOnly(2026, 6, 26), DateOnly.FromDateTime(saved.When.Date!.Value.ToLocal().DateTime));
+        // The recurrence anchor still carries a concrete time (00:00) so the engine can evaluate it —
+        // the anchor's time and the task's all-day state are decoupled.
+        Assert.NotNull(saved.Recurrence);
+        Assert.Equal("FREQ=WEEKLY;BYDAY=FR", saved.Recurrence!.Rule);
+        Assert.Equal(TimeSpan.Zero, saved.Recurrence.Anchor.ToLocal().TimeOfDay);
+    }
+
+    [Fact]
+    public async Task QuickAddDateOnlyRecurrence_StaysAllDay_AcrossCompletion()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var recurring = new RecurringTaskService(store);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), recurring, clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        vm.QuickAddText = "매주 금요일 주간 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+        var task = Assert.Single(await store.GetAllAsync<TaskItem>());
+
+        // Completing the all-day recurrence advances one cycle and the next instance is still all-day.
+        await recurring.CompleteAsync(task.Id, clock.GetUtcNow());
+
+        var advanced = await store.GetAsync<TaskItem>(task.Id);
+        Assert.True(advanced!.When.IsAllDay);
+        Assert.Equal(new DateOnly(2026, 7, 3), DateOnly.FromDateTime(advanced.When.Date!.Value.ToLocal().DateTime)); // next Friday
+    }
+
+    [Fact]
+    public async Task QuickAddSomedayWithRecurrence_DropsTheUnanchorableRule()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // The explicit "언젠가" wins the When (Unscheduled), so the parsed recurrence has no date to
+        // repeat from. A dateless repeat is meaningless and must not be stored.
+        vm.QuickAddText = "언젠가 매주 금요일 주간 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(await store.GetAllAsync<TaskItem>());
+        Assert.Equal(WhenKind.Unscheduled, saved.When.Kind);
+        Assert.Null(saved.Recurrence);
+    }
+
+    [Fact]
+    public async Task QuickAddSubDailyRecurrence_StaysTimed_NotAllDay()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 14, 30, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // A 분 단위 repeat is inherently time-based — it must not be flattened to an all-day (종일) date.
+        vm.QuickAddText = "30분마다 스트레칭";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(await store.GetAllAsync<TaskItem>());
+        Assert.False(saved.When.IsAllDay);
+        Assert.NotNull(saved.Recurrence);
+        Assert.Equal("FREQ=MINUTELY;INTERVAL=30", saved.Recurrence!.Rule);
+        Assert.Equal(new TimeSpan(14, 30, 0), saved.When.Date!.Value.ToLocal().TimeOfDay); // anchored on now
+    }
+
+    [Fact]
     public async Task DetailClearWhen_SavesAsUnscheduled()
     {
         using var temp = new TempDirectory();
@@ -574,6 +667,79 @@ public sealed class ViewModelRegressionTests
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.Equal(WhenKind.Unscheduled, saved!.When.Kind);
         Assert.False(saved.When.HasDate);
+    }
+
+    [Fact]
+    public async Task DetailMovingWhen_ReAnchorsRecurrence_EvenWhenRuleUnchanged()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        // 매주 월요일 오전 9시 — anchor and When both Monday 2026-06-22 09:00.
+        var monday9 = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem
+        {
+            Title = "주간 회의",
+            When = ScheduledWhen.On(monday9),
+            Recurrence = new RecurrenceRule("FREQ=WEEKLY", monday9),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        // User moves the date/time to Tuesday 2026-06-23 15:00 without touching the 반복 selection.
+        vm.Detail.WhenDate = new DateTimeOffset(2026, 6, 23, 0, 0, 0, TimeSpan.Zero);
+        vm.Detail.SelectedWhenHour = vm.Detail.Hours[15];
+        vm.Detail.SelectedWhenMinute = vm.Detail.Minutes[0];
+        await vm.Detail.DrainPendingSaveAsync();
+
+        // The rule string is unchanged, but the anchor must follow the new When — otherwise the next
+        // occurrence after completion would land back on Monday 09:00, contradicting the edit.
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved!.Recurrence);
+        Assert.Equal("FREQ=WEEKLY", saved.Recurrence!.Rule);
+        var anchorLocal = saved.Recurrence.Anchor.ToLocal();
+        Assert.Equal(new DateOnly(2026, 6, 23), DateOnly.FromDateTime(anchorLocal.DateTime)); // Tuesday
+        Assert.Equal(new TimeSpan(15, 0, 0), anchorLocal.TimeOfDay);
+        Assert.Equal(saved.When.Date, saved.Recurrence.Anchor); // anchor tracks the new When exactly
+    }
+
+    [Fact]
+    public async Task DetailMetadataOnlyEdit_PreservesRecurrenceAnchor()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var monday9 = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem
+        {
+            Title = "주간 회의",
+            When = ScheduledWhen.On(monday9),
+            Recurrence = new RecurrenceRule("FREQ=WEEKLY", monday9),
+            Priority = Priority.None,
+        };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Editing only the priority must leave the recurrence anchor untouched (no silent re-anchoring).
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);
+        Assert.NotNull(saved.Recurrence);
+        Assert.Equal(monday9, saved.Recurrence!.Anchor); // original anchor preserved verbatim
     }
 
     [Theory]
