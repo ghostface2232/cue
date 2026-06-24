@@ -73,8 +73,21 @@ public partial class TaskListViewModel : ObservableObject
 
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    /// <summary>Priority sections for the 중요도 (priority) view — the only sectioned list.</summary>
+    /// <summary>Priority sections for the 중요도 (priority) view — one of the sectioned lists.</summary>
     public ObservableCollection<PrioritySectionViewModel> PrioritySections { get; } = new();
+
+    /// <summary>Date sections for the 완료한 일 (Logbook) view — completed tasks grouped by day.</summary>
+    public ObservableCollection<DateSectionViewModel> LogbookSections { get; } = new();
+
+    /// <summary>The collapsible "완료한 일" section beneath the open list in the Today, group, and tag
+    /// views. Empty (and hidden) in every other view; it stays a single reused instance so its
+    /// collapsed/expanded state survives list refreshes.</summary>
+    public CompletedSectionViewModel CompletedSection { get; } = new();
+
+    /// <summary>Raised right after a task is completed from an active list and its row has entered the
+    /// acknowledgement state, so the View can run the fold/spin timing and then call
+    /// <see cref="FinalizeCompletionAsync"/>. Carries the row that was just completed.</summary>
+    public event Action<TaskRowViewModel>? CompletionAcknowledged;
 
     public TaskDetailViewModel Detail { get; }
 
@@ -112,6 +125,10 @@ public partial class TaskListViewModel : ObservableObject
     /// rather than one flat list.</summary>
     [ObservableProperty]
     public partial bool IsPrioritySectioned { get; set; }
+
+    /// <summary>True when the list is rendered as the 완료한 일 (Logbook) view's date sections.</summary>
+    [ObservableProperty]
+    public partial bool IsLogbookSectioned { get; set; }
 
     [ObservableProperty]
     public partial string TitleCaption { get; set; } = string.Empty;
@@ -154,7 +171,10 @@ public partial class TaskListViewModel : ObservableObject
     private IEnumerable<TaskRowViewModel> AllRows()
     {
         foreach (var row in Tasks) yield return row;
+        foreach (var row in CompletedSection.Tasks) yield return row;
         foreach (var section in PrioritySections)
+            foreach (var row in section.Tasks) yield return row;
+        foreach (var section in LogbookSections)
             foreach (var row in section.Tasks) yield return row;
     }
 
@@ -191,7 +211,13 @@ public partial class TaskListViewModel : ObservableObject
         OnPropertyChanged(nameof(HasTitleCaption));
         IsTaskGroupMode = _mode == TaskListMode.TaskGroup;
         IsPrioritySectioned = _mode is TaskListMode.Priority;
-        IsStandardList = !IsPrioritySectioned;
+        IsLogbookSectioned = _mode is TaskListMode.Logbook;
+        IsStandardList = !IsPrioritySectioned && !IsLogbookSectioned;
+
+        // The completed section's collapsed/expanded state and title are reset when the view changes, so
+        // it always opens fresh and collapsed; LoadAsync repopulates and re-titles it for the new mode.
+        CompletedSection.IsExpanded = false;
+        CompletedSection.Title = _mode == TaskListMode.Today ? "오늘 완료한 일" : "완료한 일";
         OnPropertyChanged(nameof(CanQuickAdd));
     }
 
@@ -243,69 +269,83 @@ public partial class TaskListViewModel : ObservableObject
         _navNotifier.NotifyCountsChanged();
     }
 
-    /// <summary>Reloads the list from the index for the current mode.</summary>
+    /// <summary>Reloads the list from the index for the current mode. Completed work is excluded from the
+    /// open list and surfaced separately: a collapsible "완료한 일" section (Today / group / tag), the
+    /// priority buckets (open only), or the Logbook's date sections.</summary>
     [RelayCommand]
     public async Task LoadAsync()
     {
-        IReadOnlyList<TaskListItem> items;
-
+        // Each branch reconciles the live collections in place rather than clearing and rebuilding them,
+        // so a refresh (every save routes through here) reuses unchanged row instances. That keeps scroll
+        // position, focus, selection, a drag in progress, and the entrance animation intact. The branches
+        // not in use are emptied so a switch between views leaves no stale rows behind.
         switch (_mode)
         {
-            case TaskListMode.AllTasks:
-                items = await _index.GetAllActiveAsync();
-                break;
-            case TaskListMode.Today:
-                items = await _index.GetTodayAsync();
-                break;
-            case TaskListMode.Upcoming:
-                items = await _index.GetUpcomingAsync();
-                break;
-            case TaskListMode.Anytime:
-                items = await _index.GetAnytimeAsync();
-                break;
-            case TaskListMode.Logbook:
-                items = await _index.GetLogbookAsync();
-                break;
             case TaskListMode.Priority:
-                items = await _index.GetByPriorityAsync();
+                SyncRows(Tasks, []);
+                SyncCompletedSection([]);
+                SyncLogbookSections([]);
+                SyncPrioritySections(await _index.GetByPriorityAsync());
+                IsEmpty = PrioritySections.Count == 0;
                 break;
+
+            case TaskListMode.Logbook:
+                SyncRows(Tasks, []);
+                SyncCompletedSection([]);
+                SyncPrioritySections([]);
+                SyncLogbookSections(await _index.GetLogbookAsync());
+                IsEmpty = LogbookSections.Count == 0;
+                break;
+
+            case TaskListMode.Today:
+                await LoadFlatWithCompletedAsync(
+                    await _index.GetTodayAsync(),
+                    await _index.GetTodayCompletedAsync());
+                break;
+
             case TaskListMode.TaskGroup:
-                items = await _index.GetByTaskGroupAsync(RequiredFilterId());
+                await LoadFlatWithCompletedAsync(
+                    await _index.GetByTaskGroupAsync(RequiredFilterId()),
+                    await _index.GetCompletedByTaskGroupAsync(RequiredFilterId()));
                 break;
+
             case TaskListMode.Tag:
-                items = await _index.GetByTagAsync(RequiredFilterId());
+                await LoadFlatWithCompletedAsync(
+                    await _index.GetByTagAsync(RequiredFilterId()),
+                    await _index.GetCompletedByTagAsync(RequiredFilterId()));
                 break;
-            case TaskListMode.NoTaskGroup:
-                items = await _index.GetWithoutTaskGroupAsync();
-                break;
-            case TaskListMode.NoTag:
-                items = await _index.GetWithoutTagAsync();
-                break;
+
             default:
-                throw new ArgumentOutOfRangeException();
+                var items = _mode switch
+                {
+                    TaskListMode.AllTasks => await _index.GetAllActiveAsync(),
+                    TaskListMode.Upcoming => await _index.GetUpcomingAsync(),
+                    TaskListMode.Anytime => await _index.GetAnytimeAsync(),
+                    TaskListMode.NoTaskGroup => await _index.GetWithoutTaskGroupAsync(),
+                    TaskListMode.NoTag => await _index.GetWithoutTagAsync(),
+                    _ => throw new ArgumentOutOfRangeException(),
+                };
+                SyncPrioritySections([]);
+                SyncLogbookSections([]);
+                SyncCompletedSection([]);   // these views exclude completed work outright
+                SyncRows(Tasks, items);
+                IsEmpty = Tasks.Count == 0;
+                break;
         }
-
-        // Reconcile the live collections in place instead of clearing and rebuilding them, so a refresh
-        // (every save routes through here) reuses unchanged row instances. That keeps scroll position,
-        // focus, selection, a drag in progress, and the item-entrance animation intact, and avoids
-        // recreating hundreds of rows when a single detail-panel edit changed one value.
-        if (_mode == TaskListMode.Priority)
-        {
-            SyncRows(Tasks, []);   // the 중요도 view is sectioned; its rows live in the buckets, not the flat list
-            SyncPrioritySections(items);
-        }
-        else
-        {
-            SyncPrioritySections([]);  // every other view is flat; keep the section list empty
-            SyncRows(Tasks, items);
-        }
-
-        IsEmpty = IsPrioritySectioned
-            ? PrioritySections.Count == 0
-            : Tasks.Count == 0;
 
         // Re-apply the selection accent: reused rows keep theirs, but a freshly inserted row needs it set.
         ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
+    }
+
+    /// <summary>Loads a flat open list plus its collapsible "완료한 일" section (Today / group / tag).</summary>
+    private Task LoadFlatWithCompletedAsync(IReadOnlyList<TaskListItem> open, IReadOnlyList<TaskListItem> completed)
+    {
+        SyncPrioritySections([]);
+        SyncLogbookSections([]);
+        SyncRows(Tasks, open);
+        SyncCompletedSection(completed);
+        IsEmpty = Tasks.Count == 0 && CompletedSection.Tasks.Count == 0;
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -544,6 +584,71 @@ public partial class TaskListViewModel : ObservableObject
         }
     }
 
+    /// <summary>Reconciles the single collapsed "완료한 일" section's rows in place from the completed
+    /// projection. Pass an empty list to clear it (so it hides) in views that don't carry one.</summary>
+    private void SyncCompletedSection(IReadOnlyList<TaskListItem> items)
+        => SyncRows(CompletedSection.Tasks, items);
+
+    /// <summary>
+    /// Reconciles the Logbook's date sections in place: one section per local completion day, newest day
+    /// first, headed 오늘 / 어제 / a "M월 d일" date. Reuses existing section instances by title so a refresh
+    /// doesn't tear the list down. Pass an empty list to clear the sections for an unsectioned view.
+    /// </summary>
+    private void SyncLogbookSections(IReadOnlyList<TaskListItem> items)
+    {
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone).DateTime);
+
+        // Group by local completion day, preserving the index's newest-first order. completed_at is set on
+        // every Logbook row, but guard a null defensively (it would sort under a "" title and stay stable).
+        var desired = new List<(string Title, List<TaskListItem> Items)>();
+        var byTitle = new Dictionary<string, List<TaskListItem>>();
+        foreach (var item in items)
+        {
+            var title = item.CompletedAt is { } at
+                ? DayHeading(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, _timeZone).DateTime), today)
+                : "";
+            if (!byTitle.TryGetValue(title, out var bucket))
+            {
+                bucket = new List<TaskListItem>();
+                byTitle[title] = bucket;
+                desired.Add((title, bucket));
+            }
+            bucket.Add(item);
+        }
+
+        var desiredTitles = new HashSet<string>(desired.Select(section => section.Title));
+        for (var i = LogbookSections.Count - 1; i >= 0; i--)
+            if (!desiredTitles.Contains(LogbookSections[i].Title))
+                LogbookSections.RemoveAt(i);
+
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var (title, bucket) = desired[i];
+            if (i >= LogbookSections.Count || LogbookSections[i].Title != title)
+            {
+                var existing = IndexOfLogbookSection(title);
+                if (existing >= 0) LogbookSections.Move(existing, i);
+                else LogbookSections.Insert(i, new DateSectionViewModel(title));
+            }
+            SyncRows(LogbookSections[i].Tasks, bucket);
+        }
+    }
+
+    private int IndexOfLogbookSection(string title)
+    {
+        for (var i = 0; i < LogbookSections.Count; i++)
+            if (LogbookSections[i].Title == title) return i;
+        return -1;
+    }
+
+    /// <summary>A Logbook day heading: 오늘 for the current day, 어제 for the day before, else "M월 d일".</summary>
+    private static string DayHeading(DateOnly day, DateOnly today)
+    {
+        if (day == today) return "오늘";
+        if (day == today.AddDays(-1)) return "어제";
+        return day.ToString("M월 d일", System.Globalization.CultureInfo.GetCultureInfo("ko-KR"));
+    }
+
     private int IndexOfPrioritySection(string name)
     {
         for (var i = 0; i < PrioritySections.Count; i++)
@@ -640,10 +745,13 @@ public partial class TaskListViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Applies a row's completion change to the store, then refreshes. Serialized through a gate so
-    /// rapid toggles can't reorder their writes (concurrent executions are allowed so none are
-    /// dropped — they queue on the gate). The row remains dimmed in place until the next list load;
-    /// on failure its checkbox is restored so the UI never disagrees with what's on disk.
+    /// Applies a row's completion change to the store. Serialized through a gate so rapid toggles can't
+    /// reorder their writes (concurrent executions are allowed so none are dropped — they queue on the
+    /// gate). On <b>completing</b> a row from an active list the row is <i>not</i> reloaded away at once:
+    /// it enters the acknowledgement state (an in-row undo / repeat note) and the View runs the fold timing
+    /// before calling <see cref="FinalizeCompletionAsync"/>, which reloads it into the relevant 완료한 일
+    /// section. <b>Un-completing</b> a row (from a completed section) reloads immediately. On failure the
+    /// checkbox is restored so the UI never disagrees with what's on disk.
     /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleCompleteAsync(TaskRowViewModel row)
@@ -658,26 +766,63 @@ public partial class TaskListViewModel : ObservableObject
                 // Logbook copy and advances to its next cycle, a one-off is simply stamped done. The
                 // task's embedded checklist items are independent and left as they are.
                 await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
+                _navNotifier.NotifyCountsChanged();
+
+                // Hold the row in place (now completed, so dimmed) and hand off to the View for the
+                // acknowledgement moment: it lets the check + dim register, swaps in the undo / repeat
+                // note, then folds the row away and calls FinalizeCompletionAsync — which reloads and drops
+                // the row into its 완료한 일 section. No reload here — that would whisk it away too soon.
+                CompletionAcknowledged?.Invoke(row);
             }
             else
             {
-                // Atomic read-modify-write so clearing completion touches only CompletedAt on the
-                // latest record, never overwriting a field a concurrent save path just changed.
+                // Un-completing (from a 완료한 일 section): atomic read-modify-write so clearing completion
+                // touches only CompletedAt on the latest record, then reload so it returns to the open list.
                 await _store.MutateAsync<TaskItem>(row.Id, task => { task.CompletedAt = null; return true; });
+                _navNotifier.NotifyCountsChanged();
+                await LoadAsync();
             }
-            // Keep the row in place for this session so completion has a visible, reversible
-            // acknowledgement. Index-backed navigation/reload naturally removes it later.
-            // The open-task count for this task's group/tag just changed — refresh the sidebar badges.
-            _navNotifier.NotifyCountsChanged();
         }
         catch
         {
-            // Save/reload failed — put the checkbox back so it reflects the real (unchanged) state.
+            // Save failed — put the checkbox back and drop any acknowledgement so it reflects the real
+            // (unchanged) state.
+            row.EndCompletionAcknowledgement();
             row.SetCompletedSilently(!completed);
         }
         finally
         {
             _toggleGate.Release();
         }
+    }
+
+    /// <summary>Ends a row's completion acknowledgement and reloads the list, so the just-completed task
+    /// leaves the open list and reappears in its 완료한 일 section / Logbook. Called by the View once the
+    /// fold (and, for a repeating task, the refresh spin) has played.</summary>
+    public async Task FinalizeCompletionAsync(TaskRowViewModel row)
+    {
+        row.EndCompletionAcknowledgement();
+        await LoadAsync();
+    }
+
+    /// <summary>Reverses a one-off completion straight from its acknowledgement bar ("실행 취소"): clears
+    /// <see cref="TaskItem.CompletedAt"/>, drops the acknowledgement, and reloads so the row returns to
+    /// the open list. Undo is offered for one-off completions only — a repeating completion advanced the
+    /// series and is not reversed here.</summary>
+    public async Task UndoCompletionAsync(TaskRowViewModel row)
+    {
+        await _toggleGate.WaitAsync();
+        try
+        {
+            await _store.MutateAsync<TaskItem>(row.Id, task => { task.CompletedAt = null; return true; });
+            _navNotifier.NotifyCountsChanged();
+        }
+        finally
+        {
+            _toggleGate.Release();
+        }
+        row.SetCompletedSilently(false);
+        row.EndCompletionAcknowledgement();
+        await LoadAsync();
     }
 }

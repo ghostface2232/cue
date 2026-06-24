@@ -84,7 +84,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task CompletionKeepsRowVisibleAndDimmedAcrossReloads()
+    public async Task CompletingHoldsTheRowUntilFinalize_ThenItLeavesTheOpenList()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
@@ -92,24 +92,77 @@ public sealed class ViewModelRegressionTests
             new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
             clock,
             TimeZoneInfo.Utc);
-        var task = new TaskItem { Title = "stay visible" };
+        var task = new TaskItem { Title = "complete me" };
         await store.SaveAsync(task);
 
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.LoadCommand.ExecuteAsync(null);
         var row = Assert.Single(vm.Tasks);
+
+        // Completing saves immediately but does NOT reload the row away — it holds its place for the
+        // acknowledgement moment (the View runs the timing and later calls FinalizeCompletionAsync).
         row.SetCompletedSilently(true);
         await vm.ToggleCompleteCommand.ExecuteAsync(row);
-
         Assert.Same(row, Assert.Single(vm.Tasks));
-        Assert.Equal(0.48, row.VisualOpacity);
         Assert.True((await store.GetAsync<TaskItem>(task.Id))!.IsCompleted);
 
-        // Completed items stay in the list (dimmed) across reloads instead of vanishing.
+        // Finalizing (the View's fold has played) reloads and drops the now-completed task out of the open
+        // 모든 할 일 list entirely — completed work is excluded there.
+        await vm.FinalizeCompletionAsync(row);
+        Assert.Empty(vm.Tasks);
+    }
+
+    [Fact]
+    public async Task TodayCompletion_MovesTaskIntoTheCollapsedCompletedSection()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "오늘 할 일", When = ScheduledWhen.AllDay(ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 0, 0, 0), "UTC")) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
         await vm.LoadCommand.ExecuteAsync(null);
-        var reloaded = Assert.Single(vm.Tasks);
-        Assert.True(reloaded.IsCompleted);
-        Assert.Equal(0.48, reloaded.VisualOpacity);
+        var row = Assert.Single(vm.Tasks);
+        Assert.False(vm.CompletedSection.HasItems);
+
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.FinalizeCompletionAsync(row);
+
+        // Out of the open Today list, into the collapsed "오늘 완료한 일" section.
+        Assert.Empty(vm.Tasks);
+        Assert.True(vm.CompletedSection.HasItems);
+        Assert.False(vm.CompletedSection.IsExpanded);   // starts collapsed
+        Assert.Equal("오늘 완료한 일", vm.CompletedSection.Title);
+        Assert.Equal(task.Id, Assert.Single(vm.CompletedSection.Tasks).Id);
+    }
+
+    [Fact]
+    public async Task LogbookGroupsCompletedTasksByDay()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 24, 5, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        await store.SaveAsync(new TaskItem { Title = "오늘 끝", CompletedAt = new DateTimeOffset(2026, 6, 24, 3, 0, 0, TimeSpan.Zero) });
+        await store.SaveAsync(new TaskItem { Title = "어제 끝", CompletedAt = new DateTimeOffset(2026, 6, 23, 3, 0, 0, TimeSpan.Zero) });
+        await store.SaveAsync(new TaskItem { Title = "그제 끝", CompletedAt = new DateTimeOffset(2026, 6, 22, 3, 0, 0, TimeSpan.Zero) });
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Logbook));
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsLogbookSectioned);
+        // Newest day first, with friendly headings for the two most recent days and a date for older ones.
+        Assert.Equal(new[] { "오늘", "어제", "6월 22일" }, vm.LogbookSections.Select(s => s.Title));
+        Assert.All(vm.LogbookSections, s => Assert.Single(s.Tasks));
     }
 
     [Fact]

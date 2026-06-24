@@ -15,8 +15,10 @@ public sealed record TaskRowTag(string Name, string? Color);
 /// </summary>
 /// <remarks>
 /// The toggle is wired to a callback the parent list owns, so flipping the checkbox sets/clears
-/// <see cref="TaskItem.CompletedAt"/> and refreshes the list. Active views keep completed rows
-/// visible and dimmed, so finishing an item remains acknowledged and reversible after reload.
+/// <see cref="TaskItem.CompletedAt"/>. Completing from an active list plays a brief in-row
+/// acknowledgement (undo for a one-off, a repeat note + refresh spin for a repeating task) before the
+/// row folds away; the completed task then resurfaces in a dedicated 완료한 일 section / the Logbook
+/// rather than lingering dimmed in the open list. See the acknowledgement members below.
 /// </remarks>
 public partial class TaskRowViewModel : ObservableObject
 {
@@ -100,12 +102,18 @@ public partial class TaskRowViewModel : ObservableObject
     // Checklist items are rendered as their own indented sub-list, so their presence is already obvious —
     // they intentionally do not add a "체크리스트 N" caption to the parent row's metadata line.
     public bool HasMetadata => HasSchedule || HasPriority || IsRecurring;
-    public double VisualOpacity => IsCompleted ? 0.48 : 1.0;
+    // A completed row reads dimmed (in its 완료한 일 section / Logbook), but while the acknowledgement bar
+    // is showing the row returns to full opacity so the undo message stays legible.
+    public double VisualOpacity => IsCompleted && !IsAcknowledging ? 0.48 : 1.0;
 
     /// <summary>The task's embedded checklist items as nested rows under it (read + toggle only). The
     /// owning list populates and reconciles this collection.</summary>
     public ObservableCollection<ChecklistRowViewModel> ChecklistItems { get; } = new();
     public bool HasChecklist => ChecklistItems.Count > 0;
+
+    /// <summary>The nested checklist shows only when the row has items and is not mid-acknowledgement
+    /// (the acknowledgement bar replaces the whole row body).</summary>
+    public bool ShowChecklist => HasChecklist && ShowNormalContent;
 
     [ObservableProperty]
     public partial bool IsCompleted { get; set; }
@@ -117,13 +125,71 @@ public partial class TaskRowViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsSelected { get; set; }
 
+    // --- Completion acknowledgement (the brief in-row moment after the user ticks a task) ---
+    // When a task is completed from an active list it is not whisked away at once: the row holds its
+    // place for a beat, swapping its normal content for a small acknowledgement bar — an "undo" affordance
+    // for a one-off, or a "completed this occurrence" note for a repeating task — before it folds away and
+    // the list reloads (dropping it into the relevant 완료한 일 section / Logbook). These flags drive that
+    // swap; the View owns the timing and the fold/spin motion.
+
+    /// <summary>True while the post-completion acknowledgement bar is showing in place of the row's normal
+    /// content. The View flips this on via <see cref="BeginCompletionAcknowledgement"/> and clears it
+    /// through <see cref="EndCompletionAcknowledgement"/> just before the row leaves the list.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowNormalContent))]
+    [NotifyPropertyChangedFor(nameof(ShowChecklist))]
+    [NotifyPropertyChangedFor(nameof(VisualOpacity))]
+    public partial bool IsAcknowledging { get; set; }
+
+    /// <summary>Inverse of <see cref="IsAcknowledging"/> — drives the normal row body's visibility so it
+    /// yields to the acknowledgement bar.</summary>
+    public bool ShowNormalContent => !IsAcknowledging;
+
+    /// <summary>The acknowledgement message: "할 일을 완료했습니다" for a one-off, "이번 할 일을 완료했습니다"
+    /// for a repeating task (only this occurrence was completed; the series rolls on).</summary>
+    [ObservableProperty]
+    public partial string AcknowledgeMessage { get; set; } = string.Empty;
+
+    /// <summary>True when the acknowledgement is for a repeating task: the bar shows a one-turn refresh
+    /// spin in the circle and offers no undo (the series advanced); a one-off shows an undo button.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowUndo))]
+    public partial bool IsRecurringCompletion { get; set; }
+
+    /// <summary>Whether the acknowledgement bar offers an "실행 취소" (undo) button — one-off completions
+    /// only. A repeating completion advanced the series, so it is not casually reversible here.</summary>
+    public bool ShowUndo => IsAcknowledging && !IsRecurringCompletion;
+
+    /// <summary>Enters the post-completion acknowledgement state. The completion itself is already saved;
+    /// this only flips the row into its acknowledgement presentation.</summary>
+    public void BeginCompletionAcknowledgement(bool recurring)
+    {
+        IsRecurringCompletion = recurring;
+        AcknowledgeMessage = recurring ? "이번 할 일을 완료했습니다" : "할 일을 완료했습니다";
+        IsAcknowledging = true;
+        OnPropertyChanged(nameof(ShowUndo));
+    }
+
+    /// <summary>Leaves the acknowledgement state (on undo, or just before the row is removed/reloaded).</summary>
+    public void EndCompletionAcknowledgement()
+    {
+        IsAcknowledging = false;
+        IsRecurringCompletion = false;
+        AcknowledgeMessage = string.Empty;
+        OnPropertyChanged(nameof(ShowUndo));
+    }
+
     public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled)
     {
         _onUserToggled = onUserToggled;
         // The in-place list reconcile mutates ChecklistItems directly, so notify HasChecklist from the
         // collection itself — that's what flips the nested-list divider live when a row's first
         // checklist item appears (or its last is removed).
-        ChecklistItems.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasChecklist));
+        ChecklistItems.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasChecklist));
+            OnPropertyChanged(nameof(ShowChecklist));
+        };
         Id = item.Id;
         Title = FormatTitle(item.Title);
         SortOrder = item.SortOrder;
@@ -185,6 +251,7 @@ public partial class TaskRowViewModel : ObservableObject
     {
         ChecklistItems.Add(item);
         OnPropertyChanged(nameof(HasChecklist));
+        OnPropertyChanged(nameof(ShowChecklist));
     }
 
     private static string FormatTitle(string title)

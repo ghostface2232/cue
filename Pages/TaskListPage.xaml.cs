@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Cue.ViewModels;
@@ -44,6 +45,13 @@ public sealed partial class TaskListPage : Page
     private readonly AppPreferences _preferences;
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
+    // Task-row repeaters (the open list + each priority section), used to locate a row's realized
+    // container for the post-completion fold/spin. Completed/Logbook repeaters are not registered — their
+    // rows can't enter the acknowledgement flow.
+    private readonly List<ItemsRepeater> _taskRepeaters = new();
+    // Per-row pending fold timers for the completion-acknowledgement moment, so a hover can pause one and
+    // an undo/finalize can cancel it.
+    private readonly Dictionary<TaskRowViewModel, DispatcherQueueTimer> _ackTimers = new();
     private Visual? _detailPanelVisual;
     private bool _isResizingDetail;
     private double _detailPreferredWidth;
@@ -70,6 +78,9 @@ public sealed partial class TaskListPage : Page
         // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
         _navNotifier.Changed += OnNavDataChanged;
+        // The view model raises this right after a task is completed from an active list; the page runs
+        // the in-row acknowledgement timing (fold, and a refresh spin for a repeating task).
+        ViewModel.CompletionAcknowledged += OnCompletionAcknowledged;
     }
 
     private async void OnNavDataChanged(object? sender, EventArgs e)
@@ -78,6 +89,9 @@ public sealed partial class TaskListPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         _navNotifier.Changed -= OnNavDataChanged;
+        ViewModel.CompletionAcknowledged -= OnCompletionAcknowledged;
+        foreach (var timer in _ackTimers.Values) timer.Stop();
+        _ackTimers.Clear();
         base.OnNavigatedFrom(e);
     }
 
@@ -112,6 +126,13 @@ public sealed partial class TaskListPage : Page
     {
         if (sender is not FrameworkElement { Tag: Guid id } element || IsInteractiveElement(e.OriginalSource as DependencyObject))
             return;
+        // While the row is showing its completion acknowledgement, a tap shouldn't open the (now
+        // completed) task — it only keeps the row alive (handled by the hover pause).
+        if (element.DataContext is TaskRowViewModel { IsAcknowledging: true })
+        {
+            e.Handled = true;
+            return;
+        }
         e.Handled = true;
         // Give the row keyboard focus too, so a follow-up Delete acts on the just-selected task.
         element.Focus(FocusState.Pointer);
@@ -254,12 +275,19 @@ public sealed partial class TaskListPage : Page
     {
         if (sender is not Border border) return;
         border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TaskHoverBrush"];
+        // Hovering a row that's mid-acknowledgement holds it open: pause its pending fold (a one-off, where
+        // the undo lives). A repeating completion rolls on regardless, so it isn't paused.
+        if (border.DataContext is TaskRowViewModel { IsAcknowledging: true, IsRecurringCompletion: false } row)
+            StopAckTimer(row);
     }
 
     private void TaskSurface_PointerExited(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not Border border) return;
         border.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        // Pointer left a paused acknowledgement — restart its fold timer (a fresh ~2s with no hover).
+        if (border.DataContext is TaskRowViewModel { IsAcknowledging: true, IsRecurringCompletion: false } row)
+            StartAckTimer(row);
     }
 
     private void DetailPanel_Loaded(object sender, RoutedEventArgs e)
@@ -551,6 +579,7 @@ public sealed partial class TaskListPage : Page
     private void ReorderRepeater_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is not ItemsRepeater repeater || _reorderSurfaces.TryGetValue(repeater, out _)) return;
+        if (!_taskRepeaters.Contains(repeater)) _taskRepeaters.Add(repeater);
         var surface = ReorderSurface.Attach(
             repeater,
             (items, movedId) => ViewModel.PersistReorderAsync(items, movedId),
@@ -822,6 +851,126 @@ public sealed partial class TaskListPage : Page
         var result = await _dialogs.ShowAsync(dialog);
         var name = input.Text.Trim();
         return result == ContentDialogResult.Primary && name.Length > 0 ? name : null;
+    }
+
+    // --- Completion acknowledgement: the brief in-row moment after a task is ticked ---
+
+    /// <summary>
+    /// Runs the in-row acknowledgement after a completion: a repeating task spins its refresh glyph one
+    /// turn; then (after a short hold the user can extend by hovering) the row folds away and the view
+    /// model finalizes — reloading it into the relevant 완료한 일 section / Logbook. With animations off
+    /// the row is finalized immediately.
+    /// </summary>
+    private void OnCompletionAcknowledged(TaskRowViewModel row)
+    {
+        if (!_animationsEnabled)
+        {
+            _ = RunSafelyAsync(() => ViewModel.FinalizeCompletionAsync(row));
+            return;
+        }
+        _ = RunAcknowledgementAsync(row);
+    }
+
+    private async Task RunAcknowledgementAsync(TaskRowViewModel row)
+    {
+        // Let the circular check pop play and the row settle into its dimmed completed state first…
+        await Task.Delay(300);
+        // …then swap the row body for the acknowledgement bar (undo for a one-off, a repeat note + spin
+        // for a repeating task) and start the fold timer.
+        row.BeginCompletionAcknowledgement(row.IsRecurring);
+        if (row.IsRecurringCompletion)
+            DispatcherQueue.TryEnqueue(() => StartRefreshSpin(row));   // after the bar lays out
+        StartAckTimer(row);
+    }
+
+    private void StartAckTimer(TaskRowViewModel row)
+    {
+        StopAckTimer(row);
+        var timer = DispatcherQueue.CreateTimer();
+        // A repeating completion holds briefly then rolls on; a one-off lingers ~2s so the undo is reachable.
+        timer.Interval = TimeSpan.FromMilliseconds(row.IsRecurringCompletion ? 1300 : 2000);
+        timer.IsRepeating = false;
+        timer.Tick += async (_, _) =>
+        {
+            StopAckTimer(row);
+            await RunSafelyAsync(() => FoldAndFinalizeAsync(row));
+        };
+        _ackTimers[row] = timer;
+        timer.Start();
+    }
+
+    private void StopAckTimer(TaskRowViewModel row)
+    {
+        if (_ackTimers.Remove(row, out var timer))
+            timer.Stop();
+    }
+
+    private async Task FoldAndFinalizeAsync(TaskRowViewModel row)
+    {
+        if (FindRowContainer(row) is { } element)
+            await AnimateRowFoldAsync(element);
+        await ViewModel.FinalizeCompletionAsync(row);
+    }
+
+    /// <summary>Folds the row away — a quick scale-Y collapse to nothing with a fade, anchored at the top
+    /// so it reads as the row closing up before it leaves the list.</summary>
+    private static async Task AnimateRowFoldAsync(FrameworkElement element)
+    {
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        visual.CenterPoint = new Vector3(0f, 0f, 0f);
+        var compositor = visual.Compositor;
+        var ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.4f, 0f), new Vector2(1f, 1f));
+
+        var scale = compositor.CreateVector3KeyFrameAnimation();
+        scale.InsertKeyFrame(0f, visual.Scale);
+        scale.InsertKeyFrame(1f, new Vector3(1f, 0f, 1f), ease);
+        scale.Duration = TimeSpan.FromMilliseconds(170);
+
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(0f, visual.Opacity);
+        fade.InsertKeyFrame(1f, 0f, ease);
+        fade.Duration = TimeSpan.FromMilliseconds(150);
+
+        visual.StartAnimation("Scale", scale);
+        visual.StartAnimation("Opacity", fade);
+        await Task.Delay(180);
+    }
+
+    /// <summary>Spins the acknowledgement bar's refresh glyph a single full turn (repeating-task moment).</summary>
+    private void StartRefreshSpin(TaskRowViewModel row)
+    {
+        if (FindRowContainer(row) is not { } container) return;
+        if (FindDescendant<FontIcon>(container, "AckSpinIcon") is not { } icon) return;
+
+        var visual = ElementCompositionPreview.GetElementVisual(icon);
+        visual.CenterPoint = new Vector3((float)icon.ActualWidth / 2f, (float)icon.ActualHeight / 2f, 0f);
+        visual.RotationAxis = new Vector3(0f, 0f, 1f);
+        var spin = visual.Compositor.CreateScalarKeyFrameAnimation();
+        spin.InsertKeyFrame(0f, 0f);
+        spin.InsertKeyFrame(1f, 360f, visual.Compositor.CreateCubicBezierEasingFunction(new Vector2(0.3f, 0f), new Vector2(0.2f, 1f)));
+        spin.Duration = TimeSpan.FromMilliseconds(1000);
+        visual.StartAnimation("RotationAngleInDegrees", spin);
+    }
+
+    /// <summary>Finds a task row's realized container across the open list and priority sections, or null
+    /// when it is virtualized off-screen.</summary>
+    private FrameworkElement? FindRowContainer(TaskRowViewModel row)
+    {
+        foreach (var repeater in _taskRepeaters)
+        {
+            if (repeater.ItemsSource is not System.Collections.IList list) continue;
+            var index = list.IndexOf(row);
+            if (index >= 0 && repeater.TryGetElement(index) is FrameworkElement element)
+                return element;
+        }
+        return null;
+    }
+
+    private async void UndoCompletion_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TaskRowViewModel row }) return;
+        StopAckTimer(row);
+        await RunSafelyAsync(() => ViewModel.UndoCompletionAsync(row));
     }
 
     private async Task RunSafelyAsync(Func<Task> operation)

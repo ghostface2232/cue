@@ -30,6 +30,7 @@ public sealed record TaskListItem(
     Priority Priority,
     string SortOrder,
     bool IsRecurring = false,
+    DateTimeOffset? CompletedAt = null,
     string? TaskGroupName = null,
     string? TaskGroupIcon = null,
     IReadOnlyList<TaskListTag>? Tags = null,

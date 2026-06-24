@@ -411,29 +411,45 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Classification axis
 
-    // Active lists keep completed tasks (shown dimmed) rather than dropping them on the next load, so
-    // finishing an item doesn't make it vanish; they sink below the open rows via the completed-last
-    // ordering. Open-task counts (badges) still exclude completed — see GetOpenTaskCounts*.
+    // Active lists return open tasks only: a completed task drops out of the live list and resurfaces in
+    // a dedicated "완료한 일" section (Today / group / tag) or the Logbook, rather than lingering dimmed
+    // in place. Open-task counts (badges) likewise exclude completed — see GetOpenTaskCounts*.
     // The home "모든 할 일" (AllTasks) list spans every group — no group filter — so a task in a group
     // still surfaces here. Each row carries its embedded checklist for the nested rows under it.
     public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL " +
-            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            "ORDER BY t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL " +
-            "AND t.group_id = $group ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            "AND t.group_id = $group ORDER BY t.sort_order;",
             cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
         => QueryAsync(
             SelectRows +
             "INNER JOIN task_tags tt ON tt.task_id = t.id " +
-            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL " +
-            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
+            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            "ORDER BY t.sort_order;",
+            cmd => Bind(cmd, "$tag", tagId.ToString()), cancellationToken);
+
+    // The completed companions of the two classification lists above: the rows of a group's / tag's
+    // collapsible "완료한 일" section, ordered most-recently-completed first.
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+        => QueryAsync(
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            "AND t.group_id = $group ORDER BY t.completed_at DESC;",
+            cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
+
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
+        => QueryAsync(
+            SelectRows +
+            "INNER JOIN task_tags tt ON tt.task_id = t.id " +
+            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            "ORDER BY t.completed_at DESC;",
             cmd => Bind(cmd, "$tag", tagId.ToString()), cancellationToken);
 
     // The 그룹 없음 / 태그 없음 lists re-create the quick-capture inbox: the home list spans every group,
@@ -441,37 +457,50 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     // filing. group_id IS NULL is the unfiled-group test; the NOT IN sub-select is the no-tag test.
     public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.group_id IS NULL " +
-            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL AND t.group_id IS NULL " +
+            "ORDER BY t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
             "AND t.id NOT IN (SELECT task_id FROM task_tags) " +
-            "ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
+            "ORDER BY t.sort_order;",
             _ => { }, cancellationToken);
 
     // Time axis (computed against the current day)
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
             "AND t.when_kind = 'OnDate' AND t.when_date IS NOT NULL AND t.when_date <= $today " +
-            "ORDER BY t.completed_at IS NOT NULL, t.when_date, t.sort_order;",
+            "ORDER BY t.when_date, t.sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
+
+    // The Today view's "오늘 완료한 일" section: anything whose completion instant falls within the
+    // current local day, newest first. The local day is converted to a UTC [start, end) window and
+    // compared against completed_at (stored as a UTC round-trip "O" string, lexically ordered).
+    public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(CancellationToken cancellationToken = default)
+    {
+        var (start, end) = TodayUtcRange();
+        return QueryAsync(
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            "AND t.completed_at >= $start AND t.completed_at < $end " +
+            "ORDER BY t.completed_at DESC;",
+            cmd => { Bind(cmd, "$start", start); Bind(cmd, "$end", end); }, cancellationToken);
+    }
 
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
             "AND t.when_kind = 'OnDate' AND t.when_date > $today " +
-            "ORDER BY t.completed_at IS NOT NULL, t.when_date, t.sort_order;",
+            "ORDER BY t.when_date, t.sort_order;",
             cmd => Bind(cmd, "$today", Today()), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL " +
-            "AND t.when_kind = 'Unscheduled' ORDER BY t.completed_at IS NOT NULL, t.sort_order;",
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            "AND t.when_kind = 'Unscheduled' ORDER BY t.sort_order;",
             _ => { }, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
@@ -482,10 +511,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
-            // Every active task, grouped by priority. Unprioritized tasks (priority 0) are kept and sorted
-            // last (the "없음" bucket at the bottom) via "t.priority = 0" ordering ahead of the priority key.
-            SelectRows + "WHERE t.deleted_at IS NULL " +
-            "ORDER BY t.priority = 0, t.priority, t.completed_at IS NOT NULL, t.sort_order;",
+            // Every open active task, grouped by priority. Unprioritized tasks (priority 0) are kept and
+            // sorted last (the "없음" bucket) via "t.priority = 0" ordering ahead of the priority key.
+            // Completed tasks are excluded — the 중요도 view is a lens on open ranked work.
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            "ORDER BY t.priority = 0, t.priority, t.sort_order;",
             _ => { }, cancellationToken);
 
     // Plumbing
@@ -586,6 +616,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         Priority: (Priority)r.GetInt64(8),
         SortOrder: r.GetString(9),
         IsRecurring: r.GetInt64(10) != 0,
+        CompletedAt: InstantOrNull(r, 7),
         TaskGroupName: r.IsDBNull(11) ? null : r.GetString(11),
         TaskGroupIcon: r.IsDBNull(12) ? null : r.GetString(12),
         Tags: TagsFrom(r, 13),
@@ -632,6 +663,31 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime)
             .ToString("yyyy-MM-dd");
 
+    /// <summary>
+    /// The current local day as a half-open UTC instant window <c>[start, end)</c>, each formatted as the
+    /// same round-trip "O" string <see cref="Instant"/> writes — so a lexical string comparison against
+    /// the <c>completed_at</c> column is a correct chronological one. Used to find tasks completed today.
+    /// </summary>
+    private (string Start, string End) TodayUtcRange()
+    {
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime);
+        var startUtc = LocalDayStartUtc(today);
+        var endUtc = LocalDayStartUtc(today.AddDays(1));
+        return (new DateTimeOffset(startUtc).ToString("O"), new DateTimeOffset(endUtc).ToString("O"));
+    }
+
+    /// <summary>The UTC instant at which a local calendar day begins. Normally local midnight, but on a
+    /// zone that springs forward <i>at</i> midnight that wall-clock time doesn't exist, so the day begins
+    /// at the transition — step past the skipped gap rather than letting <see cref="TimeZoneInfo.ConvertTimeToUtc"/>
+    /// throw (which would crash the Today load on that one day).</summary>
+    private DateTime LocalDayStartUtc(DateOnly day)
+    {
+        var local = day.ToDateTime(TimeOnly.MinValue);   // Kind.Unspecified — interpreted in _zone below
+        while (_zone.IsInvalidTime(local))
+            local = local.AddMinutes(15);
+        return TimeZoneInfo.ConvertTimeToUtc(local, _zone);
+    }
+
     private static string? LocalDate(ZonedDateTime? zoned)
         => zoned is null
             ? null
@@ -649,6 +705,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     private static Guid? GuidOrNull(SqliteDataReader r, int i)
         => r.IsDBNull(i) ? null : Guid.Parse(r.GetString(i));
+
+    // Parses an instant column (completed_at) back from the round-trip "O" string Instant() wrote.
+    private static DateTimeOffset? InstantOrNull(SqliteDataReader r, int i)
+        => r.IsDBNull(i) ? null : DateTimeOffset.Parse(r.GetString(i), null, System.Globalization.DateTimeStyles.RoundtripKind);
 
     private static DateOnly? DateOrNull(SqliteDataReader r, int i)
         => r.IsDBNull(i) ? null : DateOnly.ParseExact(r.GetString(i), "yyyy-MM-dd");

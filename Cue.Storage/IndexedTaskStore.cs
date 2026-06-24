@@ -316,6 +316,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
         => _index.GetByTagAsync(tagId, cancellationToken);
 
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+        => _index.GetCompletedByTaskGroupAsync(taskGroupId, cancellationToken);
+
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
+        => _index.GetCompletedByTagAsync(tagId, cancellationToken);
+
     public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
         => _index.GetWithoutTaskGroupAsync(cancellationToken);
 
@@ -324,6 +330,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
         => _index.GetTodayAsync(cancellationToken);
+
+    public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(CancellationToken cancellationToken = default)
+        => _index.GetTodayCompletedAsync(cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
         => _index.GetUpcomingAsync(cancellationToken);
