@@ -267,7 +267,7 @@ Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-bas
 
 The importance pill paints its background as a ~17% alpha tint of the priority color (`PriorityToTint`, alpha `0x2B`) with the saturated color as the label text (`PriorityToBrush`).
 
-The 중요도 view groups every task into these four buckets in P1→P4 order, followed by a trailing **없음** bucket for tasks with no priority. Each bucket header is a muted gray, slightly-smaller-than-title caption (`{typography.bucket-header}`) so it reads clearly apart from the task titles beneath it. A bucket is shown only when it has rows.
+The 중요도 view sorts ranked tasks into these four sections in P1→P4 order. **Unprioritized tasks (없음) are intentionally not shown here** — the view is a lens on ranked work only, and those tasks stay visible in every other list. A section is shown only when it has rows. Each section header is a muted gray, slightly-smaller-than-title caption (`{typography.bucket-header}`) that reads clearly apart from the task titles beneath it, and it is **independently collapsible**: tapping the header toggles its rows. The header carries the section's **task count** and an **expand/collapse chevron** (down when open, right when closed); unlike the sidebar's group/tag sections it has **no add button**. Collapse state lives in memory (sections start expanded) and survives a list refresh because the in-place reconcile reuses section instances.
 
 ### Semantic state
 - **Success** (`{colors.success}` → `SystemFillColorSuccess`): the detail Save glyph.
@@ -311,7 +311,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 ### List page — `TaskListPage.xaml`
 - Rows: page title + caption → (error `InfoBar`) → quick-add → list (+ detail panel). Body padding `20` (uniform on all sides).
 - Two-column body: left list (flexible) + right detail panel (resizable, default 460px). When the detail closes, the list reclaims the width.
-- The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **grouped list** (`ListView`, group header + rows). The grouped form is used only by the Priority (P1–P4) view (`IsGroupedList`); every other list, the TaskGroup list included, is flat.
+- The list takes **two forms**: a **flat list** (`ItemsRepeater`) and a **sectioned list** (`ListView`, section header + rows). The sectioned form is used only by the Priority (P1–P4) view (`IsPrioritySectioned`); every other list, the TaskGroup list included, is flat.
 
 ### Settings page — `SettingsPage.xaml`
 - Body padding is the same uniform `20` as the list page; the page title (`CuePageTitleTextStyle`) and the nav/content grid share the `4` inner inset so the screen lines up with the rest of the app.

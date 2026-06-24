@@ -1060,18 +1060,57 @@ public sealed class ViewModelRegressionTests
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         vm.SetNavigation(new TaskListNavigation(TaskListMode.Priority));
         await vm.LoadAsync();
-        Assert.Equal(2, vm.Groups.Count); // 매우 중요 + 중요
+        Assert.Equal(2, vm.PrioritySections.Count); // 매우 중요 + 중요
 
         // Promote the P2 task to P1: it must leave the 중요 bucket (now empty, so removed) and join 매우 중요.
         await vm.Detail.OpenAsync(p2.Id);
         vm.Detail.SelectedPriority = Priority.P1;
         await vm.Detail.DrainPendingSaveAsync();
 
-        var group = Assert.Single(vm.Groups);
-        Assert.Equal("매우 중요", group.Name);
-        Assert.Equal(2, group.Tasks.Count);
-        Assert.Contains(p1.Id, group.Tasks.Select(row => row.Id));
-        Assert.Contains(p2.Id, group.Tasks.Select(row => row.Id));
+        var section = Assert.Single(vm.PrioritySections);
+        Assert.Equal("매우 중요", section.Name);
+        Assert.Equal(2, section.Tasks.Count);
+        Assert.Contains(p1.Id, section.Tasks.Select(row => row.Id));
+        Assert.Contains(p2.Id, section.Tasks.Select(row => row.Id));
+    }
+
+    [Fact]
+    public async Task PriorityView_OmitsUnprioritizedTasks()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var p1 = new TaskItem { Title = "urgent", Priority = Priority.P1, SortOrder = "a" };
+        var none = new TaskItem { Title = "unranked", Priority = Priority.None, SortOrder = "b" };
+        await store.SaveAsync(p1);
+        await store.SaveAsync(none);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Priority));
+        await vm.LoadAsync();
+
+        // Only the 매우 중요 section appears: unprioritized tasks have no section in this view (the 없음
+        // bucket was removed), even though the index still returns them.
+        var section = Assert.Single(vm.PrioritySections);
+        Assert.Equal("매우 중요", section.Name);
+        Assert.Equal(1, section.Count);
+        Assert.DoesNotContain(none.Id, vm.PrioritySections.SelectMany(s => s.Tasks).Select(row => row.Id));
+    }
+
+    [Fact]
+    public void PrioritySection_StartsExpanded_AndTogglesCollapsed()
+    {
+        var section = new PrioritySectionViewModel("매우 중요");
+        Assert.True(section.IsExpanded);                 // sections start expanded, like the sidebar's
+
+        section.ToggleExpandedCommand.Execute(null);
+        Assert.False(section.IsExpanded);
+
+        section.ToggleExpandedCommand.Execute(null);
+        Assert.True(section.IsExpanded);
     }
 
     [Fact]
