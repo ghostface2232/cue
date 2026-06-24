@@ -420,6 +420,27 @@ public sealed class KoreanDateParserTests
         Assert.Equal(ZonedDate(r.Recurrence.Anchor), WhenDate(r.When));
     }
 
+    [Theory]
+    // Bare date-only recurrences: the anchor sits at 00:00 only to be evaluable, so the When is not
+    // timed and the quick-add path renders it all-day (종일).
+    [InlineData("매주 금요일 주간 회의", false)]
+    [InlineData("매일 영양제 챙기기", false)]
+    [InlineData("매월 1일 가계부 정산", false)]
+    // An explicit clock time makes the recurrence timed.
+    [InlineData("매일 9시 운동", true)]
+    [InlineData("평일 아침 7시 기상", true)]
+    // Sub-daily frequencies are inherently time-based (anchor is the current instant), so they are
+    // timed even with no clock time typed — and must never be flattened to all-day.
+    [InlineData("30분마다 일어나서 스트레칭", true)]
+    [InlineData("3시간마다 물 마시기", true)]
+    public void Recurrence_WhenHasTime_ReflectsAnchorMeaning(string input, bool expectedHasTime)
+    {
+        var r = Parse(input);
+        Assert.NotNull(r.Recurrence);
+        Assert.True(r.WhenAssigned);
+        Assert.Equal(expectedHasTime, r.WhenHasTime);
+    }
+
     [Fact]
     public void LunchMealAfter_UsesTheSameRepresentativeTimeAsLunchDayPart()
     {

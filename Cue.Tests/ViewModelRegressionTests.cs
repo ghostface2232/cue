@@ -617,6 +617,28 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task QuickAddSubDailyRecurrence_StaysTimed_NotAllDay()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 14, 30, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // A 분 단위 repeat is inherently time-based — it must not be flattened to an all-day (종일) date.
+        vm.QuickAddText = "30분마다 스트레칭";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(await store.GetAllAsync<TaskItem>());
+        Assert.False(saved.When.IsAllDay);
+        Assert.NotNull(saved.Recurrence);
+        Assert.Equal("FREQ=MINUTELY;INTERVAL=30", saved.Recurrence!.Rule);
+        Assert.Equal(new TimeSpan(14, 30, 0), saved.When.Date!.Value.ToLocal().TimeOfDay); // anchored on now
+    }
+
+    [Fact]
     public async Task DetailClearWhen_SavesAsUnscheduled()
     {
         using var temp = new TempDirectory();
