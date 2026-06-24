@@ -15,8 +15,10 @@ public sealed record TaskRowTag(string Name, string? Color);
 /// </summary>
 /// <remarks>
 /// The toggle is wired to a callback the parent list owns, so flipping the checkbox sets/clears
-/// <see cref="TaskItem.CompletedAt"/> and refreshes the list. Active views keep completed rows
-/// visible and dimmed, so finishing an item remains acknowledged and reversible after reload.
+/// <see cref="TaskItem.CompletedAt"/>. Completing from an active list plays a brief in-row
+/// acknowledgement (undo for a one-off, a repeat note + refresh spin for a repeating task) before the
+/// row folds away; the completed task then resurfaces in a dedicated 완료한 일 section / the Logbook
+/// rather than lingering dimmed in the open list. See the acknowledgement members below.
 /// </remarks>
 public partial class TaskRowViewModel : ObservableObject
 {

@@ -671,9 +671,21 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     private (string Start, string End) TodayUtcRange()
     {
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime);
-        var startUtc = TimeZoneInfo.ConvertTimeToUtc(today.ToDateTime(TimeOnly.MinValue), _zone);
-        var endUtc = TimeZoneInfo.ConvertTimeToUtc(today.AddDays(1).ToDateTime(TimeOnly.MinValue), _zone);
+        var startUtc = LocalDayStartUtc(today);
+        var endUtc = LocalDayStartUtc(today.AddDays(1));
         return (new DateTimeOffset(startUtc).ToString("O"), new DateTimeOffset(endUtc).ToString("O"));
+    }
+
+    /// <summary>The UTC instant at which a local calendar day begins. Normally local midnight, but on a
+    /// zone that springs forward <i>at</i> midnight that wall-clock time doesn't exist, so the day begins
+    /// at the transition — step past the skipped gap rather than letting <see cref="TimeZoneInfo.ConvertTimeToUtc"/>
+    /// throw (which would crash the Today load on that one day).</summary>
+    private DateTime LocalDayStartUtc(DateOnly day)
+    {
+        var local = day.ToDateTime(TimeOnly.MinValue);   // Kind.Unspecified — interpreted in _zone below
+        while (_zone.IsInvalidTime(local))
+            local = local.AddMinutes(15);
+        return TimeZoneInfo.ConvertTimeToUtc(local, _zone);
     }
 
     private static string? LocalDate(ZonedDateTime? zoned)
