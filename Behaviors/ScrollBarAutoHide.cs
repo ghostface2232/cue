@@ -82,18 +82,6 @@ public static class ScrollBarAutoHide
             ? thickness
             : FallbackThumbThickness;
 
-    private static T? FindDescendant<T>(DependencyObject root) where T : class
-    {
-        var count = VisualTreeHelper.GetChildrenCount(root);
-        for (var i = 0; i < count; i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is T match) return match;
-            if (FindDescendant<T>(child) is { } nested) return nested;
-        }
-        return null;
-    }
-
     private static void CollectDescendants<T>(DependencyObject root, List<T> into) where T : class
     {
         var count = VisualTreeHelper.GetChildrenCount(root);
@@ -153,6 +141,11 @@ public static class ScrollBarAutoHide
             _scrollViewer.ViewChanged += (_, _) => Bump();
             _scrollViewer.Unloaded += (_, _) => _idle.Stop();
 
+            // The thumbs are realized only after the first layout pass, so a second attempt once it
+            // settles catches bars whose thumbs weren't there at attach (without needing a scroll).
+            _scrollViewer.DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, EnsureThickness);
+
             // Start hidden; the first scroll or hover reveals them.
             Fade(0f, TimeSpan.Zero);
         }
@@ -172,15 +165,50 @@ public static class ScrollBarAutoHide
         {
             foreach (var bar in _bars)
             {
-                if (_thickened.Contains(bar) || FindDescendant<Thumb>(bar) is not { } thumb) continue;
-                // Raise the floor (MinWidth/MinHeight) rather than pin Width/Height, so the template's
-                // own hover-expand still works — the thumb just never gets thinner than this.
-                if (bar.Orientation == Orientation.Vertical)
-                    thumb.MinWidth = ThumbThickness;
-                else
-                    thumb.MinHeight = ThumbThickness;
+                if (_thickened.Contains(bar)) continue;
+                var vertical = bar.Orientation == Orientation.Vertical;
+
+                // The fluent ScrollBar has TWO thumbs: a thin "panning" pill shown at rest / while
+                // scrolling (the one that read too thin), and a wider "interactive" thumb shown on hover.
+                // Widen the panning pill to the interactive thumb's size so the bar reads consistently
+                // thick whenever it is visible — not just on hover.
+                var panning = FindByName(bar, vertical ? "VerticalPanningThumb" : "HorizontalPanningThumb");
+                var interactive = FindByName(bar, vertical ? "VerticalThumb" : "HorizontalThumb");
+                if (panning is null && interactive is null) continue; // not realized yet — retry on next bump
+
+                Thicken(panning, vertical);
+                Thicken(interactive, vertical);
                 _thickened.Add(bar);
             }
+        }
+
+        private static void Thicken(FrameworkElement? thumb, bool vertical)
+        {
+            if (thumb is null) return;
+            if (vertical)
+            {
+                thumb.MinWidth = ThumbThickness;
+                thumb.Width = ThumbThickness;
+            }
+            else
+            {
+                thumb.MinHeight = ThumbThickness;
+                thumb.Height = ThumbThickness;
+            }
+            if (thumb is Border border)
+                border.CornerRadius = new CornerRadius(ThumbThickness / 2);
+        }
+
+        private static FrameworkElement? FindByName(DependencyObject root, string name)
+        {
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (var i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is FrameworkElement element && element.Name == name) return element;
+                if (FindByName(child, name) is { } nested) return nested;
+            }
+            return null;
         }
 
         private void Fade(float opacity, TimeSpan duration)
