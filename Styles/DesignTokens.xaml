@@ -91,7 +91,10 @@
          ContentGrid / ContentPresenter so they actually apply over the NavigationView nesting indent).
          The highlight pill starts from the stock 4px NavigationView row gutter. The right side gets
          a 1px optical compensation because it sits against the content separator. -->
-    <x:Double x:Key="CueNavPillLeft">12</x:Double>
+    <x:Double x:Key="CueNavPillLeft">4</x:Double>
+    <!-- Child rows nested under the Groups/Tags sections get a deeper left gutter than top-level rows,
+         so the hierarchy reads at a glance. Top-level rows keep CueNavPillLeft. -->
+    <x:Double x:Key="CueNavChildPillLeft">12</x:Double>
     <x:Double x:Key="CueNavPillRight">5</x:Double>
     <!-- The accent selection bar + content sit inside PresenterContentRootGrid, which the NavigationView
          indents on its own — leaving a gap between the highlight's left edge and the accent bar. This is

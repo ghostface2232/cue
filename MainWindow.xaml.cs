@@ -29,6 +29,8 @@ public sealed partial class MainWindow : Window
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly AppPreferences _preferences;
     private readonly HashSet<NavigationViewItem> _insetNavItems = new();
+    // Rows nested under the Groups/Tags sections — they get a deeper left gutter than top-level rows.
+    private readonly HashSet<NavigationViewItem> _nestedNavItems = new();
 
     // While the sidebar makes its own group/tag edit it refreshes the pane directly, so it ignores the
     // notification it triggers (the detail panels still react to it). A detail-panel edit leaves this
@@ -292,7 +294,7 @@ public sealed partial class MainWindow : Window
         };
 
         section.MenuItems.Add(item);
-        NormalizeSidebarItem(item);
+        NormalizeSidebarItem(item, nested: true);
         section.IsExpanded = true;
         box.Loaded += (_, _) => box.Focus(FocusState.Programmatic);
     }
@@ -354,20 +356,23 @@ public sealed partial class MainWindow : Window
             NormalizeSidebarObject(item);
     }
 
-    private void NormalizeSidebarObject(object item)
+    private void NormalizeSidebarObject(object item, bool nested = false)
     {
         if (item is not NavigationViewItem navItem)
             return;
 
-        NormalizeSidebarItem(navItem);
+        NormalizeSidebarItem(navItem, nested);
+        // Direct children of a section (Groups/Tags) are the nested group/tag rows.
         foreach (var child in navItem.MenuItems)
-            NormalizeSidebarObject(child);
+            NormalizeSidebarObject(child, nested: true);
     }
 
-    private void NormalizeSidebarItem(NavigationViewItem item)
+    private void NormalizeSidebarItem(NavigationViewItem item, bool nested)
     {
         item.HorizontalAlignment = HorizontalAlignment.Stretch;
         item.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        if (nested) _nestedNavItems.Add(item);
+        else _nestedNavItems.Remove(item);
         ApplyNavRowInset(item);
     }
 
@@ -382,7 +387,7 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(mode, null, title),
             Icon = new FontIcon { Glyph = "" },
         };
-        NormalizeSidebarItem(item);
+        NormalizeSidebarItem(item, nested: true);
         if (openCount > 0)
             item.InfoBadge = CreateCountBadge(openCount);
         return item;
@@ -509,7 +514,7 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(TaskListMode.TaskGroup, taskGroup.Id, taskGroup.Name),
             Icon = icon,
         };
-        NormalizeSidebarItem(item);
+        NormalizeSidebarItem(item, nested: true);
         // Tapping the glyph opens the icon picker directly (no right-click depth); Handled stops the
         // tap from also navigating into the group.
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTaskGroupIconPicker((FrameworkElement)sender, taskGroup.Id, taskGroup.Icon); };
@@ -530,7 +535,7 @@ public sealed partial class MainWindow : Window
             Tag = new TaskListNavigation(TaskListMode.Tag, tag.Id, tag.Name),
             Icon = icon,
         };
-        NormalizeSidebarItem(item);
+        NormalizeSidebarItem(item, nested: true);
         // Tapping the glyph opens the color picker directly (no right-click depth).
         icon.Tapped += (sender, e) => { e.Handled = true; ShowTagColorPicker((FrameworkElement)sender, tag.Id, tag.Color); };
         if (ViewModel.TagTaskCounts.TryGetValue(tag.Id, out var count) && count > 0)
@@ -590,8 +595,11 @@ public sealed partial class MainWindow : Window
         // LayoutRoot = the pill (hover/selection background + the accent indicator);
         // ContentGrid = the icon + label block (carries the nesting indent we override);
         // ContentPresenter = the label.
+        // Nested group/tag rows get a deeper left gutter than top-level rows so the hierarchy reads.
+        var nested = root is NavigationViewItem nvi && _nestedNavItems.Contains(nvi);
         if (FindDescendantByName(root, "LayoutRoot") is { } pill)
-            pill.Margin = new Thickness(NavD("CueNavPillLeft", 4), 2, NavD("CueNavPillRight", 5), 2);
+            pill.Margin = new Thickness(
+                NavD(nested ? "CueNavChildPillLeft" : "CueNavPillLeft", 4), 2, NavD("CueNavPillRight", 5), 2);
         // PresenterContentRootGrid holds the accent bar + content and gets its own nesting indent from
         // the NavigationView, which is the gap between the highlight's left edge and the content. Override
         // it so the bar/content sit close to that edge.
