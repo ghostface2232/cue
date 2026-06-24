@@ -1,110 +1,99 @@
 # Cue
 
-A Windows-native to-do app where you capture a task in one line and it works out the rest — the due date, the time, the recurrence — straight out of plain Korean (or English) text. The name is the mechanic: you type a line, and it *cues* the next action.
+할 일을 입력하면 마감일, 시간, 반복 여부 등의 정보를 자연스러운 한국어 텍스트에서 자동으로 분석하여 기록해주는 Windows 기반 ToDo 앱입니다.
 
-> **Status — foundation phase.** The core loop (capture → parse → store → query → edit) runs end to end and a first visual craft pass is in. It's single-device and local-first for now; sync, reminders, and final polish are deliberately later. Not packaged for release yet.
+> 현재 개발 상태: 핵심 루프(입력 → 분석 → 저장 → 조회 → 수정)가 처음부터 끝까지 온전히 작동하며, 초기 시각적 디자인 작업이 적용되었습니다. 현재는 단일 기기 중심의 로컬 퍼스트 구조로 구동됩니다. 동기화, 알림, 최종 다듬기 작업은 의도적으로 후순위로 미뤄두었으며, 아직 배포용 패키징은 진행되지 않았습니다.
 
-## The idea
+## 핵심 개념
 
-Most to-do apps send you to a date picker. Cue doesn't. You write the way you'd text yourself a reminder, and the parser lifts the schedule out of the sentence and leaves a clean title behind:
+대부분의 할 일 관리 앱은 사용자에게 날짜 선택 창(Date Picker)을 띄웁니다. Cue는 그냥 메모를 하듯이 편하게 작성하면, 파서가 문장 안에서 일정을 추출하고 할 일의 제목만 깔끔하게 남겨둡니다.
 
 ```
-내일 오후 3시 회의 준비   →  "회의 준비"        tomorrow, 15:00
-매주 월요일 운동          →  "운동"            every Monday  (FREQ=WEEKLY;BYDAY=MO)
-금요일까지 보고서         →  "보고서"           this Friday
-3월 15일 동창 모임 참석    →  "동창 모임 참석"     March 15
-장보기 언젠가            →  "장보기"           someday (Anytime / 언젠가)
+내일 오후 3시 회의 준비    →  "회의 준비"        내일, 15:00
+매주 월요일 운동          →  "운동"            매주 월요일  (FREQ=WEEKLY;BYDAY=MO)
+금요일까지 보고서         →  "보고서"          이번 주 금요일
+3월 15일 동창 모임 참석    →  "동창 모임 참석"    3월 15일
+장보기 언젠가            →  "장보기"          언젠가 (Anytime / 기한 없음)
+
 ```
 
-Korean is the first-class input language, not a bolt-on. The parser is an ordered pipeline of small recognition rules (relative dates, weekdays, absolute dates, times, day-part words, due expressions, recurrence, "someday" markers), with Hangul word-boundary guards so date-like fragments glued into nouns — `오늘의집`, `3월의`, `24시` — stay in the title where they belong.
+## 현재 작동하는 기능
 
-## What works today
+* 현재 보고 있는 목록, 그룹, 태그에 새 할 일을 즉시 추가할 수 있는 한 줄 빠른 추가 기능.
+* 스스로 계산되는 목록. 오늘, 예정된 일정, 언젠가, 보관함 목록은 모두 단 하나의 When 날짜를 기준으로 실시간 도출됩니다. 따라서 마감일이 지난 할 일은 오늘 목록으로 자동 이월되며, 별도의 '오늘 할 일 여부' 플래그를 데이터로 저장하지 않습니다.
+* 라이브 사이드바에서 고유한 아이콘과 색상을 지정할 수 있는 그룹 및 태그 기능, 그리고 분류되지 않은 빠른 입력 항목들을 모아주는 그룹 없음 및 태그 없음 편지함.
+* 중요도 뷰(P1-P4). 다른 모든 목록은 평면적인 구조이지만, 이 뷰만 중요도별로 그룹화되어 나타납니다.
+* 제목, 마크다운 메모, 중요도, 그룹, 시간대가 지정된 날짜(선택적 시간 지정 또는 종일 설정), 태그, 그리고 항목 추가·완료·수정·순서 변경이 가능한 내장 체크리스트를 포함하는 상세 패널.
+* 데이터 가상화를 보존하도록 직접 구현한 영역(네이티브 포인터 이벤트, 간격 애니메이션, 가장자리 자동 스크롤)을 통한 드래그 앤 드롭 순서 변경 기능. Fractional Ranks 방식을 기반으로 작동하여, 할 일 하나를 이동할 때 정확히 하나의 레코드만 수정됩니다.
+* 반복 일정 관리(RFC 5545 RRULE). 반복되는 할 일을 완료하면 완료된 복사본이 보관함에 남고, 원본 할 일은 다음 주기로 갱신됩니다.
+* 날짜가 지정된 할 일들을 일정별로 배치하여 보여주는 타임라인 뷰.
 
-- **One-line quick-add** that drops the new task into whatever list, group, or tag you're currently looking at.
-- **Lists that compute themselves.** Today, Upcoming, Anytime, and the Logbook are all derived from a single `When` date, so an overdue task rolls forward into Today on its own — nothing is a stored "is it today" flag.
-- **Groups and tags** in a live sidebar, each with its own icon or color, plus the 그룹 없음 / 태그 없음 inboxes that re-gather unfiled quick captures.
-- **A priority view** (P1–P4) — the one grouped list; every other list is flat.
-- **A detail panel** for title, Markdown notes, priority, group, the zoned date (with an optional time, or 종일/all-day), tags, and an embedded checklist you can add to, tick, edit, and reorder.
-- **Drag to reorder** via a hand-rolled, virtualization-preserving surface (native pointer events, gap animation, edge auto-scroll) backed by fractional ranks — moving one task rewrites exactly one record.
-- **Recurrence** (RFC 5545 RRULE): completing a repeating task leaves a finished copy in the Logbook and advances the original one cycle.
-- **A timeline view** that places each dated task on its day.
+## 작동 원리
 
-## How it works
+이 프로젝트의 모든 요소가 따르는 단 하나의 규칙은 바로 파일이 Source of Truth이며, SQLite는 일시적인 캐시라는 점입니다.
 
-The one rule everything else follows: **the files are the truth, and SQLite is a throwaway cache.**
-
-Every record — a task, a group, a tag — is a single `{guid}.json` file. All writes go through one `ITaskStore`, which writes the file first and then reflects that one record into a SQLite index. Every list query reads the index; nothing scans the folder. Delete the index, restart, and it rebuilds from the files alone — that round-trip is treated as a hard requirement, not a nice-to-have.
+할 일, 그룹, 태그를 비롯한 모든 레코드는 단일 {guid}.json 파일로 저장됩니다. 모든 쓰기 작업은 하나의 ITaskStore를 거치며, 이 저장소는 파일을 먼저 기록한 뒤 해당 레코드 하나를 SQLite 인덱스에 반영합니다. 모든 목록 조회 쿼리는 이 인덱스를 읽으며, 폴더 전체를 스캔하지 않습니다. 인덱스를 삭제하고 앱을 재시작하면 오직 파일들만 가지고 인덱스를 다시 구축합니다.
 
 ```
 View (XAML)
   → ViewModel (MVVM)
-      → ITaskStore  ── the single write path
-            → folder of {guid}.json   (source of truth)
-            → SQLite index            (derived, rebuildable)
-  → IDateParser  (standalone, no UI/storage deps)
+      → ITaskStore  ── 단일 쓰기 경로
+            → {guid}.json 폴더   (원천 데이터)
+            → SQLite 인덱스      (파생 데이터, 재구축 가능)
+  → IDateParser  (UI나 스토리지 의존성이 없는 독립형 컴포넌트)
 ```
 
-It's built this way on purpose. The plan is for the data folder to eventually live in a synced cloud folder (OneDrive, Google Drive), so the truth has to be granular per-record files that merge cleanly — never one monolithic database that sync would tear apart. When sync arrives it's additive: point the root at a shared folder, add a watcher and last-write-wins reconciliation. No rewrite.
+향후 데이터 폴더가 클라우드 동기화 폴더(OneDrive, Google Drive 등)에 위치할 수 있도록 할 계획이므로, 동기화 과정에서 손상되기 쉬운 거대한 단일 데이터베이스 대신 각 레코드별로 깔끔하게 병합되는 세분화된 파일 구조를 채택했습니다. 동기화 기능이 추가되더라도 기존 구조를 갈아엎지 않고, 루트 폴더를 공유 폴더로 지정한 뒤 Watcher와 Last-Write-Wins) 방식의 조정 로직만 결합하면 됩니다.
 
-A few deliberate choices fall straight out of that rule:
+이 규칙에 따라 몇 가지 의도적인 설계가 적용되었습니다.
 
-- Deletes are soft — a `DeletedAt` tombstone, never a removed file — so rebuild and sync still see them.
-- File writes are atomic (temp file, then swap) and corruption-isolated: one unreadable file is skipped, not fatal to the whole listing.
-- User-chosen dates keep their original time zone (DST-correct, and ready for last-write-wins); system timestamps are plain UTC instants.
-- Domain types know nothing about persistence — they don't even stamp their own `UpdatedAt`; the store does that on save.
+* 삭제 작업은 Soft Delete 방식을 사용합니다. 파일을 실제로 지우지 않고 DeletedAt Tombstone 마킹을 남겨두어, 인덱스 재구축이나 동기화 프로세스에서도 삭제 여부를 인식할 수 있도록 합니다.
+* 파일 쓰기는 원자적으로 수행되며(임시 파일 생성 후 교체), 파일 손상 격리가 적용됩니다. 읽을 수 없는 파일이 하나 있더라도 해당 파일만 건너뛸 뿐 전체 목록을 불러오는 데 치명적인 오류를 일으키지 않습니다.
+* 사용자가 선택한 날짜는 원래의 시간대 정보를 그대로 유지하여 일광절약시간(DST)을 정확히 처리하고 최종 쓰기 승리 방식을 준비합니다. 시스템 타임스탬프는 순수 UTC 인스턴트를 사용합니다.
+* 도메인 타입들은 영속성 레이어에 대해 전혀 알지 못합니다. 심지어 자체적으로 UpdatedAt 값을 기록하지도 않으며, 저장소가 저장 시점에 이를 처리합니다.
 
-For the whole story, see [`AGENTS.md`](AGENTS.md) (architecture and the invariants that don't bend), [`DESIGN.md`](DESIGN.md) (the design system), and [`PARSING.md`](PARSING.md) (the parser's test corpus).
+더 자세한 내용은 AGENTS.md, DESIGN.md, PARSING.md 문서에서 확인할 수 있습니다.
 
-## Tech stack
+## 기술 스택
 
-- **WinUI** (Windows App SDK 2.2) — native Fluent UI, not a webview wrapper.
-- **C# / .NET 10**, targeting `net10.0-windows10.0.26100.0`.
-- **MVVM** with `CommunityToolkit.Mvvm` source generators.
-- **System.Text.Json** for the per-record files; **Microsoft.Data.Sqlite** (raw SQL, no EF Core) for the derived index.
-- **Ical.Net** for RRULE evaluation, confined to the storage layer and never referenced from the domain or view models.
-- **Pretendard JP**, bundled as the app-wide typeface.
+* WinUI (Windows App SDK 2.2) - 웹뷰 래퍼가 아닌 네이티브 Fluent UI를 사용합니다.
+* C# / .NET 10 - net10.0-windows10.0.26100.0 버전을 타겟팅합니다.
+* MVVM - CommunityToolkit.Mvvm 소스 제너레이터를 활용합니다.
+* 개별 레코드 파일 처리에는 System.Text.Json을 사용하며, 파생 인덱스 관리에는 ORM(EF Core) 없이 기본 SQL을 다루는 Microsoft.Data.Sqlite를 사용합니다.
+* RRULE 분석을 위해 Ical.Net을 사용하지만, 이는 스토리지 레이어 내부에만 격리되어 있으며 도메인이나 뷰 모델에서는 참조하지 않습니다.
+* 앱 전반의 서체로 [Pretendard](https://github.com/orioncactus/pretendard) JP 버전을 포함하고 있습니다.
 
-The Korean parser is hand-written. `Microsoft.Recognizers.Text` is wired in as a fallback stage, but at the pinned version its Korean DateTime model matches nothing, so the built-in rule pipeline does the real work — and the library lights up automatically if it ever gains Korean support.
+한국어 파서는 직접 코드로 작성되었습니다. Microsoft.Recognizers.Text 라이브러리가 Fallback으로 연결되어 있으나, 현재 고정된 라이브러리 버전 기준으로는 한국어 날짜/시간 모델이 아무것도 매칭하지 못합니다. 따라서 자체 내장된 규칙 파이프라인이 실질적인 작업을 수행하며, 향후 해당 라이브러리가 한국어를 공식 지원하게 되면 자동으로 연동되어 작동합니다.
 
-## Building and running
+## 빌드 및 실행 방법
 
-You'll need **Windows** (10.0.17763 or newer), the **.NET 10 SDK**, and the Windows App SDK workload.
+Windows(10.0.17763 이상 버전), .NET 10 SDK, 그리고 Windows App SDK 워크로드가 필요합니다.
 
 ```bash
-# from the repo root
-dotnet run      # build and launch   (or: winapp run)
-dotnet test     # run the unit tests in Cue.Tests
+# 리포지토리 루트 디렉터리에서 실행
+dotnet run      # 빌드 및 앱 실행 (또는: winapp run)
+dotnet test     # Cue.Tests 프로젝트의 유닛 테스트 실행
 ```
 
-The first launch has to be `dotnet run` (or `winapp run`) before you reach for F5 — the debugger looks for an executable that doesn't exist until the first run produces it. If a build fails with only an `MSB3073`, read the full `dotnet build` output; the real XAML compile error is usually hidden above it.
-
-This is a Windows-only app (`net10.0-windows`) — it won't build or run on macOS or Linux.
-
-## Project layout
+## 프로젝트 레이어 구조
 
 ```
-Cue.Domain     pure domain records (TaskItem, TaskGroup, Tag, ScheduledWhen, ...), zero persistence knowledge
-Cue.Storage    ITaskStore, the SQLite index, fractional ranking, recurrence, JSON serialization
-Cue.Parsing    IDateParser and the Korean recognition pipeline
-ViewModels     MVVM view models
-Pages/         XAML pages and the drag-reorder surface
-Services/      app-level services (preferences, dialogs, date parsing)
-Styles/        design tokens (DesignTokens.xaml)
-Cue.Tests      xUnit tests — parser corpus, store, index, recurrence, ranking, time zones
-App / MainWindow   the shell, DI wiring, and the navigation sidebar
+Cue.Domain         순수 도메인 레코드 (TaskItem, TaskGroup, Tag, ScheduledWhen 등), 영속성 레이어에 대한 의존성 없음
+Cue.Storage        ITaskStore, SQLite 인덱스, 소수점 랭킹 시스템, 반복 일정, JSON 직렬화 처리
+Cue.Parsing        IDateParser 및 한국어 인식 파이프라인
+ViewModels         MVVM 뷰 모델 레이어
+Pages/             XAML 페이지 및 드래그 앤 드롭 순서 변경 영역 구현
+Services/          앱 수준 서비스 (사용자 설정, 대화 상자, 날짜 분석)
+Styles/            디자인 토큰 관리 (DesignTokens.xaml)
+Cue.Tests          xUnit 테스트 프로젝트 - 파서 코퍼스, 저장소, 인덱스, 반복 일정, 랭킹, 시간대 테스트
+App / MainWindow   쉘 구조, 의존성 주입(DI) 설정 및 네비게이션 사이드바
 ```
 
-## Roadmap
+## 향후 로드맵
 
-Accommodated by the architecture, not yet built:
+아키텍처 설계상 반영 가능하도록 고려되었으나 아직 구현되지 않은 기능들입니다.
 
-- Multi-device sync over a cloud folder (folder watcher + last-write-wins by `UpdatedAt`, honoring tombstones).
-- Reminders via Windows `AppNotifications`.
-- Files-grade material and microinteraction polish.
-- Packaging and distribution via `winapp pack`.
-
-Out of scope by design: CRDTs, a server backend, real-time collaboration. The planned sync is cloud-folder plus last-write-wins — that's the whole model.
-
-## Credits
-
-Interaction and quality references: [Things 3](https://culturedcode.com/things/), [Todoist](https://todoist.com/), and the [Files](https://github.com/files-community/Files) app for the native-Fluent finish to aim at. The bundled typeface is [Pretendard](https://github.com/orioncactus/pretendard), under the SIL Open Font License (`Assets/Fonts/OFL.txt`).
+* 클라우드 폴더 기반의 다중 기기 동기화.
+* Windows AppNotifications를 활용한 알림 기능.
+*머티리얼 디자인 효과 및 마이크로 인터랙션 디테일 강화.
+* winapp pack을 통한 앱 패키징 및 배포 기능.
