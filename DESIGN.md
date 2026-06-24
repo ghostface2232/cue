@@ -32,6 +32,9 @@ colors:
   # Interaction (shared hover/press recipe)
   hover-fill: SubtleFillColorSecondary
   pressed-fill: SubtleFillColorTertiary
+  # Chips (task-row group/tag). Group chip = neutral overlay (theme-split literal); tag chip = a
+  # tint of the tag's own color (HexToTint) with the saturated color (HexToBrush) on top.
+  chip-neutral-fill: CueChipNeutralFillBrush  # Light #14000000 / Dark #18FFFFFF
   # Strokes / separation
   card-stroke: CardStrokeColorDefault
   divider-stroke: DividerStrokeColorDefault
@@ -73,9 +76,9 @@ typography:
     fontSize: 15px
     fontWeight: 400
   list-title:            # main list row title (larger/clearer than the base row); also timeline task titles
-    fontFamily: Pretendard JP Medium
+    fontFamily: Pretendard JP SemiBold
     fontSize: 16.5px
-    fontWeight: 500
+    fontWeight: 600
   list-meta:             # main list row meta line (date · time) and right-edge group/tag chips
     fontFamily: Pretendard JP
     fontSize: 13px
@@ -101,6 +104,7 @@ rounded:
   sm: 4px   # buttons, checks, checklist rows, small surfaces
   md: 8px   # task rows, detail inner cards, timeline bars
   lg: 12px  # detail panel, timeline canvas
+  chip: 14px # group / tag / priority chips on a task row
   pill: 9999px
 
 # NOTE — Spacing is tokenized in `Styles/DesignTokens.xaml` and consumed from there: gaps
@@ -382,9 +386,10 @@ Use only `{rounded.sm}` (4) / `{rounded.md}` (8) / `{rounded.lg}` (12) plus pill
 | `{rounded.sm}` | 4px | Buttons, checks, checklist rows, small surfaces |
 | `{rounded.md}` | 8px | Task rows, detail inner cards, timeline bars |
 | `{rounded.lg}` | 12px | Detail panel, timeline canvas |
+| `{rounded.chip}` | 14px | Group / tag / priority chips on a task row (full pill at chip height) |
 | `{rounded.pill}` | height/2 | Pills |
 
-Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`, today marker circle `14`.
+Pill instances are explicit half-height radii: chips (group/tag/priority) `{rounded.chip}` (14), quick-add `24`, today marker circle `14`.
 
 ### Focus & stroke
 - System focus visuals by default.
@@ -394,10 +399,13 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## Components
 
 ### Task row
-- Columns: `[3px selection bar][circular check][title … priority pill][group · tags]`, with a one-line metadata row (schedule) below. The trailing right-edge column shows the task's group (tertiary glyph + secondary name) and its tags (8px color dot + secondary name each); each chunk hides itself when the task has no group / no tags. The schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time; an all-day (종일) task shows the date alone.
-- A **repeating task** carries a small repeat glyph (Segoe Fluent `RepeatAll`, `E8EE`, secondary text tone) in that same metadata row, after the schedule. It is a quiet informational mark — no accent, no fill — mirroring the recurrence flag the index derives from the task's rule (the rule itself stays in the file).
-- Selected → left 3px accent bar (`selection-bar`, radius 1.5, a dedicated column so it never shifts content) **plus a persistent row fill in the hover tone** (`{colors.hover-fill}`), so the open task reads as selected even when the pointer is elsewhere. Background hover transitions over 83ms. Radius `{rounded.md}`.
-- Rows are generously tall (12px vertical padding) with a larger, clearer title (`{typography.list-title}`, 16.5) and meta line (`{typography.list-meta}`, 13). A thin 1px `DividerStrokeColorDefault` separator sits between rows for clear row-to-row division.
+- Layout: `[circular check] [title … priority pill] … [group / tag chips]`. Three columns (check Auto · title+meta star · trailing chips Auto), `{gap.lg}` (16) apart, with a one-line schedule row below the title. The trailing chips are **right-aligned and stacked vertically** (group on top, then each tag) in the wide layout; the schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time, while an all-day (종일) task shows the date alone.
+- **Group and tag are both rendered as squircle chips** (rounded rectangles, radius `{rounded.chip}` = 8, a 12px glyph + 13px name), so the two read as one consistent family rather than two ad-hoc layouts. A fixed squircle radius (not a half-height pill) keeps a short chip — icon + 2 chars — reading as a clean rounded rect; a pill radius would make the rounded ends meet on a narrow chip and look like an oval.
+- **All chip/pill elements on a row share one fixed height** (`CueChipHeight` = 26) with **horizontal-only padding** (`CuePadChip` = `9,0`) and content vertically centered. The group chip, every tag chip, and the priority pill therefore line up exactly and never distort, regardless of glyph vs. text or differing font sizes — height is purely the token, not a function of content. (`VerticalAlignment="Center"` on each chip keeps it from being stretched by a taller sibling.) The **group chip** is a neutral gray pill (`CueChipNeutralFillBrush`, a theme-split overlay) with the group's own glyph + name in secondary text. A **tag chip** is tinted with the tag's *own* color (`HexToTint`, ~14%) and carries the tag glyph (`E8EC`) + name in that saturated color (`HexToBrush`). Each chunk hides itself when the task has no group / no tags.
+- A **repeating task** carries a small repeat glyph (Segoe Fluent `RepeatAll`, `E8EE`, secondary text tone) in the schedule row, after the date. It is a quiet informational mark — no accent, no fill — mirroring the recurrence flag the index derives from the task's rule (the rule itself stays in the file).
+- Selected → left 3px accent bar (`selection-bar`, radius 1.5, an **overlay** pinned to the left edge so it never shifts the checkbox) **plus a persistent row fill in the hover tone** (`{colors.hover-fill}`), so the open task reads as selected even when the pointer is elsewhere. Background hover transitions over 83ms. Radius `{rounded.md}`.
+- Rows are **uniform height regardless of content**: a `MinHeight` of 60 with vertically-centered content means a bare title row keeps the same presence as one with a schedule and chips, and the title centers when there is no second line. Generous padding (`16,12`) and a SemiBold title (`{typography.list-title}`, 16.5) over a 13px meta line sharpen the hierarchy. **No row separators** — rows are divided by whitespace (the per-row margin) alone, not lines.
+- **Compact reflow:** when the list column is too narrow for the right-edge chips, the same group/tag chips drop to their own line **under the title** (horizontal, left-aligned), driven by `IsCompact` → `ShowRightMeta` / `ShowInlineMeta`.
 - A task's checklist items render as an indented nested list under it, set in further from the task body (with a 1px vertical guide line) so they read as belonging to the task rather than as peers. Their presence is self-evident, so there is no "N items" caption. These rows reuse the same circular check and row-sub font; they are not tasks, so they cannot be dragged or carry a date/priority/group — just a checkbox and a title. The checkbox toggles the item in place; **tapping the rest of the row opens the parent task's detail** (a checklist item has no detail of its own). The parent's **hover and selection highlight spans the checklist rows too** — the highlight surface (hover fill, persistent selected fill) wraps the task row and its checklist as one region, so hovering or selecting the task lights up the whole group (the row's inner padding and the checklist indent are unchanged).
 
 ### Completion state
@@ -406,7 +414,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ### Priority pill
 - Rendered **directly beside** the row title as a text pill (not a leading dot). The title is width-capped and truncates, so the pill hugs the title's trailing edge rather than being pushed to the far right. Labels: 매우 중요 / 중요 / 보통 / 사소.
-- Background is a ~17% tint of the priority color; text is the saturated tone. Radius 9. Color mapping per the priority tokens; text via `PriorityToLabel`, tint via `PriorityToTint`, saturated color via `PriorityToBrush`.
+- Background is a ~17% tint of the priority color; text is the saturated tone. Radius `{rounded.chip}` (a full pill, matching the group/tag chips beside it). Color mapping per the priority tokens; text via `PriorityToLabel`, tint via `PriorityToTint`, saturated color via `PriorityToBrush`.
 
 ### Circular completion check — `CueCircleCheckBoxStyle`
 - 20×20. Unchecked = 1.6px outline circle (`TextFillColorTertiary`, → secondary on hover). Checked = accent fill + white check glyph + overshoot pop.

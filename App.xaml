@@ -15,6 +15,7 @@
             <local:PriorityToTintBrushConverter x:Key="PriorityToTint" />
             <local:PriorityToLabelConverter x:Key="PriorityToLabel" />
             <local:HexToBrushConverter x:Key="HexToBrush" />
+            <local:HexToTintBrushConverter x:Key="HexToTint" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -21,6 +21,10 @@
                  deep red here. Dark splits to its own literal red because the system critical color in dark
                  is a washed-out pink (#FF99A4) — too soft to read as a destructive action. -->
             <SolidColorBrush x:Key="CueDangerFillBrush" Color="{ThemeResource SystemFillColorCritical}" />
+            <!-- Neutral chip fill (group chip on a task row). A small dark overlay reads as a calm gray
+                 pill on the light page/cards regardless of the surface beneath it. The tag chip uses a
+                 tint of its own color instead (HexToTint); this neutral is only for the group chip. -->
+            <SolidColorBrush x:Key="CueChipNeutralFillBrush" Color="#14000000" />
             <!-- Selected sidebar item + hover/press must DEEPEN, matching the main list (where a
                  selected row's hover stacks two SubtleFillColorSecondary layers). The stock
                  NavigationView selected-pointer-over tone is lighter than the selected tone, which
@@ -34,6 +38,7 @@
             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource ControlFillColorSecondary}" />
             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource ControlFillColorDefault}" />
             <SolidColorBrush x:Key="CueDangerFillBrush" Color="{ThemeResource SystemFillColorCritical}" />
+            <SolidColorBrush x:Key="CueChipNeutralFillBrush" Color="#14000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="TextControlBackground" Color="#18000000" />
@@ -41,6 +46,8 @@
             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#18000000" />
             <!-- A clean, saturated red for dark surfaces (the system critical color is pink here). -->
             <SolidColorBrush x:Key="CueDangerFillBrush" Color="#D13438" />
+            <!-- Dark counterpart of the neutral group-chip fill (white overlay). See Light note. -->
+            <SolidColorBrush x:Key="CueChipNeutralFillBrush" Color="#18FFFFFF" />
             <!-- Dark counterpart of the deepen-on-hover selection (white overlay). See Light note. -->
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#1DFFFFFF" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#28FFFFFF" />
@@ -81,6 +88,15 @@
     <CornerRadius x:Key="CueRadiusRow">8</CornerRadius>
     <CornerRadius x:Key="CueRadiusCard">8</CornerRadius>
     <CornerRadius x:Key="CueRadiusPanel">12</CornerRadius>
+    <!-- Squircle (rounded-rectangle) radius for the group/tag/priority chips on a task row. Fixed at 8
+         rather than a half-height pill so short chips (icon + 2 chars) read as a clean rounded rect, not
+         an oval — the pill ends would meet on a narrow chip and look like an ellipse. -->
+    <CornerRadius x:Key="CueRadiusChip">8</CornerRadius>
+    <!-- Every chip/pill element on a task row (group, tag, priority) shares ONE fixed height with
+         content vertically centered, so they line up exactly regardless of glyph/font differences.
+         Horizontal-only padding keeps the height purely a function of this token. -->
+    <x:Double x:Key="CueChipHeight">26</x:Double>
+    <Thickness x:Key="CuePadChip">9,0</Thickness>
 
     <!-- Type scale (page 28 → section 16 → row 15 → secondary 12) -->
     <x:Double x:Key="CueFontSection">16</x:Double>

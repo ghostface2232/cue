@@ -23,6 +23,25 @@
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
+        <!-- A tag chip on a task row: a soft pill tinted with the tag's own color, carrying a tag glyph
+             + name in that saturated color. Shared by the wide (right-edge, stacked) and compact
+             (under-title, inline) layouts; HorizontalAlignment=Right is a no-op in the horizontal
+             compact panel and right-aligns the chip in the wide vertical stack. -->
+        <DataTemplate x:Key="TagChipTemplate" x:DataType="vm:TaskRowTag">
+            <Border
+                Height="{StaticResource CueChipHeight}"
+                Padding="{StaticResource CuePadChip}"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                Background="{x:Bind Color, Converter={StaticResource HexToTint}}"
+                CornerRadius="{StaticResource CueRadiusChip}">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                    <FontIcon FontSize="12" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
+                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
         <!-- A nested checklist item under a task: a checkbox + title. It is not a task — it cannot be
              dragged or carry a date/priority/group; tapping the row (anywhere but the checkbox) opens
              its parent task's detail. -->
@@ -54,84 +73,99 @@
         </DataTemplate>
 
         <DataTemplate x:Key="TaskRowTemplate" x:DataType="vm:TaskRowViewModel">
-            <StackPanel HorizontalAlignment="Stretch">
-                <!-- The hover/selection surface wraps BOTH the task row and its nested checklist, so the
-                     highlight (and the persistent selected fill) reads as one region covering the whole task
-                     — hovering or selecting the parent lights up its checklist rows too. The row's inner
-                     padding and the checklist's indent are unchanged; only the highlight area was widened. -->
-                <Border
-                    Margin="4,1"
-                    Background="Transparent"
-                    CornerRadius="{StaticResource CueRadiusRow}"
-                    IsTabStop="True"
-                    KeyDown="TaskSurface_KeyDown"
-                    Loaded="TaskSurface_Loaded"
-                    Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
-                    PointerEntered="TaskSurface_PointerEntered"
-                    PointerExited="TaskSurface_PointerExited"
-                    RightTapped="TaskSurface_RightTapped"
-                    Tapped="TaskSurface_Tapped"
-                    Tag="{x:Bind Id}">
-                    <Border.BackgroundTransition>
-                        <BrushTransition Duration="0:0:0.083" />
-                    </Border.BackgroundTransition>
-                    <Border.Transitions>
-                        <TransitionCollection>
-                            <RepositionThemeTransition />
-                        </TransitionCollection>
-                    </Border.Transitions>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <!-- Selected task gets a persistent fill (the hover tone) spanning the row + checklist,
-                             so the open task reads as selected even while the pointer is elsewhere. -->
-                        <Rectangle
-                            Grid.RowSpan="2"
-                            Fill="{StaticResource TaskHoverBrush}"
-                            RadiusX="8"
-                            RadiusY="8"
-                            Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                    <Grid Padding="12,12" ColumnSpacing="{StaticResource CueGap12}">
+            <!-- The hover/selection surface wraps BOTH the task row and its nested checklist, so the
+                 highlight (and the persistent selected fill) reads as one region covering the whole task.
+                 No row separators: rows are divided by whitespace alone (more generous margins), not lines. -->
+            <Border
+                Margin="4,2"
+                Background="Transparent"
+                CornerRadius="{StaticResource CueRadiusRow}"
+                IsTabStop="True"
+                KeyDown="TaskSurface_KeyDown"
+                Loaded="TaskSurface_Loaded"
+                Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
+                PointerEntered="TaskSurface_PointerEntered"
+                PointerExited="TaskSurface_PointerExited"
+                RightTapped="TaskSurface_RightTapped"
+                Tapped="TaskSurface_Tapped"
+                Tag="{x:Bind Id}">
+                <Border.BackgroundTransition>
+                    <BrushTransition Duration="0:0:0.083" />
+                </Border.BackgroundTransition>
+                <Border.Transitions>
+                    <TransitionCollection>
+                        <RepositionThemeTransition />
+                    </TransitionCollection>
+                </Border.Transitions>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <!-- Selected task gets a persistent fill (the hover tone) spanning the row + checklist,
+                         so the open task reads as selected even while the pointer is elsewhere. -->
+                    <Rectangle
+                        Grid.RowSpan="2"
+                        Fill="{StaticResource TaskHoverBrush}"
+                        RadiusX="8"
+                        RadiusY="8"
+                        Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+
+                    <!-- Main row. Generous padding + a MinHeight so a bare title row keeps the same presence
+                         as one with a schedule or chips; all content is vertically centered. -->
+                    <Grid MinHeight="60" Padding="16,12" ColumnSpacing="{StaticResource CueGap16}">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="3" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
+
+                        <!-- Left accent bar marking the open/selected task (an overlay, not a layout column,
+                             so it never shifts the checkbox). -->
                         <Rectangle
-                            VerticalAlignment="Stretch"
+                            Grid.ColumnSpan="3"
+                            Width="3"
+                            Height="22"
+                            Margin="-8,0,0,0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
                             Fill="{ThemeResource AccentFillColorDefaultBrush}"
                             RadiusX="1.5"
                             RadiusY="1.5"
                             Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+
                         <CheckBox
-                            Grid.Column="1"
                             behaviors:CircleCheckBoxPop.IsEnabled="True"
                             VerticalAlignment="Center"
                             IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                             Style="{StaticResource CueCircleCheckBoxStyle}" />
-                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="{StaticResource CueGap4}">
-                            <Grid ColumnSpacing="{StaticResource CueGap8}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock MaxWidth="520" VerticalAlignment="Center" FontFamily="{StaticResource CueFontFamilyMedium}" FontSize="{StaticResource CueFontListTitle}" Text="{x:Bind Title, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="{StaticResource CueGap8}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
+                                <TextBlock
+                                    MaxWidth="520"
+                                    VerticalAlignment="Center"
+                                    FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                    FontSize="{StaticResource CueFontListTitle}"
+                                    Text="{x:Bind Title, Mode=OneWay}"
+                                    TextTrimming="CharacterEllipsis" />
                                 <Border
-                                    Grid.Column="1"
-                                    Padding="7,1"
+                                    Height="{StaticResource CueChipHeight}"
+                                    Padding="{StaticResource CuePadChip}"
                                     VerticalAlignment="Center"
                                     Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}, Mode=OneWay}"
-                                    CornerRadius="9"
+                                    CornerRadius="{StaticResource CueRadiusChip}"
                                     Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                                    <TextBlock FontSize="11" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}" />
+                                    <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}" />
                                 </Border>
-                            </Grid>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap12}" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                                <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
-                                <!-- Repeat indicator: a small sync/repeat glyph marks a recurring task. -->
+                            </StackPanel>
+                            <!-- Schedule + recurrence line; hidden when the task carries no date. -->
+                            <StackPanel
+                                Orientation="Horizontal"
+                                Spacing="{StaticResource CueGap8}"
+                                VerticalAlignment="Center"
+                                Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                                <TextBlock VerticalAlignment="Center" Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" />
                                 <FontIcon
                                     VerticalAlignment="Center"
                                     FontSize="12"
@@ -142,69 +176,63 @@
                                     Visibility="{x:Bind IsRecurring, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
                             </StackPanel>
                             <!-- Compact reflow: when the list is too narrow for right-edge chips, the same
-                                 group/tag metadata drops to its own line under the title (driven by IsCompact). -->
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap12}" Visibility="{x:Bind ShowInlineMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                <StackPanel
-                                    Orientation="Horizontal"
-                                    Spacing="{StaticResource CueGap4}"
+                                 group/tag chips drop to their own line under the title (driven by IsCompact). -->
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" Visibility="{x:Bind ShowInlineMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <Border
+                                    Height="{StaticResource CueChipHeight}"
+                                    Padding="{StaticResource CuePadChip}"
                                     VerticalAlignment="Center"
+                                    Background="{ThemeResource CueChipNeutralFillBrush}"
+                                    CornerRadius="{StaticResource CueRadiusChip}"
                                     Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                    <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
-                                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                                <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}">
+                                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                                        <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
+                                        <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Border>
+                                <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TagChipTemplate}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" />
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:TaskRowTag">
-                                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
-                                                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind Color, Converter={StaticResource HexToBrush}}" />
-                                                <TextBlock MaxWidth="140" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
                         </StackPanel>
-                        <!-- Right edge: the task's group (icon + name) and tags (color dot + name).
-                             Each chunk hides itself when the task has no group / no tags. -->
+
+                        <!-- Right edge (wide layout): group chip + tag chip(s), stacked vertically and
+                             right-aligned so their right edges line up. -->
                         <StackPanel
-                            Grid.Column="3"
-                            Margin="12,0,2,0"
+                            Grid.Column="2"
                             VerticalAlignment="Center"
-                            Orientation="Horizontal"
-                            Spacing="{StaticResource CueGap12}"
+                            HorizontalAlignment="Right"
+                            Spacing="{StaticResource CueGap8}"
                             Visibility="{x:Bind ShowRightMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <StackPanel
-                                Orientation="Horizontal"
-                                Spacing="{StaticResource CueGap4}"
+                            <Border
+                                Height="{StaticResource CueChipHeight}"
+                                Padding="{StaticResource CuePadChip}"
+                                HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                Background="{ThemeResource CueChipNeutralFillBrush}"
+                                CornerRadius="{StaticResource CueRadiusChip}"
                                 Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
-                                <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                                    <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
+                                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                            <ItemsControl HorizontalAlignment="Right" ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TagChipTemplate}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" />
+                                        <StackPanel Orientation="Vertical" HorizontalAlignment="Right" Spacing="{StaticResource CueGap8}" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:TaskRowTag">
-                                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
-                                            <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind Color, Converter={StaticResource HexToBrush}}" />
-                                            <TextBlock MaxWidth="140" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
                     </Grid>
-                    <!-- Nested checklist (row 1 of the highlight grid), kept at its existing indent. -->
-                    <Grid Grid.Row="1" Margin="40,0,0,7" Visibility="{x:Bind HasChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+
+                    <!-- Nested checklist (row 1 of the highlight grid), indented under the title. -->
+                    <Grid Grid.Row="1" Margin="52,0,16,8" Visibility="{x:Bind HasChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="1" />
                             <ColumnDefinition Width="*" />
@@ -217,11 +245,8 @@
                             ItemTemplate="{StaticResource ChecklistRowTemplate}"
                             ItemsSource="{x:Bind ChecklistItems}" />
                     </Grid>
-                    </Grid>
-                </Border>
-                <!-- Thin separator between list rows for clear row-to-row division. -->
-                <Rectangle Height="1" Margin="8,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-            </StackPanel>
+                </Grid>
+            </Border>
         </DataTemplate>
     </Page.Resources>
 
