@@ -601,6 +601,10 @@ public sealed partial class MainWindow : Window
             content.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavIconLeft", 20), 0, 4, 0);
         if (FindDescendantByName(root, "ContentPresenter") is { } label)
             label.Margin = compact ? new Thickness(0) : new Thickness(NavD("CueNavLabelLeft", 4), -1, 4, -1);
+        // The group/tag section's expand-collapse chevron otherwise hugs the row's right edge; inset it
+        // so it sits a touch off the edge. Only sections with children have this part, so other rows no-op.
+        if (FindDescendantByName(root, "ExpandCollapseChevron") is { } chevron)
+            chevron.Margin = new Thickness(0, 0, NavD("CueNavChevronRight", 4), 0);
     }
 
     private static double NavD(string key, double fallback)

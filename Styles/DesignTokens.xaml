@@ -99,6 +99,9 @@
     <x:Double x:Key="CueNavBarInset">2</x:Double>
     <x:Double x:Key="CueNavIconLeft">4</x:Double>
     <x:Double x:Key="CueNavLabelLeft">4</x:Double>
+    <!-- The group/tag section expand-collapse chevron otherwise sits flush against the row's right
+         edge; nudge it in by this much so it has a little breathing room. -->
+    <x:Double x:Key="CueNavChevronRight">4</x:Double>
 
     <!-- Settings page layout
          The settings screen is the one place with its own section-nav + form rhythm. These tokens
