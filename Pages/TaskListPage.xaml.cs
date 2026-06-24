@@ -103,12 +103,12 @@ public sealed partial class TaskListPage : Page
     /// <summary>Delete on a focused row soft-deletes that task (with confirmation).</summary>
     private async void TaskSurface_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key != VirtualKey.Delete || sender is not FrameworkElement { Tag: Guid id })
+        if (e.Key != VirtualKey.Delete || sender is not FrameworkElement { Tag: Guid id } element)
             return;
         e.Handled = true;
         await RunSafelyAsync(async () =>
         {
-            if (await ConfirmDeleteTaskAsync())
+            if (await ConfirmDeleteTaskAsync(element))
                 await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
         });
     }
@@ -121,7 +121,7 @@ public sealed partial class TaskListPage : Page
         e.Handled = true;
         await RunSafelyAsync(async () =>
         {
-            var menu = await BuildTaskContextMenuAsync(id);
+            var menu = await BuildTaskContextMenuAsync(id, element);
             menu.ShowAt(element, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
             {
                 Position = e.GetPosition(element),
@@ -129,7 +129,7 @@ public sealed partial class TaskListPage : Page
         });
     }
 
-    private async Task<MenuFlyout> BuildTaskContextMenuAsync(Guid id)
+    private async Task<MenuFlyout> BuildTaskContextMenuAsync(Guid id, FrameworkElement anchor)
     {
         var task = await ViewModel.GetTaskAsync(id);
         var taskGroups = await ViewModel.GetTaskGroupsAsync();
@@ -190,7 +190,7 @@ public sealed partial class TaskListPage : Page
             delete.Foreground = critical;
         delete.Click += async (_, _) => await RunSafelyAsync(async () =>
         {
-            if (await ConfirmDeleteTaskAsync())
+            if (await ConfirmDeleteTaskAsync(anchor))
                 await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
         });
         menu.Items.Add(delete);
@@ -200,27 +200,16 @@ public sealed partial class TaskListPage : Page
 
     private static FontIcon CheckIcon() => new() { Glyph = "", FontSize = 14 };
 
-    private Task<bool> ConfirmDeleteTaskAsync()
-    {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "할 일을 삭제할까요?",
-            Content = "파일은 지우지 않고 삭제 시각만 기록됩니다. 하위 체크리스트도 함께 삭제됩니다.",
-            PrimaryButtonText = "삭제",
-            CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        return ConfirmAsync(dialog);
-    }
-
-    private async Task<bool> ConfirmAsync(ContentDialog dialog)
-        => await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary;
+    /// <summary>Anchored delete confirmation (a light popover, not a centered dialog). The file is
+    /// kept; only the deletion time is recorded along with any checklist — so a one-line confirm,
+    /// anchored to the row/button that triggered it, is enough.</summary>
+    private Task<bool> ConfirmDeleteTaskAsync(FrameworkElement anchor)
+        => ConfirmPopover.ShowAsync(anchor, new ConfirmPopoverOptions { Message = "이 할 일을 삭제할까요?" });
 
     private async void DeleteTask_Click(object sender, RoutedEventArgs e)
         => await RunSafelyAsync(async () =>
         {
-            if (await ConfirmDeleteTaskAsync())
+            if (sender is FrameworkElement anchor && await ConfirmDeleteTaskAsync(anchor))
                 await ViewModel.Detail.DeleteTaskCommand.ExecuteAsync(null);
         });
 

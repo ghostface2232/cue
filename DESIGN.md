@@ -442,6 +442,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ### Dialogs / inline buttons
 - Inline secondary actions (rename / delete / + add) share one style: transparent background + subtle hover + secondary text (`CueSubtleTextButtonStyle`). At most one true primary is emphasized per context.
 - The shared icon button is `CueIconButtonStyle` (34×34 `HyperlinkButton`, transparent at rest, semantic meaning via glyph color only).
+- **Confirm popover** (`ConfirmPopover` + `CueConfirmPopoverPresenterStyle`): one-line confirmations (e.g. 삭제) use a light `Flyout` anchored to the row/button that triggered them, not a centered `ContentDialog`. Layout is a wrapped message over a right-aligned `취소`(subtle) + primary pair; the primary or Enter confirms, while the cancel button, Esc, or a click outside dismisses to "no". A destructive primary reuses `AccentButtonStyle` recolored to `CueDangerFillBrush` (red fill, on-accent text, stock hover/press). Chrome + rhythm are tokens (`CuePadPopover`, `CuePopoverMinWidth/MaxWidth`, `{rounded.md}`). Reserve a `ContentDialog` for choices that genuinely need a modal (multi-option / blocking flows).
 
 ### Settings form
 - **Section nav** (`settings-nav`): a `ListView` styled to match the sidebar — a `{rounded.md}` subtle-fill pill on hover/selection, primary text, icon + label. Fixed width `{CueSettingsNavWidth}`.

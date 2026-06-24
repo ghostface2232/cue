@@ -599,18 +599,10 @@ public sealed partial class TimelinePage : Page
 
     private async void DeleteTask_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "할 일을 삭제할까요?",
-            Content = "파일은 지우지 않고 삭제 시각만 기록됩니다. 하위 체크리스트도 함께 삭제됩니다.",
-            PrimaryButtonText = "삭제",
-            CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Close,
-        };
+        if (sender is not FrameworkElement anchor) return;
         await RunSafelyAsync(async () =>
         {
-            if (await _dialogs.ShowAsync(dialog) == ContentDialogResult.Primary)
+            if (await ConfirmPopover.ShowAsync(anchor, new ConfirmPopoverOptions { Message = "이 할 일을 삭제할까요?" }))
                 await ViewModel.Detail.DeleteTaskCommand.ExecuteAsync(null);
         });
     }

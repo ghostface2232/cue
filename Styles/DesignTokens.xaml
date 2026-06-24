@@ -164,6 +164,10 @@
     <!-- DetailCardBrush is kept page-local in TaskListPage so the page code-behind can resolve it
          via this.Resources. -->
 
+    <!-- Destructive action tone. The shared red for delete/confirm surfaces (context-menu 삭제,
+         the confirm popover's primary button). Theme-aware via ThemeResource on Color. -->
+    <SolidColorBrush x:Key="CueDangerFillBrush" Color="{ThemeResource SystemFillColorCritical}" />
+
     <!-- Priority cue colors (Todoist-style row dot). Theme-aware via ThemeResource on Color;
          resolved by PriorityToBrushConverter. -->
     <SolidColorBrush x:Key="CuePriorityP1Brush" Color="{ThemeResource SystemFillColorCritical}" />
@@ -244,6 +248,27 @@
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         <Setter Property="Padding" Value="8,4" />
         <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
+    </Style>
+
+    <!-- Confirm popover (reusable anchored confirm — see Services/ConfirmPopover.cs).
+         A light, contextual alternative to a centered ContentDialog for one-line confirmations
+         ("삭제하시겠습니까?"): it anchors to the row/button that triggered it, the primary button
+         or Enter confirms, and Esc / a click outside cancels. These tokens pin the presenter chrome
+         and inner rhythm so every call site (task / group / tag / checklist delete) reads the same.
+         The inner layout (message + right-aligned 취소·삭제 buttons) is built in the helper; the
+         destructive primary button reuses AccentButtonStyle recolored to CueDangerFillBrush. -->
+    <x:Double x:Key="CuePopoverMinWidth">236</x:Double>
+    <x:Double x:Key="CuePopoverMaxWidth">300</x:Double>
+    <Thickness x:Key="CuePadPopover">16,14,16,14</Thickness>
+    <Style x:Key="CueConfirmPopoverPresenterStyle" TargetType="FlyoutPresenter">
+        <Setter Property="Padding" Value="{StaticResource CuePadPopover}" />
+        <Setter Property="MinWidth" Value="{StaticResource CuePopoverMinWidth}" />
+        <Setter Property="MaxWidth" Value="{StaticResource CuePopoverMaxWidth}" />
+        <Setter Property="CornerRadius" Value="{StaticResource CueRadiusCard}" />
+        <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
     </Style>
 
     <!-- Things-3-style circular completion check
