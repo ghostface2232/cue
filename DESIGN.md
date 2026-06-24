@@ -97,16 +97,18 @@ rounded:
   lg: 12px  # detail panel, timeline canvas
   pill: 9999px
 
-# NOTE — Spacing is currently applied inline in XAML; there is no centralized spacing token resource yet (only radius, type, and color tokens live in `Styles/DesignTokens.xaml`).
-# The scale below documents the observed rhythm and is the intended target for future centralization. See "Known Gaps".
+# NOTE — Spacing is tokenized in `Styles/DesignTokens.xaml` and consumed from there: gaps
+# (Spacing / ColumnSpacing / RowSpacing) use the `CueGap*` x:Double tokens; padding/margin uses the
+# `CuePad*` Thickness tokens. Off-scale literals were snapped onto this scale. A few structural/optical
+# values stay inline by design (see "Known Gaps").
 spacing:
-  xxs: 2px
-  xs: 4px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 20px
-  page: 20px   # uniform body padding on both axes (TaskListPage / TimelinePage)
+  xxs: 2px    # CueGap2
+  xs: 4px     # CueGap4
+  sm: 8px     # CueGap8
+  md: 12px    # CueGap12
+  lg: 16px    # CueGap16  (also CuePadCard, uniform card padding)
+  xl: 20px    # CueGap20 / CuePadPage — uniform body padding on both axes (list / timeline / settings)
+  xxl: 24px   # CueGap24  (settings label↔control column gap)
 
 components:
   # --- Task row (flat + grouped lists) ---
@@ -241,7 +243,7 @@ Cue should feel quiet, native, and considered. Reading order comes before inform
 - Surface separation reads from stroke / tonal difference, not shadow.
 - Every clickable element shows hover, press, and focus. If the focus rectangle is suppressed, focus must be re-expressed via background/stroke (accessibility).
 - Nested radii align to `inner ≤ outer − padding`.
-- Alignment and spacing follow the token scale; no one-off arbitrary values.
+- Alignment and spacing follow the token scale; no one-off arbitrary values. Gaps use the `CueGap` 2/4/8/12/16/20/24 scale and padding uses `CuePad*`; off-scale values are snapped, with only the documented structural/optical exceptions left inline.
 
 ## Colors
 
@@ -342,7 +344,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 - The timeline's detail panel is the same component with the same behavior.
 
 ### Spacing
-The page rhythm is body padding `20` (uniform on all sides) and card internal padding `16`. Spacing is currently applied inline in XAML (there is no centralized spacing token yet — see "Known Gaps"); the `spacing` scale in the frontmatter documents the intended rhythm.
+The page rhythm is `CuePadPage` body padding (uniform `20` on all sides) and `CuePadCard` (`16`) card internal padding. Spacing is tokenized: gaps consume the `CueGap*` scale (2/4/8/12/16/20/24) and padding/margin consume the `CuePad*` Thickness tokens, both from `Styles/DesignTokens.xaml`. Off-scale literals were snapped to the nearest rung. Structural/optical exceptions stay inline — negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the priority-pill inset, the detail-card margin *rhythm* (per-axis, see Components), and sub-2px nudges; the `CueNav*` offsets are optical corrections, not part of the scale (see "Known Gaps").
 
 ## Elevation & Depth
 
@@ -483,7 +485,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ## Adding a New Element — Checklist
 
-1. **Tokens first.** Before inventing a color/radius/font/timing, check for a fit in the existing tokens. If none, add a token and consume that (no literals).
+1. **Tokens first.** Before inventing a color/radius/font/timing/spacing, check for a fit in the existing tokens — gaps → `CueGap*`, padding → `CuePad*`, radius → `CueRadius*`, type → `CueFont*`. If none fits, add a token and consume that (no literals); only documented structural/optical values stay inline.
 2. **Both themes.** Confirm the intent holds in Light and Dark. Literals go through `ThemeResource` Color or `ThemeDictionaries`.
 3. **Separate with stroke.** If you want a shadow, ask whether it is a true overlay. If in-flow, use a 1px stroke + `InnerBorderEdge`.
 4. **Reuse the interaction vocabulary.** Hover/press from the shared recipe; color transition at 83ms; new motion follows the token timings/splines.
@@ -496,7 +498,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 
 ## Known Gaps
 
-- **No centralized spacing token.** `Styles/DesignTokens.xaml` defines radius, type, color, and a few page-specific layout dimensions (the sidebar nav offsets and the `CueSettings*` settings-form column/row dimensions), but general spacing/padding is still applied inline in XAML. The `spacing` scale in the frontmatter documents the intended rhythm (page padding `20`, card padding `16`) but is not yet a consumed resource. This is the main unmet part of the "tokens are truth" principle.
+- **Centralized spacing tokens (resolved).** Spacing is no longer inline: `Styles/DesignTokens.xaml` defines the `CueGap{2,4,8,12,16,20,24}` scalar scale (consumed as `Spacing` / `ColumnSpacing` / `RowSpacing`) and the `CuePad*` Thickness tokens (`CuePadPage`, `CuePadCard`, `CuePadInput`, `CuePadDetailPanel`, and the `CuePadDetailCardFirst`/run/`Last` margin family). Off-scale literals (5, 7, 10, 11, 13, 14, …) were snapped to the nearest rung. The *narrower residual* is that a `Thickness` resource is a fixed 4-tuple, so values that vary per axis or are purely optical stay inline by design: negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the priority-pill inset, the detail-card margin rhythm, and sub-2px nudges. The `CueNav*` offsets are deliberately outside the scale — they correct for the NavigationView's nesting indent, which is optical tuning rather than rhythm.
 - **Pretendard JP** ships as static OTFs, so weight hierarchy is family-switched (Regular vs. SemiBold) rather than `FontWeight`-driven. The frontmatter encodes the semantic weight (400/600) for non-WinUI export.
 - **Caption (window) buttons** are system-drawn and themed in code-behind (`ApplyCaptionButtonColors`), reapplied on `ActualThemeChanged` — they are not reachable as XAML tokens.
 - The Dark text-input **well** (`#18000000` / `#24000000`) is the only set of literal colors in the system; it is intentionally theme-scoped in `ThemeDictionaries`.

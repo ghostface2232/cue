@@ -112,6 +112,40 @@
     <x:Double x:Key="CueSettingsControlWidth">200</x:Double>
     <x:Double x:Key="CueSettingsRowMinHeight">52</x:Double>
 
+    <!-- ===== Spacing scale =====
+         The one rhythm for gaps and padding across every surface. Replaces the inline literals that
+         used to drift (5/7/10/11/13/14…); off-scale values are snapped to the nearest rung so the UI
+         reads from a small, intentional set. Two consumers, two resource types:
+           • Gaps  (Spacing / ColumnSpacing / RowSpacing — Double) → the CueGap* x:Double tokens.
+           • Padding / Margin (Thickness)                         → the CuePad* Thickness tokens.
+         A Thickness resource is a fixed 4-tuple (no partial override), so a few structural/optical
+         values stay inline by design — negative full-bleed margins, the quick-add omnibar's optical
+         padding, empty-state centering offsets, the priority-pill inset, and sub-2px nudges. The
+         CueNav* offsets above are optical corrections, NOT rhythm — they are deliberately not part of
+         this scale. -->
+    <x:Double x:Key="CueGap2">2</x:Double>
+    <x:Double x:Key="CueGap4">4</x:Double>
+    <x:Double x:Key="CueGap8">8</x:Double>
+    <x:Double x:Key="CueGap12">12</x:Double>
+    <x:Double x:Key="CueGap16">16</x:Double>
+    <x:Double x:Key="CueGap20">20</x:Double>
+    <x:Double x:Key="CueGap24">24</x:Double>
+
+    <!-- Page body padding (uniform 20, = xl). The list, timeline, and settings pages share it. -->
+    <Thickness x:Key="CuePadPage">20</Thickness>
+    <!-- Detail inner-card padding (uniform 16, = lg). Sits beside CueRadiusCard on the same Border. -->
+    <Thickness x:Key="CuePadCard">16</Thickness>
+    <!-- Checklist text inputs: horizontal inset snapped to 8 (sm), vertical 4 (xs). -->
+    <Thickness x:Key="CuePadInput">8,4</Thickness>
+    <!-- Detail panel content padding. Tuned around the scroll body + left resize strip (small 6 on the
+         right where the scrollbar lives); centralized verbatim, never snapped. -->
+    <Thickness x:Key="CuePadDetailPanel">18,16,6,20</Thickness>
+    <!-- Detail-card stack margins: a deliberate vertical rhythm a single token can't express —
+         first card leads in with a 2px top, the run uses 7 between, the last card closes with 8. -->
+    <Thickness x:Key="CuePadDetailCardFirst">4,2,8,7</Thickness>
+    <Thickness x:Key="CuePadDetailCard">4,0,8,7</Thickness>
+    <Thickness x:Key="CuePadDetailCardLast">4,0,8,8</Thickness>
+
     <!-- ===== Shared hover language. Main list rows, timeline bars, subtle buttons, and local panel
          controls all use the same fill so light mode does not drift between surfaces. ===== -->
     <SolidColorBrush x:Key="CueHoverFillBrush" Color="{ThemeResource SubtleFillColorSecondary}" />

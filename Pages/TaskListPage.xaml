@@ -26,7 +26,7 @@
              is not a task — it cannot be opened, dragged, or carry a date/priority/group. -->
         <DataTemplate x:Key="ChecklistRowTemplate" x:DataType="vm:ChecklistRowViewModel">
             <Border Margin="0,1,4,1" Padding="12,4" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
-                <Grid ColumnSpacing="10">
+                <Grid ColumnSpacing="{StaticResource CueGap12}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -70,7 +70,7 @@
                             <RepositionThemeTransition />
                         </TransitionCollection>
                     </Border.Transitions>
-                    <Grid ColumnSpacing="10">
+                    <Grid ColumnSpacing="{StaticResource CueGap12}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="3" />
                             <ColumnDefinition Width="Auto" />
@@ -97,8 +97,8 @@
                             VerticalAlignment="Center"
                             IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                             Style="{StaticResource CueCircleCheckBoxStyle}" />
-                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="5">
-                            <Grid ColumnSpacing="8">
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="{StaticResource CueGap4}">
+                            <Grid ColumnSpacing="{StaticResource CueGap8}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
@@ -114,7 +114,7 @@
                                     <TextBlock FontSize="11" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}" />
                                 </Border>
                             </Grid>
-                            <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap12}" Visibility="{x:Bind HasMetadata, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                                 <TextBlock Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
                             </StackPanel>
                         </StackPanel>
@@ -125,10 +125,10 @@
                             Margin="12,0,2,0"
                             VerticalAlignment="Center"
                             Orientation="Horizontal"
-                            Spacing="12">
+                            Spacing="{StaticResource CueGap12}">
                             <StackPanel
                                 Orientation="Horizontal"
-                                Spacing="5"
+                                Spacing="{StaticResource CueGap4}"
                                 VerticalAlignment="Center"
                                 Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                 <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
@@ -137,12 +137,12 @@
                             <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal" Spacing="8" />
+                                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:TaskRowTag">
-                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
                                             <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind Color, Converter={StaticResource HexToBrush}}" />
                                             <TextBlock FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Name}" />
                                         </StackPanel>
@@ -172,7 +172,7 @@
         </DataTemplate>
     </Page.Resources>
 
-    <Grid Padding="20">
+    <Grid Padding="{StaticResource CuePadPage}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -180,7 +180,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Margin="4,0,4,6" ColumnSpacing="12">
+        <Grid Margin="4,0,4,6" ColumnSpacing="{StaticResource CueGap12}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -235,7 +235,7 @@
         <Grid
             x:Name="ContentSplitGrid"
             Grid.Row="3"
-            ColumnSpacing="16"
+            ColumnSpacing="{StaticResource CueGap16}"
             SizeChanged="ContentSplitGrid_SizeChanged">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -284,7 +284,7 @@
                 Width="460"
                 MinWidth="260"
                 Margin="0,0,4,4"
-                Padding="18,16,6,20"
+                Padding="{StaticResource CuePadDetailPanel}"
                 Background="{ThemeResource LayerFillColorDefaultBrush}"
                 BackgroundSizing="InnerBorderEdge"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -343,8 +343,8 @@
                         </Border.OpacityTransition>
                     </Border>
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="2,0,16,0" Spacing="13">
-                        <Grid ColumnSpacing="7">
+                        <StackPanel Margin="2,0,16,0" Spacing="{StaticResource CueGap12}">
+                        <Grid ColumnSpacing="{StaticResource CueGap8}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
@@ -371,12 +371,12 @@
                             </HyperlinkButton>
                         </Grid>
 
-                        <Border Margin="4,2,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
-                            <StackPanel Spacing="11">
+                        <Border Margin="{StaticResource CuePadDetailCardFirst}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
                                 <TextBox AcceptsReturn="True" LostFocus="DetailText_LostFocus" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
-                                <Grid x:Name="DetailMetaGrid" ColumnSpacing="12" RowSpacing="10">
+                                <Grid x:Name="DetailMetaGrid" ColumnSpacing="{StaticResource CueGap12}" RowSpacing="{StaticResource CueGap12}">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5">
+                                    <StackPanel Spacing="{StaticResource CueGap4}">
                                         <TextBlock Text="중요도" />
                                         <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.Detail.Priorities}" SelectedItem="{x:Bind ViewModel.Detail.SelectedPriority, Mode=TwoWay}">
                                             <ComboBox.ItemTemplate>
@@ -386,15 +386,15 @@
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
                                     </StackPanel>
-                                    <StackPanel x:Name="DetailGroupField" Grid.Column="1" Spacing="5"><TextBlock Text="그룹" /><ComboBox HorizontalAlignment="Stretch" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.Detail.TaskGroups}" SelectedItem="{x:Bind ViewModel.Detail.SelectedTaskGroup, Mode=TwoWay}" /></StackPanel>
+                                    <StackPanel x:Name="DetailGroupField" Grid.Column="1" Spacing="{StaticResource CueGap4}"><TextBlock Text="그룹" /><ComboBox HorizontalAlignment="Stretch" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.Detail.TaskGroups}" SelectedItem="{x:Bind ViewModel.Detail.SelectedTaskGroup, Mode=TwoWay}" /></StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>
 
                         <!-- A task has a single date (When). Before a date is set the + 날짜 추가 button
                              takes the editor's place; once set, a date (+ optional time / 종일) shows. -->
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
-                            <StackPanel Spacing="11">
+                        <Border Margin="{StaticResource CuePadDetailCard}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
                                 <Button
                                     HorizontalAlignment="Left"
                                     Click="EnableWhen_Click"
@@ -402,12 +402,12 @@
                                     Style="{StaticResource CueSubtleTextButtonStyle}"
                                     Visibility="{x:Bind ViewModel.Detail.CanAddWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
-                                <StackPanel Spacing="11" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Spacing="{StaticResource CueGap12}" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <Grid>
                                         <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="일시" />
                                         <Button HorizontalAlignment="Right" Padding="8,3" Background="Transparent" BorderThickness="0" Click="ClearWhen_Click" Content="제거" />
                                     </Grid>
-                                    <Grid x:Name="WhenDateTimeGrid" ColumnSpacing="8" RowSpacing="8" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <Grid x:Name="WhenDateTimeGrid" ColumnSpacing="{StaticResource CueGap8}" RowSpacing="{StaticResource CueGap8}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
@@ -421,7 +421,7 @@
                                             x:Name="WhenTimePanel"
                                             Grid.Column="1"
                                             VerticalAlignment="Center"
-                                            ColumnSpacing="7"
+                                            ColumnSpacing="{StaticResource CueGap8}"
                                             Visibility="{x:Bind ViewModel.Detail.ShowWhenTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition x:Name="WhenHourCol" Width="Auto" />
@@ -438,11 +438,11 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,7" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
-                            <StackPanel Spacing="10">
+                        <Border Margin="{StaticResource CuePadDetailCard}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
                                 <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="BeginAddTag_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
                                 <!-- Inline new-tag field, shown in place of the old modal when + 새 태그 is tapped. -->
-                                <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.Detail.IsAddingTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <Grid ColumnSpacing="{StaticResource CueGap8}" Visibility="{x:Bind ViewModel.Detail.IsAddingTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <TextBox
                                         x:Name="NewTagBox"
@@ -465,7 +465,7 @@
                                                 Click="TagRow_Click"
                                                 CornerRadius="{StaticResource CueRadiusSmall}"
                                                 Tag="{x:Bind Id}">
-                                                <Grid ColumnSpacing="10">
+                                                <Grid ColumnSpacing="{StaticResource CueGap8}">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="*" />
@@ -498,10 +498,10 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Margin="4,0,8,8" Padding="16" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
-                            <StackPanel Spacing="11">
+                        <Border Margin="{StaticResource CuePadDetailCardLast}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="체크리스트" />
-                                <Grid ColumnSpacing="8">
+                                <Grid ColumnSpacing="{StaticResource CueGap8}">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewChecklistItemTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                     <Button Grid.Column="1" Click="AddChecklistItem_Click" Content="추가" />
@@ -509,12 +509,12 @@
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Checklist}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ChecklistItemViewModel">
-                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="10">
+                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="{StaticResource CueGap12}">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                 <CheckBox VerticalAlignment="Top" Margin="0,5,0,0" IsChecked="{x:Bind IsChecked, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
-                                                <StackPanel Grid.Column="1" Spacing="3" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
-                                                    <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
-                                                    <TextBox PlaceholderText="메모" Text="{x:Bind Note, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" Padding="6,4" FontSize="{StaticResource CueFontRowSub}" />
+                                                <StackPanel Grid.Column="1" Spacing="{StaticResource CueGap4}" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
+                                                    <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="{StaticResource CuePadInput}" FontSize="{StaticResource CueFontRowSub}" />
+                                                    <TextBox PlaceholderText="메모" Text="{x:Bind Note, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" Padding="{StaticResource CuePadInput}" FontSize="{StaticResource CueFontRowSub}" />
                                                 </StackPanel>
                                                 <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteChecklistItem_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
                                             </Grid>
@@ -537,7 +537,7 @@
                             BorderThickness="1"
                             Click="DeleteTask_Click"
                             CornerRadius="{StaticResource CueRadiusCard}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
                                 <FontIcon FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE74D;" />
                                 <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="할 일 삭제" />
                             </StackPanel>
