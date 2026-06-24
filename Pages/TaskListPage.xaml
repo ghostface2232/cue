@@ -110,7 +110,7 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock MaxWidth="520" VerticalAlignment="Center" FontSize="{StaticResource CueFontListTitle}" Text="{x:Bind Title, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock MaxWidth="520" VerticalAlignment="Center" FontFamily="{StaticResource CueFontFamilyMedium}" FontSize="{StaticResource CueFontListTitle}" Text="{x:Bind Title, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                 <Border
                                     Grid.Column="1"
                                     Padding="7,1"
@@ -520,7 +520,7 @@
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                 <CheckBox Width="24" Height="24" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,5,0,0" behaviors:CircleCheckBoxPop.IsEnabled="True" IsChecked="{x:Bind IsChecked, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
                                                 <StackPanel Grid.Column="1" Spacing="{StaticResource CueGap4}" Opacity="{x:Bind VisualOpacity, Mode=OneWay}">
-                                                    <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="{StaticResource CuePadInput}" FontSize="{StaticResource CueFontRowSub}" />
+                                                    <TextBox PlaceholderText="항목" Text="{x:Bind Title, Mode=TwoWay}" Background="Transparent" BorderThickness="0" Padding="{StaticResource CuePadInput}" FontFamily="{StaticResource CueFontFamilyMedium}" FontSize="{StaticResource CueFontRowSub}" />
                                                     <TextBox PlaceholderText="메모" Text="{x:Bind Note, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" Padding="{StaticResource CuePadInput}" FontSize="{StaticResource CueFontRowSub}" />
                                                 </StackPanel>
                                                 <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteChecklistItem_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>

@@ -43,6 +43,10 @@
     <!-- Typeface: Pretendard JP (Korean-first). Static OTFs ship as two families — true
          SemiBold lives in its own family, so weight hierarchy switches family, not FontWeight. -->
     <FontFamily x:Key="CueFontFamily">ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP</FontFamily>
+    <!-- Medium is the emphasis weight for important content text that would otherwise read as Regular
+         (list/timeline task titles, checklist item titles): clearer than Regular, lighter than the
+         SemiBold reserved for headers. Like the others it ships as its own static-OTF family. -->
+    <FontFamily x:Key="CueFontFamilyMedium">ms-appx:///Assets/Fonts/PretendardJP-Medium.otf#Pretendard JP Medium</FontFamily>
     <FontFamily x:Key="CueFontFamilySemiBold">ms-appx:///Assets/Fonts/PretendardJP-SemiBold.otf#Pretendard JP SemiBold</FontFamily>
     <!-- Make Pretendard the default for templated controls (buttons, list items, text boxes, nav…).
          Plain TextBlocks inherit it via FontFamily set on the window root in MainWindow.xaml. -->

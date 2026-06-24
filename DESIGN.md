@@ -47,8 +47,10 @@ colors:
   error: SystemFillColorCritical
 
 # NOTE — Weight is expressed by FAMILY, not FontWeight.
-# Pretendard JP ships as static OTFs, so SemiBold is a separate family (`Pretendard JP SemiBold`).
-# In WinUI the hierarchy switches family rather than setting FontWeight. The `fontWeight` values below (400/600) are the semantic equivalent for non-WinUI consumers (Figma / Tailwind / web export).
+# Pretendard JP ships as static OTFs, so each weight is a separate family: Regular (`Pretendard JP`),
+# Medium (`Pretendard JP Medium`), SemiBold (`Pretendard JP SemiBold`). Medium is the emphasis weight
+# for important content text that would otherwise read as Regular (task titles, checklist item titles).
+# In WinUI the hierarchy switches family rather than setting FontWeight. The `fontWeight` values below (400/500/600) are the semantic equivalent for non-WinUI consumers (Figma / Tailwind / web export).
 typography:
   page-title:
     fontFamily: Pretendard JP SemiBold
@@ -70,10 +72,10 @@ typography:
     fontFamily: Pretendard JP
     fontSize: 15px
     fontWeight: 400
-  list-title:            # main list row title (larger/clearer than the base row)
-    fontFamily: Pretendard JP
+  list-title:            # main list row title (larger/clearer than the base row); also timeline task titles
+    fontFamily: Pretendard JP Medium
     fontSize: 16.5px
-    fontWeight: 400
+    fontWeight: 500
   list-meta:             # main list row meta line (date · time) and right-edge group/tag chips
     fontFamily: Pretendard JP
     fontSize: 13px
@@ -82,6 +84,10 @@ typography:
     fontFamily: Pretendard JP
     fontSize: 14px
     fontWeight: 400
+  checklist-item-title:  # checklist item title (its note line below stays row-sub / Regular)
+    fontFamily: Pretendard JP Medium
+    fontSize: 14px
+    fontWeight: 500
   secondary:
     fontFamily: Pretendard JP
     fontSize: 12px
@@ -285,7 +291,7 @@ The importance pill paints its background as a ~17% alpha tint of the priority c
 
 ## Typography
 
-The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship as two families, **weight hierarchy switches family, not FontWeight**: SemiBold is its own family (`Pretendard JP SemiBold`). `ContentControlThemeFontFamily` is overridden to Pretendard so templated controls (buttons, lists, inputs, nav) inherit it; plain `TextBlock`s inherit via the window root's `FontFamily`.
+The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship as separate families, **weight hierarchy switches family, not FontWeight**: Medium (`Pretendard JP Medium`, via `CueFontFamilyMedium`) and SemiBold (`Pretendard JP SemiBold`) are each their own family. Medium is the emphasis weight for important content that would otherwise read as Regular — list/timeline task titles and checklist item titles — sitting between Regular body text and SemiBold headers. `ContentControlThemeFontFamily` is overridden to Pretendard so templated controls (buttons, lists, inputs, nav) inherit it; plain `TextBlock`s inherit via the window root's `FontFamily`.
 
 ### Hierarchy
 
@@ -503,7 +509,7 @@ Pill instances are explicit half-height radii: priority pill `9`, quick-add `24`
 ## Known Gaps
 
 - **Inline spacing exceptions.** Gaps and padding are tokenized (`CueGap*` / `CuePad*`), but a `Thickness` resource is a fixed 4-tuple, so values that vary per axis or are purely optical stay inline by design: negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the priority-pill inset, the detail-card margin rhythm, and sub-2px nudges. The `CueNav*` offsets also sit outside the scale — they correct for the NavigationView's nesting indent (optical tuning, not rhythm).
-- **Pretendard JP** ships as static OTFs, so weight hierarchy is family-switched (Regular vs. SemiBold) rather than `FontWeight`-driven. The frontmatter encodes the semantic weight (400/600) for non-WinUI export.
+- **Pretendard JP** ships as static OTFs, so weight hierarchy is family-switched (Regular / Medium / SemiBold) rather than `FontWeight`-driven. The frontmatter encodes the semantic weight (400/500/600) for non-WinUI export.
 - **Caption (window) buttons** are system-drawn and themed in code-behind (`ApplyCaptionButtonColors`), reapplied on `ActualThemeChanged` — they are not reachable as XAML tokens.
 - The Dark text-input **well** (`#18000000` / `#24000000`) is the only set of literal colors in the system; it is intentionally theme-scoped in `ThemeDictionaries`.
 - Color tokens in this document are **aliases** of WinUI theme tokens, not literal hex; they cannot be WCAG-contrast-checked statically because they resolve to different values per theme.

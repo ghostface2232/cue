@@ -17,7 +17,7 @@ Foundation phase. The app is single-device and local-first right now. Multi-devi
 - Query index: SQLite via `Microsoft.Data.Sqlite`. Do not use EF Core; the index is a lightweight derived cache.
 - Natural-language date parsing: `Microsoft.Recognizers.Text.DateTime` with `Culture.Korean`.
 - Recurrence: RFC 5545 RRULE evaluation via `Ical.Net`, used as a calculator only and confined to the store/logic layer (never referenced from the domain or view models, per invariant 9).
-- Typography: Pretendard JP is bundled (`Assets/Fonts/*.otf`) and is the app-wide typeface; weight hierarchy switches font family (the static OTFs ship Regular and SemiBold as separate families).
+- Typography: Pretendard JP is bundled (`Assets/Fonts/*.otf`) and is the app-wide typeface; weight hierarchy switches font family (the static OTFs ship Regular, Medium, and SemiBold as separate families). Medium (`CueFontFamilyMedium`) is the emphasis weight for important content text that would otherwise read as Regular — list/timeline task titles and checklist item titles; SemiBold stays for headers.
 - Packaging: unpackaged or external-location packaged. Rationale: the app must read and write user-chosen cloud folders (OneDrive, Google Drive) in a later phase, so avoid the MSIX virtual filesystem constraints.
 ## Tooling and commands
  
