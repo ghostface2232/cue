@@ -232,19 +232,23 @@
     <SolidColorBrush x:Key="CuePriorityP3Brush" Color="{ThemeResource SystemAccentColor}" />
     <SolidColorBrush x:Key="CuePriorityP4Brush" Color="{ThemeResource TextFillColorTertiary}" />
 
-    <!-- Recurrence timeline (detail-panel 기록 strip). A compact, fixed-height horizontal agenda strip of
-         cycle pips — not a large card carousel. Sizes keep every pip uniform so the row reads as a band. -->
-    <x:Double x:Key="CueTimelineStripHeight">64</x:Double>
+    <!-- Recurrence timeline (detail-panel 반복 기록 strip). A compact, fixed-height horizontal agenda strip
+         of cycle pips — not a large card carousel. Sizes keep every pip uniform so the row reads as a band.
+         The height carries top/bottom breathing room around each pip's date / glyph / label stack. -->
+    <x:Double x:Key="CueTimelineStripHeight">78</x:Double>
     <x:Double x:Key="CueTimelinePipWidth">52</x:Double>
     <x:Double x:Key="CueTimelinePipGlyph">15</x:Double>
     <!-- Pip status colors. These never carry the status alone — each pip also shows a distinct glyph and a
-         status word, and an automation name + tooltip — so the strip stays legible without color. Accent
-         marks a performed/active cycle (완료 · 다음); the ended head and muted (건너뜀 · 미수행) cycles fall
-         back to secondary/tertiary text tones. Resolved by OccurrencePipKindToBrushConverter. -->
-    <SolidColorBrush x:Key="CueTimelineCompletedBrush" Color="{ThemeResource SystemAccentColor}" />
-    <SolidColorBrush x:Key="CueTimelineNextBrush" Color="{ThemeResource SystemAccentColor}" />
+         status word, and an automation name + tooltip — so the strip stays legible without color. A soft
+         accent marks performed cycles (완료 ●) — the only colored state, since color reads as "done"; the
+         current cycle (현재 ○) is a neutral secondary gray because it is pending, not done; missed cycles
+         (미수행 ×) fall to a muted tertiary gray; future cycles (예정 ◌) to the dim disabled tone; the ended
+         head to secondary. Resolved by OccurrencePipKindToBrushConverter. -->
+    <SolidColorBrush x:Key="CueTimelineCompletedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.6" />
+    <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
     <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
     <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
+    <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
 
     <!-- Flatten text inputs: remove the Fluent bottom "accent bar" (the focused 2px bottom
          border and the resting gradient) so all input fields read as calm, uniform 1px boxes.

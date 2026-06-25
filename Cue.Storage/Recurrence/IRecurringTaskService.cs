@@ -60,4 +60,30 @@ public interface IRecurringTaskService
     /// occurrence is missing or deleted.
     /// </summary>
     Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The next <paramref name="count"/> scheduled cycles strictly after the recurring task's current
+    /// cycle (its <see cref="TaskItem.When"/>), as local dates oldest-first — the future the timeline
+    /// renders dimmed ahead of the current cycle. Fewer than <paramref name="count"/> (or none) when the
+    /// rule is exhausted (UNTIL/COUNT). Empty for a non-recurring, completed, missing, or deleted task,
+    /// or a non-positive count. Pure read — computes from the rule and writes nothing.
+    /// </summary>
+    Task<IReadOnlyList<DateOnly>> GetUpcomingOccurrencesAsync(Guid taskId, int count, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Undoes the most recent completion of a recurring series: rolls the series back so the cycle the
+    /// <paramref name="occurrenceId"/> record stands for becomes the live current cycle again — open and
+    /// incomplete, with its frozen checklist state restored — and tombstones that occurrence record.
+    /// <para>
+    /// Strictly guarded to the <i>latest</i> completion: it commits only when the record is a
+    /// <see cref="OccurrenceStatus.Completed"/> cycle of this series whose next scheduled cycle is exactly
+    /// the series' current <see cref="TaskItem.When"/> (i.e. it is the immediate predecessor). Any other
+    /// record — an older cycle, a skipped/missed one, or one whose successor isn't the current cycle — is
+    /// left untouched so history corrections go through <see cref="UpdateOccurrenceStatusAsync"/> instead.
+    /// A no-op if the task or occurrence is missing, deleted, completed (series ended), or not recurring.
+    /// </para>
+    /// All writes commit atomically under the store's transaction.
+    /// </summary>
+    /// <returns><c>true</c> when the series was rolled back, <c>false</c> when the guard declined.</returns>
+    Task<bool> UndoCompletionAsync(Guid taskId, Guid occurrenceId, DateTimeOffset undoneAt, CancellationToken cancellationToken = default);
 }

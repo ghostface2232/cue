@@ -19,9 +19,9 @@ public sealed partial class OccurrencePipKindToBrushConverter : IValueConverter
             ? kind switch
             {
                 OccurrencePipKind.Completed => "CueTimelineCompletedBrush",
-                OccurrencePipKind.Next => "CueTimelineNextBrush",
+                OccurrencePipKind.Current => "CueTimelineCurrentBrush",
+                OccurrencePipKind.Future => "CueTimelineFutureBrush",
                 OccurrencePipKind.Ended => "CueTimelineEndedBrush",
-                OccurrencePipKind.Skipped => "CueTimelineMutedBrush",
                 OccurrencePipKind.Missed => "CueTimelineMutedBrush",
                 _ => "CueTimelineMutedBrush",
             }

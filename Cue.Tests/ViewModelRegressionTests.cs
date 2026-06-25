@@ -938,7 +938,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task DetailTimeline_ShowsRecordedCyclesAndNextHeadPip()
+    public async Task DetailTimeline_ShowsRecordedCurrentAndFuturePips()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
@@ -959,12 +959,24 @@ public sealed class ViewModelRegressionTests
         await vm.Detail.OpenAsync(task.Id);
 
         Assert.True(vm.Detail.IsRecurring);
-        // One recorded cycle (Today, 완료) then the live head pip (다음, tomorrow) — recent + next by default.
-        Assert.Equal(2, vm.Detail.Timeline.Count);
+        // One recorded cycle (Today, 완료) — flagged the latest for the quick undo — then the current cycle
+        // (현재, tomorrow), then a run of dimmed future cycles projected from the daily rule.
         Assert.Equal(OccurrencePipKind.Completed, vm.Detail.Timeline[0].Kind);
         Assert.Equal(today, vm.Detail.Timeline[0].Date);
-        Assert.Equal(OccurrencePipKind.Next, vm.Detail.Timeline[1].Kind);
+        Assert.True(vm.Detail.Timeline[0].IsLatestRecord);
+
+        Assert.Equal(1, vm.Detail.CurrentCycleIndex);
+        Assert.Equal(OccurrencePipKind.Current, vm.Detail.Timeline[1].Kind);
         Assert.Equal(today.AddDays(1), vm.Detail.Timeline[1].Date);
+
+        // Future cycles trail the current one, dimmed and non-interactive, on the rule's grid.
+        Assert.Equal(OccurrencePipKind.Future, vm.Detail.Timeline[2].Kind);
+        Assert.Equal(today.AddDays(2), vm.Detail.Timeline[2].Date);
+        Assert.All(vm.Detail.Timeline.Skip(2), pip =>
+        {
+            Assert.Equal(OccurrencePipKind.Future, pip.Kind);
+            Assert.False(pip.IsInteractive);
+        });
         Assert.False(vm.Detail.HasOlderTimeline);
     }
 
@@ -990,14 +1002,16 @@ public sealed class ViewModelRegressionTests
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), recurring, clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         await vm.Detail.OpenAsync(task.Id);
 
-        // Opens with one page of recent cycles (12) + the head pip, and more to page in — not all 20 eagerly.
-        Assert.Equal(13, vm.Detail.Timeline.Count);
+        // Opens with one page of recent records (12), and more to page in — not all 20 eagerly. (The strip
+        // also carries the current cycle and projected future pips; assert on the record pips so the count
+        // is robust to the future window.)
+        Assert.Equal(12, vm.Detail.Timeline.Count(pip => pip.OccurrenceId is not null));
         Assert.True(vm.Detail.HasOlderTimeline);
 
         await vm.Detail.LoadOlderTimelineCommand.ExecuteAsync(null);
 
-        // A second page realizes the remaining cycles (20) + the head pip; nothing older remains.
-        Assert.Equal(21, vm.Detail.Timeline.Count);
+        // A second page realizes the remaining records (20); nothing older remains.
+        Assert.Equal(20, vm.Detail.Timeline.Count(pip => pip.OccurrenceId is not null));
         Assert.False(vm.Detail.HasOlderTimeline);
     }
 

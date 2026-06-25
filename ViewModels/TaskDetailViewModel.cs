@@ -135,6 +135,14 @@ public partial class TaskDetailViewModel : ObservableObject
     private const int TimelinePageSize = 12;
     private int _timelineWindow;
 
+    // The most future cycles ever projected for the strip (a cap so an endless rule never computes
+    // forever). The page asks for only as many as fill the visible width via SetVisibleFutureCount; this
+    // bounds that request. The dates are computed once per load and re-sliced cheaply on resize.
+    private const int MaxFutureProjection = 30;
+    private const int DefaultFutureWindow = 4;
+    private IReadOnlyList<DateOnly> _upcomingDates = Array.Empty<DateOnly>();
+    private int _visibleFutureCount = DefaultFutureWindow;
+
     private Guid? _taskId;
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
     private WhenEditorMode _loadedWhenMode;
@@ -198,9 +206,15 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
-    /// <summary>The recurrence timeline pips for a recurring task, oldest cycle first with the live head
-    /// (current/next or terminal) pip last. Empty for a non-recurring task.</summary>
+    /// <summary>The recurrence timeline pips for a recurring task: recorded cycles oldest-first, then the
+    /// live current cycle (or terminal 종료 head), then any projected future cycles. Empty for a
+    /// non-recurring task.</summary>
     public ObservableCollection<OccurrencePipViewModel> Timeline { get; } = new();
+
+    /// <summary>Index of the current-cycle (or terminal) pip in <see cref="Timeline"/> — the boundary
+    /// between recorded history on its left and projected future on its right. The page scrolls the strip
+    /// to land on this pip so the current cycle reads by default. 0 when there is no timeline.</summary>
+    public int CurrentCycleIndex { get; private set; }
 
     /// <summary>True when the open task carries a recurrence rule — gates the timeline strip and the
     /// 반복 종료 action in the panel. Tracks the live 반복 selection so clearing it (to "반복 안 함") turns
@@ -687,14 +701,17 @@ public partial class TaskDetailViewModel : ObservableObject
 
     /// <summary>
     /// Rebuilds the recurrence timeline from <paramref name="task"/>: the most recent page of recorded
-    /// cycles (oldest-first), then the live head pip — the current/next cycle for an open series, or a
-    /// terminal "종료" pip once the series has ended. A plain task clears the strip. Older cycles beyond the
-    /// realized window page in via <see cref="LoadOlderTimelineAsync"/>, so a long history is never loaded
-    /// all at once.
+    /// cycles (oldest-first), then the live head pip — the current cycle (현재) for an open series, or a
+    /// terminal 종료 pip once the series has ended — then, for an open series, a run of projected future
+    /// cycles (예정, dimmed) filling out to the right. A plain task clears the strip. Older recorded cycles
+    /// beyond the realized window page in via <see cref="LoadOlderTimelineAsync"/>, so a long history is
+    /// never loaded all at once; the future is projected only as far as the visible width needs.
     /// </summary>
     private async Task LoadTimelineAsync(TaskItem task)
     {
         Timeline.Clear();
+        _upcomingDates = Array.Empty<DateOnly>();
+        CurrentCycleIndex = 0;
         if (task.Recurrence is null)
         {
             HasOlderTimeline = false;
@@ -706,7 +723,8 @@ public partial class TaskDetailViewModel : ObservableObject
         HasOlderTimeline = window < total;
 
         // The index returns cycles most-recent-first; render oldest-first so the strip reads left→right
-        // with the live head pip on the right.
+        // with the live head pip after them. The newest record (records[0]) is the immediate predecessor
+        // of the current cycle — flag it so a single click on it can be the quick undo.
         var records = window > 0
             ? await _index.GetOccurrencesAsync(task.Id, window)
             : (IReadOnlyList<OccurrenceListItem>)Array.Empty<OccurrenceListItem>();
@@ -714,15 +732,27 @@ public partial class TaskDetailViewModel : ObservableObject
         {
             var record = records[i];
             var completedLocal = record.CompletedAt is { } at ? TimeZoneInfo.ConvertTime(at, _zone) : (DateTimeOffset?)null;
-            Timeline.Add(new OccurrencePipViewModel(record.Id, record.OccurrenceDate, MapPipKind(record.Status), completedLocal));
+            Timeline.Add(new OccurrencePipViewModel(record.Id, record.OccurrenceDate, MapPipKind(record.Status), completedLocal)
+            {
+                IsLatestRecord = i == 0,
+            });
         }
 
         Timeline.Add(BuildHeadPip(task));
+        CurrentCycleIndex = Timeline.Count - 1;
+
+        // Project the upcoming cycles once (capped), then realize as many as the page's visible width
+        // asks for. Only an open series has a future; a completed/ended one stops at its 종료 head.
+        if (!task.IsCompleted)
+        {
+            _upcomingDates = await _recurrence.GetUpcomingOccurrencesAsync(task.Id, MaxFutureProjection);
+            AppendFuturePips();
+        }
     }
 
-    /// <summary>The live head pip: the series' own current/next cycle (◉ 다음) while open, or a terminal
-    /// 종료 pip once the series has been ended/exhausted. Synthesized from the series, not a record, so it
-    /// carries no occurrence id and cannot be edited as a past cycle.</summary>
+    /// <summary>The live head pip: the series' own current cycle (○ 현재) while open, or a terminal 종료 pip
+    /// once the series has been ended/exhausted. Synthesized from the series, not a record, so it carries
+    /// no occurrence id and cannot be edited as a past cycle.</summary>
     private OccurrencePipViewModel BuildHeadPip(TaskItem task)
     {
         var headDate = task.When.Date is { } when
@@ -734,14 +764,38 @@ public partial class TaskDetailViewModel : ObservableObject
             var completedLocal = task.CompletedAt is { } at ? TimeZoneInfo.ConvertTime(at, _zone) : (DateTimeOffset?)null;
             return new OccurrencePipViewModel(null, headDate, OccurrencePipKind.Ended, completedLocal);
         }
-        return new OccurrencePipViewModel(null, headDate, OccurrencePipKind.Next, null);
+        return new OccurrencePipViewModel(null, headDate, OccurrencePipKind.Current, null);
     }
 
+    /// <summary>Appends <see cref="_visibleFutureCount"/> projected future pips (예정) from the cached
+    /// <see cref="_upcomingDates"/> to the tail of the strip.</summary>
+    private void AppendFuturePips()
+    {
+        var count = Math.Clamp(_visibleFutureCount, 0, _upcomingDates.Count);
+        for (var i = 0; i < count; i++)
+            Timeline.Add(new OccurrencePipViewModel(null, _upcomingDates[i], OccurrencePipKind.Future, null));
+    }
+
+    /// <summary>Sets how many future (예정) pips trail the current cycle — the page drives this from the
+    /// strip's visible width so the future fills the band. Re-slices the cached projection in place (no
+    /// store/rule work), clamped to what was projected, and only touches the strip when the count changes.</summary>
+    public void SetVisibleFutureCount(int count)
+    {
+        count = Math.Clamp(count, 0, _upcomingDates.Count);
+        var current = Timeline.Count(pip => pip.Kind == OccurrencePipKind.Future);
+        if (count == current)
+            return;
+        _visibleFutureCount = count;
+        while (Timeline.Count > 0 && Timeline[^1].Kind == OccurrencePipKind.Future)
+            Timeline.RemoveAt(Timeline.Count - 1);
+        AppendFuturePips();
+    }
+
+    /// <summary>Skipped and missed cycles are not distinguished in the strip — anything not performed reads
+    /// as 미수행.</summary>
     private static OccurrencePipKind MapPipKind(OccurrenceStatus status) => status switch
     {
         OccurrenceStatus.Completed => OccurrencePipKind.Completed,
-        OccurrenceStatus.Skipped => OccurrencePipKind.Skipped,
-        OccurrenceStatus.Missed => OccurrencePipKind.Missed,
         _ => OccurrencePipKind.Missed,
     };
 
@@ -768,6 +822,24 @@ public partial class TaskDetailViewModel : ObservableObject
         await _recurrence.UpdateOccurrenceStatusAsync(occurrenceId, status);
         if (_taskId is { } id && await _store.GetAsync<TaskItem>(id) is { } task)
             await LoadTimelineAsync(task);
+    }
+
+    /// <summary>Undoes the most recent completion (실수로 완료 취소): rolls the series back so that cycle is
+    /// the live current cycle again, open and incomplete with its checklist restored, and drops its record.
+    /// The service guards this to the latest completion only; a guard-declined click (returns <c>false</c>)
+    /// lets the caller fall back to the editor flyout. On success the owning list, sidebar counts, and the
+    /// panel all refresh, since the series' current cycle has moved.</summary>
+    public async Task<bool> UndoCompletionAsync(Guid occurrenceId)
+    {
+        if (_taskId is not { } id)
+            return false;
+        await FlushAsync();
+        if (!await _recurrence.UndoCompletionAsync(id, occurrenceId, _clock.GetUtcNow()))
+            return false;
+        await _refreshOwner();
+        _navNotifier.NotifyCountsChanged();
+        await OpenAsync(id); // reload the rolled-back (now current) cycle + rebuilt strip
+        return true;
     }
 
     /// <summary>반복 종료 — ends the series (the only path that completes a recurring task): stamps its

@@ -768,7 +768,7 @@
                             BackgroundSizing="InnerBorderEdge"
                             Visibility="{x:Bind ViewModel.Detail.IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                             <StackPanel Spacing="{StaticResource CueGap8}">
-                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="기록" />
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="반복 기록" />
                                 <Grid ColumnSpacing="{StaticResource CueGap4}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -802,12 +802,11 @@
                                             </ItemsRepeater.Layout>
                                             <ItemsRepeater.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:OccurrencePipViewModel">
-                                                    <!-- Each pip reads like a day cell from the old horizontal timeline's header:
-                                                         the date sits up top (SemiBold) over a status glyph + word, with the live
-                                                         head pip (다음 / 종료) wrapping its date in an accent pill — the same accent
-                                                         "today" marker that header used. Only that day-strip content layout is
-                                                         borrowed; the pips stay flat (no card surface) so the 기록 strip keeps the
-                                                         same chrome as the other detail tabs. -->
+                                                    <!-- One cycle in the 반복 기록 strip, laid out like the old horizontal timeline's
+                                                         day cell: the date up top (SemiBold) over a status glyph + word, with breathing
+                                                         room between them. Color carries the state alongside the glyph and label (never
+                                                         alone) — soft accent ● 완료, gray ○ 현재 (pending), gray × 미수행, dim ◌ 예정.
+                                                         Future cycles dim out and take no click; only recorded cycles are interactive. -->
                                                     <Button
                                                         Width="{StaticResource CueTimelinePipWidth}"
                                                         Height="{StaticResource CueTimelineStripHeight}"
@@ -815,43 +814,22 @@
                                                         Background="Transparent"
                                                         BorderThickness="0"
                                                         CornerRadius="{StaticResource CueRadiusSmall}"
+                                                        Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
+                                                        IsHitTestVisible="{x:Bind IsInteractive}"
                                                         Click="OccurrencePip_Click"
                                                         AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
                                                         ToolTipService.ToolTip="{x:Bind Tooltip, Mode=OneWay}">
-                                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="2">
-                                                            <!-- Date slot — one fixed-height row shared by every pip so the glyph and
-                                                                 status below line up across recorded and head pips. Both date variants
-                                                                 are centered in this same slot, so only the emphasis differs (the head
-                                                                 pip's accent pill — the old timeline's "today" disc), never the position. -->
-                                                            <Grid Height="22">
-                                                                <Border
-                                                                    Height="22"
-                                                                    MinWidth="34"
-                                                                    Padding="8,0"
-                                                                    HorizontalAlignment="Center"
-                                                                    VerticalAlignment="Center"
-                                                                    Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                                                    CornerRadius="11"
-                                                                    Visibility="{x:Bind IsHead, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                                                                    <TextBlock
-                                                                        HorizontalAlignment="Center"
-                                                                        VerticalAlignment="Center"
-                                                                        TextLineBounds="Tight"
-                                                                        FontFamily="{StaticResource CueFontFamilySemiBold}"
-                                                                        FontSize="{StaticResource CueFontListMeta}"
-                                                                        Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                                        Text="{x:Bind DateLabel}" />
-                                                                </Border>
-                                                                <TextBlock
-                                                                    HorizontalAlignment="Center"
-                                                                    VerticalAlignment="Center"
-                                                                    TextLineBounds="Tight"
-                                                                    FontFamily="{StaticResource CueFontFamilySemiBold}"
-                                                                    FontSize="{StaticResource CueFontListMeta}"
-                                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                    Text="{x:Bind DateLabel}"
-                                                                    Visibility="{x:Bind IsNotHead, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                                                            </Grid>
+                                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="{StaticResource CueGap4}">
+                                                            <TextBlock
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                TextAlignment="Center"
+                                                                TextLineBounds="Tight"
+                                                                FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                                                FontSize="{StaticResource CueFontListMeta}"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind DateLabel}" />
                                                             <TextBlock
                                                                 Height="20"
                                                                 HorizontalAlignment="Center"

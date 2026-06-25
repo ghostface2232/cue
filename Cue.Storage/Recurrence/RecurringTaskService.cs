@@ -96,7 +96,17 @@ public sealed class RecurringTaskService : IRecurringTaskService
             // Record this advancing cycle as a history entry owned by the series. A completed cycle freezes
             // the ticked checklist; a skipped/missed cycle keeps no snapshot. (Save before the advance so a
             // crash between the two leaves an overwritable orphan — see the class remarks.)
-            var occurrence = CreateOccurrence(task, status, status == OccurrenceStatus.Completed ? at : null, occurrenceUtc);
+            //
+            // The id is normally the cycle's deterministic id so a crash-retry overwrites the orphan rather
+            // than duplicating. But once a cycle's record has been tombstoned — an undo rolled that
+            // completion back (see UndoCompletionAsync) — the store refuses to revive that id, and reviving
+            // it would also be wrong: this is a brand-new completion of the now-current cycle, not the same
+            // record. So when the deterministic id is a tombstone, mint a fresh id for the new record. The
+            // tombstone stays dead and the index still shows exactly one live record for the date.
+            var occurrenceId = OccurrenceId(task.Id, occurrenceUtc);
+            if (await tx.GetAsync<RecurrenceOccurrence>(occurrenceId, ct).ConfigureAwait(false) is { IsDeleted: true })
+                occurrenceId = Guid.NewGuid();
+            var occurrence = CreateOccurrence(task, occurrenceId, status, status == OccurrenceStatus.Completed ? at : null);
             await tx.SaveAsync(occurrence, ct).ConfigureAwait(false);
 
             // Surface the advanced cycle's local date (matching how the index projects WhenDate) so the
@@ -146,14 +156,95 @@ public sealed class RecurringTaskService : IRecurringTaskService
             return true;
         }, cancellationToken);
 
+    public async Task<IReadOnlyList<DateOnly>> GetUpcomingOccurrencesAsync(Guid taskId, int count, CancellationToken cancellationToken = default)
+    {
+        if (count <= 0)
+            return Array.Empty<DateOnly>();
+
+        var task = await _store.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
+        if (task is null || task.IsDeleted || task.IsCompleted || task.Recurrence is null)
+            return Array.Empty<DateOnly>();
+
+        // Walk the rule forward from the current cycle, collecting each next local date. Every step seeds
+        // the search from the previous occurrence's own instant, so the dates stay on the rule's grid
+        // (e.g. every Monday stays a Monday) rather than drifting off the clock.
+        var cursor = task.When.Date?.Utc ?? task.Recurrence.Anchor.Utc;
+        var dates = new List<DateOnly>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var next = RecurrenceCalculator.Next(task.Recurrence, cursor);
+            if (next is null)
+                break; // series exhausted (UNTIL/COUNT) — no further cycle to project
+            dates.Add(DateOnly.FromDateTime(next.Value.ToLocal().DateTime));
+            cursor = next.Value.Utc;
+        }
+        return dates;
+    }
+
+    public async Task<bool> UndoCompletionAsync(Guid taskId, Guid occurrenceId, DateTimeOffset undoneAt, CancellationToken cancellationToken = default)
+    {
+        var rolledBack = false;
+
+        await _store.RunInTransactionAsync(async (tx, ct) =>
+        {
+            var task = await tx.GetAsync<TaskItem>(taskId, ct).ConfigureAwait(false);
+            if (task is null || task.IsDeleted || task.IsCompleted || task.Recurrence is null)
+                return;
+
+            var occurrence = await tx.GetAsync<RecurrenceOccurrence>(occurrenceId, ct).ConfigureAwait(false);
+            if (occurrence is null || occurrence.IsDeleted
+                || occurrence.SeriesId != task.Id
+                || occurrence.Status != OccurrenceStatus.Completed)
+                return;
+
+            // Guard to the latest completion only: this record's own next scheduled cycle must be exactly
+            // the series' current When (it is the immediate predecessor of the live cycle). Any other
+            // record is a history correction, not an undo, and is left untouched — UpdateOccurrenceStatus
+            // handles those. (The instant round-trips for all-day cycles too: AllDay keeps the time.)
+            var occurrenceUtc = occurrence.When.Date?.Utc ?? task.Recurrence.Anchor.Utc;
+            var next = RecurrenceCalculator.Next(task.Recurrence, occurrenceUtc);
+            if (next is null || task.When.Date is not { } currentWhen || next.Value.Utc != currentWhen.Utc)
+                return;
+
+            // Roll the series back to this cycle: restore its frozen When (keeping all-day), reopen it, and
+            // re-tick the checklist exactly as it was when the cycle was completed. The cycle is the live
+            // current one again, so its history record is tombstoned.
+            task.When = occurrence.When;
+            task.CompletedAt = null;
+            RestoreChecklist(task, occurrence.ChecklistSnapshot);
+            await tx.SaveAsync(task, ct).ConfigureAwait(false);
+
+            occurrence.DeletedAt = undoneAt;
+            await tx.SaveAsync(occurrence, ct).ConfigureAwait(false);
+
+            rolledBack = true;
+        }, cancellationToken).ConfigureAwait(false);
+
+        return rolledBack;
+    }
+
+    /// <summary>Re-applies a completed cycle's frozen checklist state onto the series' live checklist,
+    /// matching items by id (best-effort — items the series has since dropped are ignored). Used by undo
+    /// so rolling a completion back restores the work that was ticked that cycle.</summary>
+    private static void RestoreChecklist(TaskItem series, List<ChecklistItem> snapshot)
+    {
+        if (snapshot.Count == 0)
+            return;
+        var checkedById = snapshot.ToDictionary(item => item.Id, item => item.IsChecked);
+        foreach (var item in series.Checklist)
+            if (checkedById.TryGetValue(item.Id, out var isChecked))
+                item.IsChecked = isChecked;
+    }
+
     /// <summary>
     /// A history record of one cycle, owned by the series via <see cref="RecurrenceOccurrence.SeriesId"/>.
-    /// Its id is deterministic (not <see cref="Guid.NewGuid"/>) so a crash-retried record of the same
-    /// un-advanced cycle overwrites rather than duplicates it.
+    /// The caller resolves <paramref name="id"/> — the cycle's deterministic id in the normal case (so a
+    /// crash-retried record of the same un-advanced cycle overwrites rather than duplicates), or a fresh id
+    /// when that deterministic id has been tombstoned by an undo.
     /// </summary>
-    private static RecurrenceOccurrence CreateOccurrence(TaskItem series, OccurrenceStatus status, DateTimeOffset? completedAt, DateTimeOffset occurrenceUtc) => new()
+    private static RecurrenceOccurrence CreateOccurrence(TaskItem series, Guid id, OccurrenceStatus status, DateTimeOffset? completedAt) => new()
     {
-        Id = OccurrenceId(series.Id, occurrenceUtc),
+        Id = id,
         SeriesId = series.Id,
         // The cycle's own scheduled date, frozen. Falls back to the anchor when the series carries no
         // concrete When, preserving the all-day flag either way.

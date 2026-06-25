@@ -285,8 +285,12 @@ public sealed partial class TaskListPage : Page
 
     // --- Recurrence detail panel: timeline + series lifecycle ---
 
-    // How far the › / ‹ chevrons nudge the timeline strip: a few pips (pip width + spacing).
-    private const double TimelineScrollStep = (52 + 4) * 3;
+    // One pip's horizontal stride in the strip: its width (CueTimelinePipWidth) plus the inter-pip
+    // spacing (CueGap4). Used to size the chevron nudge, to count how many future pips fill the visible
+    // width, and to scroll the strip onto the current cycle.
+    private const double TimelinePipStride = 52 + 4;
+    // How far the › / ‹ chevrons nudge the timeline strip: a few pips.
+    private const double TimelineScrollStep = TimelinePipStride * 3;
 
     /// <summary>Confirms 반복 종료 with a light anchored popover. Not destructive (nothing is deleted) —
     /// the series is completed and moves to 완료한 일 — so it uses a plain confirm, not the red delete tone.</summary>
@@ -326,27 +330,44 @@ public sealed partial class TaskListPage : Page
         scroller.ChangeView(target, null, null, disableAnimation: !_animationsEnabled);
     }
 
-    /// <summary>When the strip's content finishes laying out after an open, scroll it to the live head pip
-    /// on the right so the most recent cycles and the next/terminal cycle read by default. Cleared after
-    /// the first scroll so paging older cycles in (‹) doesn't snap back to the head.</summary>
+    /// <summary>As the strip lays out, keep it filled with as many dimmed future (예정) pips as the visible
+    /// width allows, and — once, after an open — scroll it onto the current cycle so it reads centered with
+    /// recent history to its left and the future to its right. Cleared after the first scroll so paging
+    /// older cycles in (‹) doesn't snap back.</summary>
     private void TimelineRepeater_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (!_timelineScrollToEndPending || TimelineScroller is not { } scroller) return;
-        if (scroller.ScrollableWidth <= 0) return;
+        if (TimelineScroller is not { } scroller) return;
+
+        // Project enough future pips to fill a screenful past the current cycle. SetVisibleFutureCount
+        // no-ops when the count is unchanged, so the pip add it triggers settles after one extra pass.
+        if (scroller.ViewportWidth > 0)
+            ViewModel.Detail.SetVisibleFutureCount((int)Math.Ceiling(scroller.ViewportWidth / TimelinePipStride));
+
+        if (!_timelineScrollToEndPending || scroller.ScrollableWidth <= 0) return;
         _timelineScrollToEndPending = false;
-        scroller.ChangeView(scroller.ScrollableWidth, null, null, disableAnimation: true);
+        // Land on the current cycle with a couple of recent pips visible to its left (the future fills the
+        // rest of the viewport to the right), instead of snapping to the far end.
+        var target = Math.Max(0, (ViewModel.Detail.CurrentCycleIndex - 2) * TimelinePipStride);
+        scroller.ChangeView(target, null, null, disableAnimation: true);
     }
 
-    /// <summary>Opens a recorded cycle's flyout: its completion time, its frozen checklist snapshot, and
-    /// the controls to correct its status. The live head pip (no occurrence id) is not editable, so it
-    /// opens nothing. Editing a past cycle never shifts the series' next scheduled cycle.</summary>
+    /// <summary>Handles a click on a recorded cycle's pip. The latest completion is the quick undo —
+    /// a single click rolls that accidental completion back to the current, incomplete cycle. Any other
+    /// recorded cycle opens its flyout: the completion time, the frozen checklist snapshot, and the status
+    /// picker (완료 / 미수행). The current/future/terminal pips carry no record and take no click.</summary>
     private async void OccurrencePip_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: OccurrencePipViewModel pip } anchor) return;
-        if (pip.OccurrenceId is not { } occurrenceId) return; // head pip — not a record
+        if (pip.OccurrenceId is not { } occurrenceId) return; // current / future / 종료 — not a record
 
         await RunSafelyAsync(async () =>
         {
+            // Latest completion: undo it in one click. The service guards this to a genuine latest
+            // completion; if it declines, fall through to the same editor flyout as the older cycles.
+            if (pip is { Kind: OccurrencePipKind.Completed, IsLatestRecord: true }
+                && await ViewModel.Detail.UndoCompletionAsync(occurrenceId))
+                return;
+
             var occurrence = await ViewModel.Detail.GetOccurrenceAsync(occurrenceId);
             if (occurrence is null) return;
             BuildOccurrenceFlyout(pip, occurrence).ShowAt(anchor);
@@ -398,20 +419,22 @@ public sealed partial class TaskListPage : Page
             FontSize = 12,
             Opacity = 0.6,
         });
-        // The three status choices. Picking one corrects this cycle and closes the popover; it never
-        // touches the series' next scheduled cycle (see UpdateOccurrenceStatusAsync).
+        // Two status choices — 완료 or 미수행 (skipped and missed aren't distinguished). Picking one
+        // corrects this cycle and closes the popover; it never touches the series' next scheduled cycle
+        // (see UpdateOccurrenceStatusAsync).
         var picker = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         foreach (var (status, label) in new[]
         {
             (OccurrenceStatus.Completed, "완료"),
-            (OccurrenceStatus.Skipped, "건너뜀"),
             (OccurrenceStatus.Missed, "미수행"),
         })
         {
             var captured = status;
             var button = new Button { Content = label, MinWidth = 56 };
-            // Mark the current status so the picker reads as a choice, not three equal actions.
-            if (occurrence.Status == status
+            // Mark the current status so the picker reads as a choice, not two equal actions. A legacy
+            // 건너뜀 record maps onto 미수행 here, since the two are no longer distinguished.
+            var effectiveStatus = occurrence.Status == OccurrenceStatus.Skipped ? OccurrenceStatus.Missed : occurrence.Status;
+            if (effectiveStatus == status
                 && Application.Current.Resources.TryGetValue("AccentButtonStyle", out var accentStyle)
                 && accentStyle is Style accent)
                 button.Style = accent;

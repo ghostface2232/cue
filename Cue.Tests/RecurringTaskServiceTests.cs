@@ -489,6 +489,125 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         Assert.Single(await reopened.GetOccurrencesAsync(taskId));
     }
 
+    [Fact]
+    public async Task GetUpcoming_ProjectsNextCyclesAfterTheCurrentOne_OnTheRuleGrid()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem { Title = "매일 운동", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+
+        var upcoming = await service.GetUpcomingOccurrencesAsync(task.Id, 3);
+
+        // Strictly after the current cycle (today), three days on the daily grid — never today itself.
+        Assert.Equal(new[] { Today.AddDays(1), Today.AddDays(2), Today.AddDays(3) }, upcoming);
+    }
+
+    [Fact]
+    public async Task GetUpcoming_StopsWhenTheRuleIsExhausted()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        // Only two more cycles exist after the current one (COUNT=3 total from the anchor).
+        var task = new TaskItem
+        {
+            Title = "세 번만",
+            When = OnDay(Today),
+            Recurrence = new RecurrenceRule("FREQ=DAILY;COUNT=3", OnDayZoned(Today)),
+        };
+        await store.SaveAsync(task);
+
+        var upcoming = await service.GetUpcomingOccurrencesAsync(task.Id, 10);
+
+        // Asked for 10 but the series only has two cycles left — projection stops, never invents dates.
+        Assert.Equal(new[] { Today.AddDays(1), Today.AddDays(2) }, upcoming);
+    }
+
+    [Fact]
+    public async Task UndoCompletion_RollsTheLatestCompletionBackToTheCurrentCycle()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem
+        {
+            Title = "매일 운동",
+            When = OnDay(Today),
+            Recurrence = Daily(Today),
+            Checklist = { new ChecklistItem { Title = "스트레칭" } },
+        };
+        await store.SaveAsync(task);
+
+        // Tick the checklist, complete the cycle (advances to tomorrow, freezes the ticked checklist).
+        var current = await store.GetAsync<TaskItem>(task.Id);
+        current!.Checklist[0].IsChecked = true;
+        await store.SaveAsync(current);
+        await service.CompleteAsync(task.Id, Now);
+        var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
+
+        var undone = await service.UndoCompletionAsync(task.Id, occurrence.Id, Now);
+
+        Assert.True(undone);
+        var rolledBack = await store.GetAsync<TaskItem>(task.Id);
+        Assert.False(rolledBack!.IsCompleted);
+        Assert.Equal(Today, WhenDay(rolledBack)); // current cycle is the rolled-back day again
+        Assert.True(rolledBack.Checklist[0].IsChecked); // the frozen checklist state is restored
+        // The record is gone (tombstoned) — the cycle is the live current one again, not history.
+        Assert.Empty(await store.GetOccurrencesAsync(task.Id));
+    }
+
+    [Fact]
+    public async Task UndoCompletion_DeclinesForANonLatestCompletion()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem { Title = "매일 운동", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+
+        // Two completions: the first cycle is no longer the immediate predecessor of the current one.
+        await service.CompleteAsync(task.Id, Now);                 // records Today, advances to +1
+        await service.CompleteAsync(task.Id, Now.AddDays(1));      // records +1, advances to +2
+        var records = await store.GetOccurrencesAsync(task.Id);    // most-recent-first
+        var older = records[^1];                                   // the Today record (not the latest)
+
+        var undone = await service.UndoCompletionAsync(task.Id, older.Id, Now);
+
+        // The guard declines: the series is not rolled back and no record is removed.
+        Assert.False(undone);
+        Assert.Equal(Today.AddDays(2), WhenDay((await store.GetAsync<TaskItem>(task.Id))!));
+        Assert.Equal(2, await store.GetOccurrenceCountAsync(task.Id));
+    }
+
+    [Fact]
+    public async Task CompletingTheSameCycleTwice_OverwritesRatherThanDuplicating()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem { Title = "매일 운동", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+
+        // Complete today's cycle, then roll it back so today is the current cycle again, then complete it
+        // once more. The occurrence id is derived from (series, cycle instant), so the second completion
+        // reproduces the same id and overwrites — a date never gets two completed records.
+        await service.CompleteAsync(task.Id, Now);
+        var first = Assert.Single(await store.GetOccurrencesAsync(task.Id));
+        await service.UndoCompletionAsync(task.Id, first.Id, Now);
+        await service.CompleteAsync(task.Id, Now);
+
+        var occurrence = Assert.Single(await store.GetOccurrencesAsync(task.Id));
+        Assert.Equal(Today, occurrence.OccurrenceDate);
+        Assert.Equal(OccurrenceStatus.Completed, occurrence.Status);
+    }
+
     private sealed class FixedClock : TimeProvider
     {
         private readonly DateTimeOffset _now;
