@@ -30,11 +30,13 @@ public sealed partial class TaskListPage : Page
     private const double DetailPrimaryMinWidth = 340;
     private const double DetailCompactBreakpoint = 390;
 
-    // Below this content width the list + detail panel can't sit side by side comfortably, so the panel
-    // switches to a full-width overlay over the list. Set near the floor where the list can still hold
-    // its primary min beside a shrunk panel, so the side-by-side (and its resize handle) survives as far
-    // down as it usefully can. A small hysteresis band keeps the switch from chattering at the edge.
-    private const double SideBySideMinWidth = 600;
+    // Below this content width the list + detail panel can't both hold their minimums side by side, so the
+    // panel switches to a full-width overlay over the list. Set to exactly the floor where the list keeps
+    // its primary min (340) beside the panel at its absolute min (260) plus the column spacing (16) and the
+    // panel's margin slack (8) — 624. Going overlay here, rather than letting the panel keep shrinking,
+    // is what keeps the panel from ever eating into the list's min. A small hysteresis band keeps the
+    // switch from chattering at the edge.
+    private const double SideBySideMinWidth = DetailPrimaryMinWidth + DetailAbsoluteMinWidth + 16 + 8;
     private const double LayoutHysteresis = 24;
     // The list reflows each row's right-edge group/tag chips beneath the title once its column gets this
     // narrow — independent of the panel, since the list also narrows when the panel is open side by side.
@@ -47,7 +49,7 @@ public sealed partial class TaskListPage : Page
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
     // Task-row repeaters (the open list + each priority section), used to locate a row's realized
-    // container for the post-completion fold/spin. Completed/Logbook repeaters are not registered — their
+    // container for the post-completion fold. Completed/Logbook repeaters are not registered — their
     // rows can't enter the acknowledgement flow.
     private readonly List<ItemsRepeater> _taskRepeaters = new();
     // Per-row pending fold timers for the completion-acknowledgement moment, so a hover can pause one and
@@ -85,7 +87,7 @@ public sealed partial class TaskListPage : Page
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
         _navNotifier.Changed += OnNavDataChanged;
         // The view model raises this right after a task is completed from an active list; the page runs
-        // the in-row acknowledgement timing (fold, and a refresh spin for a repeating task).
+        // the in-row moment (a terminal completion's undo bar + fold, or a repeating one's settle in place).
         ViewModel.CompletionAcknowledged += OnCompletionAcknowledged;
     }
 
@@ -689,7 +691,10 @@ public sealed partial class TaskListPage : Page
 
         var (min, max) = DetailWidthRange();
         var width = Math.Clamp(_detailPreferredWidth, min, max);
-        if (Math.Abs(DetailPanel.Width - width) > 0.5)
+        // Reassign on NaN too: overlay mode parks Width at NaN, and `Math.Abs(NaN - width) > 0.5` is false,
+        // so without the explicit NaN check the panel would never get a finite width back when it returns to
+        // side-by-side. That left Width stuck at NaN, freezing every later drag — the dead-handle bug.
+        if (double.IsNaN(DetailPanel.Width) || Math.Abs(DetailPanel.Width - width) > 0.5)
             DetailPanel.Width = width;
 
         // The panel is resizable only when the window leaves real drag room; otherwise it's pinned at its
@@ -719,8 +724,13 @@ public sealed partial class TaskListPage : Page
 
     private (double Min, double Max) DetailWidthRange()
     {
+        // maxByWindow is the widest the panel can be while the list column still keeps its primary min.
+        // Cap the panel strictly at it — never floor above it — so the list's min is sacrosanct and the
+        // panel can never eat into it (the list column is `*` with no MinWidth, so this clamp is its only
+        // guard). The panel never has to shrink below its own absolute min here because SideBySideMinWidth
+        // flips it to a full-width overlay before the window gets that narrow.
         var maxByWindow = ContentSplitGrid.ActualWidth - DetailPrimaryMinWidth - ContentSplitGrid.ColumnSpacing - 8;
-        var max = Math.Min(DetailMaxWidth, Math.Max(DetailAbsoluteMinWidth, maxByWindow));
+        var max = Math.Min(DetailMaxWidth, maxByWindow);
         var min = Math.Min(DetailMinWidth, max);
         return (min, max);
     }

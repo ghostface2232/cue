@@ -141,7 +141,16 @@ Domain types are pure data holders with no clock or persistence access: they nev
 - Multi-device sync: point the Store root folder at a OneDrive or Google Drive synced folder, then add a folder watcher and conflict-copy reconciliation (last-write-wins by `UpdatedAt`, honoring tombstones). This is additive because the Store already speaks files.
 - Files-grade microinteraction and material polish.
 - Reminders via `AppNotifications`. Scheduled reminders while the app is closed require package identity plus a background task or the Windows Task Scheduler.
-- Packaging and distribution via `winapp pack`, moving from unpackaged to a direct installer or MSIX as needed.
+## Release and distribution
+
+The shipped artifact is an **unpackaged, self-contained `.exe` installed by Inno Setup** — not MSIX. This matches invariant-style packaging intent (unpackaged, so the app can read user-chosen cloud folders later without MSIX virtual-filesystem constraints) and gives a clean, admin-free install.
+
+- **Versioning.** `Cue.csproj` `<Version>` is the single source of truth (starts at `0.1.0`). The Settings → **정보** section reads it back from the assembly at runtime. A release git tag must be that version prefixed with `v` (e.g. `v0.1.0`); the workflow fails the build if the tag and `<Version>` disagree. Bump `<Version>` first, commit, then tag.
+- **What's bundled.** `build-installer.ps1` publishes self-contained (`--self-contained` + `WindowsAppSDKSelfContained=true` + `WindowsPackageType=None`), so the **.NET runtime and the Windows App SDK ship inside the app folder** — nothing to pre-install. The one dependency the publish does *not* carry is the **Visual C++ 2015–2022 runtime** (WinUI 3 links against `vcruntime140.dll` / `msvcp140.dll` …); the script copies those DLLs **app-local** into the publish folder (from the VS C++ redist, falling back to System32), so the install needs no admin rights and no separate VC++ Redistributable. Trimming is disabled for the publish (WinUI + XAML reflection makes it unsafe), so the installer is large (~280 MB unpacked) but reliable.
+- **Installer.** `installer/Cue.iss` — Inno Setup 6.3+, Korean (`compiler:Languages\Korean.isl`), `WizardStyle=modern`, **per-user** (`PrivilegesRequired=lowest`, installs under `{autopf}` → local app data, no UAC). The `AppId` GUID is fixed — keep it constant so version upgrades replace in place. Output: `dist/CueSetup-win-x64.exe`. x64 only for now.
+- **Workflow.** `.github/workflows/release.yml` triggers on a pushed `v*` tag: set up .NET 10, verify the tag matches `<Version>`, `choco install innosetup`, run `build-installer.ps1`, then create a **draft** GitHub Release (`--draft --generate-notes`) with the installer attached. Final notes and publishing are done by hand. Re-running for an existing tag re-uploads the asset (`--clobber`) instead of failing.
+- **Local build.** `pwsh -File build-installer.ps1` produces the same `dist/CueSetup-win-x64.exe` (needs the .NET 10 SDK, a VS C++ workload or the VC++ Redistributable for the runtime DLLs, and Inno Setup 6.3+).
+- To move to MSIX / the Store later, add a packaged flavor alongside this — it stays additive.
 ## Commit discipline
  
 Commit after each major step, and keep each change scoped to a single layer where possible.

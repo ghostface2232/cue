@@ -306,6 +306,16 @@
                         <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="알림" />
                     </Grid>
                 </ListViewItem>
+                <ListViewItem Tag="About">
+                    <Grid ColumnSpacing="{StaticResource CueGap8}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE946;" Style="{StaticResource SettingsNavGlyphStyle}" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource SettingsNavTextStyle}" Text="정보" />
+                    </Grid>
+                </ListViewItem>
             </ListView>
 
             <ScrollViewer
@@ -540,6 +550,48 @@
                                     Grid.Column="1"
                                     IsEnabled="False"
                                     Style="{StaticResource SettingsToggleStyle}" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 정보 -->
+                    <StackPanel
+                        x:Name="AboutSection"
+                        Spacing="{StaticResource CueGap12}"
+                        Visibility="Collapsed">
+                        <TextBlock
+                            Margin="2,0,0,2"
+                            Style="{StaticResource CueSectionHeaderTextStyle}"
+                            Text="정보" />
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <Grid Style="{StaticResource SettingsRowStyle}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <!-- App icon, sized to the row's two-line text block. -->
+                                <Image
+                                    Width="44"
+                                    Height="44"
+                                    VerticalAlignment="Center"
+                                    Source="ms-appx:///Assets/AppIcon.ico" />
+                                <StackPanel
+                                    Grid.Column="1"
+                                    Margin="14,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Spacing="{StaticResource CueGap2}">
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="Cue" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="한국어 우선 할 일 앱" />
+                                </StackPanel>
+                                <TextBlock
+                                    x:Name="VersionText"
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    FontSize="{StaticResource CueFontRowSub}"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="—" />
                             </Grid>
                         </Border>
                     </StackPanel>

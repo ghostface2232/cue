@@ -1,0 +1,57 @@
+# Builds the clean, per-user installer and creates a DRAFT GitHub Release whenever a version
+# tag (e.g. v0.1.0) is pushed. The draft carries the installer asset and auto-generated notes as a
+# starting point; writing the final notes and publishing the release are done manually.
+#
+# The tag must match Cue.csproj's <Version> prefixed with "v" (the build verifies this). The
+# installer is produced by build-installer.ps1: a self-contained, unpackaged WinUI 3 publish
+# (.NET + Windows App SDK bundled) with the VC++ runtime added app-local, packaged by Inno Setup.
+#
+# Local alternative: pwsh -File build-installer.ps1 (then attach dist\CueSetup-win-x64.exe by hand).
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify tag matches Cue.csproj <Version>
+        shell: pwsh
+        run: |
+          [xml]$proj = Get-Content Cue.csproj
+          $version = @($proj.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          if ($version -ne $tag) {
+            throw "Tag '$tag' does not match Cue.csproj <Version> '$version'. Bump <Version> or retag."
+          }
+          Write-Host "Version $version matches tag ${{ github.ref_name }}."
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: pwsh -File build-installer.ps1
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Creates a DRAFT release with the installer asset + auto-generated notes as a starting
+        # point — final notes and publishing are done manually. Idempotent: if a release/draft for
+        # this tag already exists, just replace the asset instead of failing.
+        run: >
+          gh release create "${{ github.ref_name }}" dist/CueSetup-win-x64.exe
+          --title "${{ github.ref_name }}" --draft --generate-notes
+          || gh release upload "${{ github.ref_name }}" dist/CueSetup-win-x64.exe --clobber

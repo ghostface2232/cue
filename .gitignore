@@ -45,6 +45,9 @@ PublishScripts/
 # Keep the committed per-platform publish profiles the csproj references
 !Properties/PublishProfiles/*.pubxml
 
+# Installer output (built by build-installer.ps1 / the release workflow)
+dist/
+
 # Code analysis and tooling
 _ReSharper*/
 *.DotSettings.user

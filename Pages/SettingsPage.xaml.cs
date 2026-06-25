@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Numerics;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
@@ -53,8 +54,23 @@ public sealed partial class SettingsPage : Page
         PopulateThemes();
         ReloadCustomDateRows();
         AutoAfternoonSwitch.IsOn = _preferences.AutoAfternoonForBareOneToSix;
+        VersionText.Text = $"버전 {AppVersion()}";
         ApplySelectedSection();
         _loading = false;
+    }
+
+    /// <summary>The app's display version, read from the assembly so it always matches what was shipped.
+    /// Prefers the informational version (the csproj's &lt;Version&gt;, e.g. "0.1.0"), trimming any
+    /// "+commit" SourceLink suffix; falls back to the three-part assembly version.</summary>
+    private static string AppVersion()
+    {
+        var assembly = typeof(SettingsPage).Assembly;
+        var informational = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        if (!string.IsNullOrEmpty(informational))
+            return informational.Split('+')[0];
+        return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 
     private void PopulateFirstDays()
@@ -150,6 +166,7 @@ public sealed partial class SettingsPage : Page
         ParsingSection.Visibility = selected == "Parsing" ? Visibility.Visible : Visibility.Collapsed;
         AppearanceSection.Visibility = selected == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
         NotificationsSection.Visibility = selected == "Notifications" ? Visibility.Visible : Visibility.Collapsed;
+        AboutSection.Visibility = selected == "About" ? Visibility.Visible : Visibility.Collapsed;
 
         UpdateNavGlyphs();
 
@@ -158,6 +175,7 @@ public sealed partial class SettingsPage : Page
             "Parsing" => ParsingSection,
             "Appearance" => AppearanceSection,
             "Notifications" => NotificationsSection,
+            "About" => AboutSection,
             _ => (FrameworkElement)TimeSection,
         };
         AnimateSectionIn(section);
