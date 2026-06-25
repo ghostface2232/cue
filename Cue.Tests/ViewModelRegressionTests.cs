@@ -113,6 +113,67 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task CompletingTheTaskOpenInTheDetailPanel_ClosesIt()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "complete me" };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+
+        // Open the task in the detail panel, then complete it from the list checkbox.
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.True(vm.Detail.IsOpen);
+        Assert.Equal(task.Id, vm.Detail.CurrentTaskId);
+
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+
+        // Finalizing drops the row out of the open list and, because it was the task on screen in the
+        // detail panel, closes the panel so it doesn't linger showing the completed task.
+        await vm.FinalizeCompletionAsync(row);
+        Assert.Empty(vm.Tasks);
+        Assert.False(vm.Detail.IsOpen);
+        Assert.Null(vm.Detail.CurrentTaskId);
+    }
+
+    [Fact]
+    public async Task CompletingATaskLeavesADifferentOpenDetailPanelAlone()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var completing = new TaskItem { Title = "complete me" };
+        var viewing = new TaskItem { Title = "still editing" };
+        await store.SaveAsync(completing);
+        await store.SaveAsync(viewing);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = vm.Tasks.Single(r => r.Id == completing.Id);
+
+        // A different task is open in the panel; completing the first must not close it.
+        await vm.Detail.OpenAsync(viewing.Id);
+
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.FinalizeCompletionAsync(row);
+
+        Assert.True(vm.Detail.IsOpen);
+        Assert.Equal(viewing.Id, vm.Detail.CurrentTaskId);
+    }
+
+    [Fact]
     public async Task TodayCompletion_MovesTaskIntoTheCollapsedCompletedSection()
     {
         using var temp = new TempDirectory();
