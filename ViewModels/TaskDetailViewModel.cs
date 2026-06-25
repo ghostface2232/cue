@@ -958,7 +958,9 @@ public partial class TaskDetailViewModel : ObservableObject
 
     private async Task LoadTagsAsync(IEnumerable<Guid> selectedIds)
     {
-        var selected = selectedIds.Where(id => id != Guid.Empty).ToHashSet();
+        // A task carries at most one tag. Take only the first of any incoming ids so a legacy task that
+        // still has several on disk loads as single-select here (it collapses to that one on next save).
+        var selected = selectedIds.Where(id => id != Guid.Empty).Take(1).ToHashSet();
         Tags.Clear();
         // A synthetic "태그 없음" row (Guid.Empty) makes the no-tag state explicit and is checked by
         // default; it stays mutually exclusive with the real tags via ToggleTag/SyncNoTagOption.
@@ -967,9 +969,10 @@ public partial class TaskDetailViewModel : ObservableObject
             Tags.Add(new TagEditorOption(tag.Id, tag.Name, selected.Contains(tag.Id), tag.Color));
     }
 
-    /// <summary>Toggles a tag row. The "태그 없음" entry (Guid.Empty) behaves like a reset: choosing it
-    /// clears every real tag; choosing a real tag clears it; and it re-checks on its own once no
-    /// real tag remains selected.</summary>
+    /// <summary>Selects a tag row. A task carries at most one tag, so this is single-select (radio-like):
+    /// choosing a real tag clears every other and selects it; choosing the already-selected tag clears it
+    /// (back to no tag); the "태그 없음" entry (Guid.Empty) clears any selection. The "태그 없음" row
+    /// re-checks on its own once no real tag remains selected.</summary>
     public void ToggleTag(Guid id)
     {
         var target = Tags.FirstOrDefault(tag => tag.Id == id);
@@ -981,7 +984,11 @@ public partial class TaskDetailViewModel : ObservableObject
         }
         else
         {
-            target.IsSelected = !target.IsSelected;
+            var select = !target.IsSelected;
+            // Single-select: clear every row first, then turn the target on (unless it was the one
+            // already selected, in which case the task ends up with no tag).
+            foreach (var tag in Tags) tag.IsSelected = false;
+            target.IsSelected = select;
             SyncNoTagOption();
         }
         RequestAutoSave();

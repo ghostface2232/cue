@@ -815,36 +815,54 @@
                                                         AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
                                                         ToolTipService.ToolTip="{x:Bind Tooltip, Mode=OneWay}">
                                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="2">
-                                                            <!-- Head pip: accent pill around the date (echoes the timeline's "today" disc). -->
-                                                            <Border
-                                                                Height="22"
-                                                                MinWidth="26"
-                                                                Padding="7,0"
-                                                                HorizontalAlignment="Center"
-                                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                                                CornerRadius="11"
-                                                                Visibility="{x:Bind IsHead, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                                            <!-- Date slot — one fixed-height row shared by every pip so the glyph and
+                                                                 status below line up across recorded and head pips. Both date variants
+                                                                 are centered in this same slot, so only the emphasis differs (the head
+                                                                 pip's accent pill — the old timeline's "today" disc), never the position. -->
+                                                            <Grid Height="22">
+                                                                <Border
+                                                                    Height="22"
+                                                                    MinWidth="34"
+                                                                    Padding="8,0"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center"
+                                                                    Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                    CornerRadius="11"
+                                                                    Visibility="{x:Bind IsHead, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                                                    <TextBlock
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center"
+                                                                        TextLineBounds="Tight"
+                                                                        FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                                                        FontSize="{StaticResource CueFontListMeta}"
+                                                                        Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                                                        Text="{x:Bind DateLabel}" />
+                                                                </Border>
                                                                 <TextBlock
                                                                     HorizontalAlignment="Center"
                                                                     VerticalAlignment="Center"
+                                                                    TextLineBounds="Tight"
                                                                     FontFamily="{StaticResource CueFontFamilySemiBold}"
                                                                     FontSize="{StaticResource CueFontListMeta}"
-                                                                    Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                                    Text="{x:Bind DateLabel}" />
-                                                            </Border>
-                                                            <!-- Recorded cycle: plain SemiBold date, sized to match the pill's height. -->
+                                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                    Text="{x:Bind DateLabel}"
+                                                                    Visibility="{x:Bind IsNotHead, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                                            </Grid>
                                                             <TextBlock
-                                                                Height="22"
+                                                                Height="20"
                                                                 HorizontalAlignment="Center"
                                                                 VerticalAlignment="Center"
+                                                                TextAlignment="Center"
                                                                 TextLineBounds="Tight"
-                                                                FontFamily="{StaticResource CueFontFamilySemiBold}"
-                                                                FontSize="{StaticResource CueFontListMeta}"
-                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                Text="{x:Bind DateLabel}"
-                                                                Visibility="{x:Bind IsNotHead, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                                                            <TextBlock HorizontalAlignment="Center" FontSize="{StaticResource CueTimelinePipGlyph}" Foreground="{x:Bind Kind, Mode=OneWay, Converter={StaticResource OccurrencePipKindToBrush}}" Text="{x:Bind Glyph, Mode=OneWay}" />
-                                                            <TextBlock HorizontalAlignment="Center" FontSize="{StaticResource CueFontSecondary}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind StatusLabel, Mode=OneWay}" />
+                                                                FontSize="{StaticResource CueTimelinePipGlyph}"
+                                                                Foreground="{x:Bind Kind, Mode=OneWay, Converter={StaticResource OccurrencePipKindToBrush}}"
+                                                                Text="{x:Bind Glyph, Mode=OneWay}" />
+                                                            <TextBlock
+                                                                HorizontalAlignment="Center"
+                                                                TextAlignment="Center"
+                                                                FontSize="{StaticResource CueFontSecondary}"
+                                                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                                Text="{x:Bind StatusLabel, Mode=OneWay}" />
                                                         </StackPanel>
                                                     </Button>
                                                 </DataTemplate>
