@@ -1061,9 +1061,20 @@ public sealed partial class TaskListPage : Page
         // a refresh spin + "다음: …" for a repeating one) and start the hold timer.
         row.BeginCompletionAcknowledgement(nextOccurrence);
         if (row.IsRecurringCompletion)
-            DispatcherQueue.TryEnqueue(() => StartRefreshSpin(row));   // after the bar lays out
+        {
+            // The swap can shrink the row (a dated/chipped row drops to the bar's height) and the list
+            // repositions as it does. Let that height change finish before spinning, so the two motions
+            // don't overlap. The wait also guarantees the glyph has laid out, so its rotation centre is
+            // its true middle (the circle's centre) rather than 0,0 — which would orbit it off the circle.
+            await Task.Delay(RecurringAckSettleMs);
+            StartRefreshSpin(row);
+        }
         StartAckTimer(row);
     }
+
+    // How long to let the acknowledgement bar settle (the row's height change + the list reposition) before
+    // the refresh glyph spins, so the spin starts in a stable layout and reads as a distinct second beat.
+    private const int RecurringAckSettleMs = 240;
 
     private void StartAckTimer(TaskRowViewModel row)
     {
@@ -1187,7 +1198,12 @@ public sealed partial class TaskListPage : Page
         if (FindDescendant<FontIcon>(container, "AckSpinIcon") is not { } icon) return;
 
         var visual = ElementCompositionPreview.GetElementVisual(icon);
-        visual.CenterPoint = new Vector3((float)icon.ActualWidth / 2f, (float)icon.ActualHeight / 2f, 0f);
+        // Rotate about the glyph's own centre so it spins in place inside the circle. Fall back to the
+        // glyph's font size if it somehow hasn't laid out yet, so the centre is never 0,0 (which would
+        // swing the glyph in an arc out of the circle rather than spinning it on the spot).
+        var halfWidth = (float)(icon.ActualWidth > 0 ? icon.ActualWidth : icon.FontSize) / 2f;
+        var halfHeight = (float)(icon.ActualHeight > 0 ? icon.ActualHeight : icon.FontSize) / 2f;
+        visual.CenterPoint = new Vector3(halfWidth, halfHeight, 0f);
         visual.RotationAxis = new Vector3(0f, 0f, 1f);
         var spin = visual.Compositor.CreateScalarKeyFrameAnimation();
         spin.InsertKeyFrame(0f, 0f);
