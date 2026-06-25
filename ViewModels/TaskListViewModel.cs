@@ -906,14 +906,29 @@ public partial class TaskListViewModel : ObservableObject
     /// fold — or, for a repeating task, the refresh spin + fade — has played.</summary>
     public async Task FinalizeCompletionAsync(TaskRowViewModel row)
     {
-        // If the just-completed task is the one open in the detail panel, close the panel so it doesn't
-        // linger showing a task that has left the active list. Only for a terminal completion — a repeating
-        // task lives on at its next cycle and its row stays, so keeping its detail open is still valid.
-        // Flush first so any in-flight detail edit is persisted before the panel tears down.
-        if (!row.IsRecurringCompletion && Detail.IsOpen && Detail.CurrentTaskId == row.Id)
+        // Keep the detail panel in sync when the just-completed task is the one it shows. Decide from the
+        // task's persisted state, not the row's acknowledgement flag: the View only sets IsRecurringCompletion
+        // when it animates, so under reduced motion the flag is never set — reading the store is robust to
+        // that. A recurring completion advanced the series and left it open (it lives on at its next cycle);
+        // a terminal one (one-off done, or a series ended/exhausted) is now completed and gone from the list.
+        if (Detail.IsOpen && Detail.CurrentTaskId == row.Id)
         {
-            await Detail.FlushAsync();
-            Detail.Close();
+            var task = await _store.GetAsync<TaskItem>(row.Id);
+            if (task is { IsDeleted: false, IsCompleted: false, Recurrence: not null })
+            {
+                // The panel stays open, but its 반복 기록 strip, current cycle, and reset checklist must
+                // reflect the completion just made from the list — reopen it on the same task to reload that
+                // state. OpenAsync flushes any in-flight detail edit first, so this can't race the panel's
+                // own (serialized) save chains.
+                await Detail.OpenAsync(row.Id);
+            }
+            else
+            {
+                // The task left the active list, so close the panel rather than let it linger showing a gone
+                // task. Flush first so any in-flight edit is persisted before the panel tears down.
+                await Detail.FlushAsync();
+                Detail.Close();
+            }
         }
 
         row.EndCompletionAcknowledgement();

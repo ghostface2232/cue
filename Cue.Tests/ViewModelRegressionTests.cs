@@ -145,6 +145,47 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task CompletingARecurringTaskOpenInTheDetailPanel_SyncsTheStripInsteadOfClosing()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var today = new DateOnly(2026, 6, 22);
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+
+        // Open the recurring task in the detail panel. Its strip opens on the current cycle (today) with no
+        // records yet.
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.Equal(OccurrencePipKind.Current, vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Kind);
+        Assert.Equal(today, vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Date);
+        Assert.DoesNotContain(vm.Detail.Timeline, pip => pip.Kind == OccurrencePipKind.Completed);
+
+        // Complete it from the list checkbox.
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.FinalizeCompletionAsync(row);
+
+        // The series lives on, so the panel stays open on the same task — and its strip is now in sync: a
+        // recorded 완료 for today, with the current cycle advanced to tomorrow.
+        Assert.True(vm.Detail.IsOpen);
+        Assert.Equal(task.Id, vm.Detail.CurrentTaskId);
+        var completed = Assert.Single(vm.Detail.Timeline, pip => pip.Kind == OccurrencePipKind.Completed);
+        Assert.Equal(today, completed.Date);
+        Assert.Equal(today.AddDays(1), vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Date);
+        Assert.Equal(OccurrencePipKind.Current, vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Kind);
+    }
+
+    [Fact]
     public async Task CompletingATaskLeavesADifferentOpenDetailPanelAlone()
     {
         using var temp = new TempDirectory();
