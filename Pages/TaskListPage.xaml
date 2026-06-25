@@ -539,7 +539,7 @@
                                 <TextBlock
                                     Margin="14,8,8,4"
                                     Style="{StaticResource CuePriorityGroupHeaderTextStyle}"
-                                    Text="{x:Bind Title}" />
+                                    Text="{x:Bind DisplayTitle, Mode=OneWay}" />
                                 <ItemsRepeater
                                     ElementClearing="TaskRepeater_ElementClearing"
                                     ElementPrepared="TaskRepeater_ElementPrepared"

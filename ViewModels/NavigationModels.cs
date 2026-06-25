@@ -140,14 +140,32 @@ public sealed partial class CompletedSectionViewModel : ObservableObject
 }
 
 /// <summary>
-/// One date bucket in the 완료한 일 (Logbook) view — a day heading (오늘 / 어제 / a "M월 d일" date) and the
-/// tasks completed on that day. Plain and always shown (no collapse): the Logbook is a flat date-grouped
-/// history, newest day first.
+/// One date bucket in the 완료한 일 (Logbook) view — the tasks completed on a single local day, under a
+/// day heading. Plain and always shown (no collapse): the Logbook is a flat date-grouped history, newest
+/// day first.
 /// </summary>
+/// <remarks>
+/// The section's identity is its <see cref="Date"/> (a full <see cref="DateOnly"/>), <i>not</i> its
+/// rendered heading. Older days render without the year ("6월 22일"), so two same-day dates in different
+/// years share a heading; keying the reconcile on the date keeps them separate sections instead of
+/// merging 2025-06-22 and 2026-06-22 into one. <see cref="DisplayTitle"/> is refreshed on reconcile so a
+/// section's heading still rolls 오늘 → 어제 as the day turns over.
+/// </remarks>
 public sealed partial class DateSectionViewModel : ObservableObject
 {
-    public string Title { get; }
+    /// <summary>The local completion day this section gathers — the section's reconcile identity.</summary>
+    public DateOnly Date { get; }
+
+    /// <summary>The rendered day heading: 오늘 / 어제 / "M월 d일" (this year) / "yyyy년 M월 d일" (an earlier
+    /// year). Updatable so a reused section re-titles itself as the current day advances.</summary>
+    [ObservableProperty]
+    public partial string DisplayTitle { get; set; }
+
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    public DateSectionViewModel(string title) => Title = title;
+    public DateSectionViewModel(DateOnly date, string displayTitle)
+    {
+        Date = date;
+        DisplayTitle = displayTitle;
+    }
 }

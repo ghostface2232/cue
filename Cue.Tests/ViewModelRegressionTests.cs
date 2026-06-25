@@ -219,7 +219,30 @@ public sealed class ViewModelRegressionTests
 
         Assert.True(vm.IsLogbookSectioned);
         // Newest day first, with friendly headings for the two most recent days and a date for older ones.
-        Assert.Equal(new[] { "오늘", "어제", "6월 22일" }, vm.LogbookSections.Select(s => s.Title));
+        Assert.Equal(new[] { "오늘", "어제", "6월 22일" }, vm.LogbookSections.Select(s => s.DisplayTitle));
+        Assert.All(vm.LogbookSections, s => Assert.Single(s.Tasks));
+    }
+
+    [Fact]
+    public async Task LogbookKeepsSameDayInDifferentYearsAsSeparateSections()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 24, 5, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        // Two tasks completed on the same month/day a year apart: older days render without the year, so
+        // both read "6월 22일" — they must stay distinct sections, not collapse into one.
+        await store.SaveAsync(new TaskItem { Title = "올해 끝", CompletedAt = new DateTimeOffset(2026, 6, 22, 3, 0, 0, TimeSpan.Zero) });
+        await store.SaveAsync(new TaskItem { Title = "작년 끝", CompletedAt = new DateTimeOffset(2025, 6, 22, 3, 0, 0, TimeSpan.Zero) });
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Logbook));
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        // Two sections, newest first: this year's drops the year, last year's carries it.
+        Assert.Equal(new[] { "6월 22일", "2025년 6월 22일" }, vm.LogbookSections.Select(s => s.DisplayTitle));
         Assert.All(vm.LogbookSections, s => Assert.Single(s.Tasks));
     }
 
