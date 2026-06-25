@@ -889,6 +889,16 @@ public partial class TaskListViewModel : ObservableObject
     /// fold — or, for a repeating task, the refresh spin + fade — has played.</summary>
     public async Task FinalizeCompletionAsync(TaskRowViewModel row)
     {
+        // If the just-completed task is the one open in the detail panel, close the panel so it doesn't
+        // linger showing a task that has left the active list. Only for a terminal completion — a repeating
+        // task lives on at its next cycle and its row stays, so keeping its detail open is still valid.
+        // Flush first so any in-flight detail edit is persisted before the panel tears down.
+        if (!row.IsRecurringCompletion && Detail.IsOpen && Detail.CurrentTaskId == row.Id)
+        {
+            await Detail.FlushAsync();
+            Detail.Close();
+        }
+
         row.EndCompletionAcknowledgement();
         await LoadAsync();
     }
