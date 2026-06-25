@@ -567,7 +567,7 @@ public sealed partial class TaskListPage : Page
 
     private void DetailResizeHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (!_detailResizable) return;   // pinned at its limit, or overlay — nothing to drag
+        if (!CanResizeDetailNow()) return;   // pinned at its limit, or overlay — nothing to drag
         if (sender is not UIElement handle) return;
         var point = e.GetCurrentPoint(ContentSplitGrid);
         if (!point.Properties.IsLeftButtonPressed)
@@ -610,7 +610,7 @@ public sealed partial class TaskListPage : Page
 
     private void DetailResizeHandle_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
-        if (_detailResizable)
+        if (CanResizeDetailNow())
             SetDetailResizeGripVisible(true);
     }
 
@@ -655,6 +655,19 @@ public sealed partial class TaskListPage : Page
             SetDetailResizeGripVisible(false);
 
         UpdateDetailResponsiveLayout();
+    }
+
+    // Whether the panel can be dragged right now, computed live from the current layout rather than read
+    // from the cached _detailResizable flag. The cache is only refreshed inside ApplyDetailPanelWidth, which
+    // does not run when the panel merely opens — so gating the drag start / hover grip on the cache left the
+    // handle dead until the window was resized. Recomputing here keeps the handle correct the moment it's
+    // touched. Returns false in overlay mode (panel fills its space, nothing to drag) or before first layout.
+    private bool CanResizeDetailNow()
+    {
+        if (_detailOverlay) return false;
+        if (ContentSplitGrid.ActualWidth <= 0) return false;
+        var (min, max) = DetailWidthRange();
+        return max - min > 4;
     }
 
     private (double Min, double Max) DetailWidthRange()
