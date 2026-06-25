@@ -53,14 +53,17 @@ public sealed class RelativeHourRule : IQuickAddRule
 public sealed class RecurrenceQuickAddRule : IQuickAddRule
 {
     private const string TimeWithParticle =
-        @"(?:" + Korean.Time + "|" + Korean.DayPart + @")(?:\s*(?:에는|에도|엔|에|은|는|도|부터|쯤|즈음|경))?";
+        @"(?:" + Korean.Time + "|" + Korean.DayPart + @")(?:\s*(?:에는|에도|엔|에|은|는|도|부터|쯤|즈음|경|(?<mada>마다)))?";
 
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
         @"(?:" +
-        @"(?<weekly_wd>매주|매\s*주)\s*(?<rwd>[월화수목금토일])(?:요일|욜)(?:마다)?" +
-        @"|(?<biweekly>격주|이주마다|2주마다)\s*(?:(?<bwd>[월화수목금토일])(?:요일|욜))?" +
-        @"|(?<weekdays>평일)(?:에는|에도|엔|에|은|는|도)?" +
+        // A weekday, optionally led by 매주 and/or trailed by 마다. The 매주/마다 is what marks it
+        // recurring; a bare weekday ("목욜", "금요일에") carries no such marker and is left for the
+        // one-off WhenDateRule (the Extract returns false when neither is present).
+        @"(?:(?<weekly_wd>매주|매\s*주)\s*)?(?<rwd>[월화수목금토일])(?:요일|욜)(?<wd_mada>마다)?" +
+        @"|(?<biweekly>격주|이주마다|2주마다)\s*(?:(?<bwd>[월화수목금토일])(?:요일|욜)(?:마다)?)?" +
+        @"|(?:(?:매주|매\s*주)\s*)?(?<weekdays>평일)(?:에는|에도|엔|에|은|는|도|마다)?" +
         @"|(?<daily>매일|매\s*일)" +
         @"|(?<weekly>매주|매\s*주)" +
         @"|(?<monthly_dom>매월|매달)\s*(?<mdom>\d{1,2})\s*일" +
@@ -81,8 +84,13 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         string rule;
         ZonedDateTime anchor;
 
-        if (match.Groups["weekly_wd"].Success)
+        if (match.Groups["rwd"].Success)
         {
+            // A weekday is recurring only when marked: a leading 매주, a 마다 glued to the weekday
+            // ("목욜마다"), or a 마다 closing the trailing time ("금욜 저녁마다"). A bare weekday
+            // ("목욜", "토욜 아침에") is a one-off — decline so WhenDateRule resolves it.
+            if (!match.Groups["weekly_wd"].Success && !match.Groups["wd_mada"].Success && !match.Groups["mada"].Success)
+                return false;
             var dow = Korean.Weekdays[match.Groups["rwd"].Value[0]];
             rule = $"FREQ=WEEKLY;BYDAY={Korean.ByDay(dow)}";
             anchor = AnchorOn(context, context.UpcomingWeekday(dow), hasTime, h, min);

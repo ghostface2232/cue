@@ -408,6 +408,14 @@ public sealed class KoreanDateParserTests
     [InlineData("30분에 한 번씩 스트레칭하기", "스트레칭하기", "FREQ=MINUTELY;INTERVAL=30")]
     [InlineData("매주 월욜마다 운동 가기", "운동 가기", "FREQ=WEEKLY;BYDAY=MO")]
     [InlineData("평일엔 7시에 일어나기", "일어나기", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")]
+    // A 마다-marked weekday (no 매주) is weekly; the 마다 may close the weekday or the trailing time.
+    [InlineData("목욜마다 영어 공부", "영어 공부", "FREQ=WEEKLY;BYDAY=TH")]
+    [InlineData("금욜 저녁마다 가계부 정리", "가계부 정리", "FREQ=WEEKLY;BYDAY=FR")]
+    [InlineData("월요일마다 회의록 정리", "회의록 정리", "FREQ=WEEKLY;BYDAY=MO")]
+    // 평일 variants: trailing 마다 and a redundant 매주 prefix are both consumed cleanly.
+    [InlineData("평일마다 스트레칭", "스트레칭", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")]
+    [InlineData("매주 평일 아침 영양제 챙기기", "영양제 챙기기", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")]
+    [InlineData("평일 아침마다 물 한 잔", "물 한 잔", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")]
     public void Recurrence_BecomesRRule_WithCleanTitle(string input, string title, string rrule)
     {
         var r = Parse(input);
