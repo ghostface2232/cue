@@ -856,28 +856,29 @@ public sealed partial class TaskListPage : Page
     // --- Completion acknowledgement: the brief in-row moment after a task is ticked ---
 
     /// <summary>
-    /// Runs the in-row acknowledgement after a completion: a repeating task spins its refresh glyph one
-    /// turn; then (after a short hold the user can extend by hovering) the row folds away and the view
-    /// model finalizes — reloading it into the relevant 완료한 일 section / Logbook. With animations off
-    /// the row is finalized immediately.
+    /// Runs the in-row acknowledgement after a completion. A terminal completion (<paramref name="nextOccurrence"/>
+    /// null) shows an undo bar then folds the row away. A repeating completion (next occurrence non-null)
+    /// spins its refresh glyph one turn, shows the next date, then refreshes the row in place to its next
+    /// cycle — it is <i>not</i> folded, because the same-id task lives on. With animations off the row is
+    /// finalized immediately (reload either drops it or updates it in place).
     /// </summary>
-    private void OnCompletionAcknowledged(TaskRowViewModel row)
+    private void OnCompletionAcknowledged(TaskRowViewModel row, DateOnly? nextOccurrence)
     {
         if (!_animationsEnabled)
         {
             _ = RunSafelyAsync(() => ViewModel.FinalizeCompletionAsync(row));
             return;
         }
-        _ = RunAcknowledgementAsync(row);
+        _ = RunAcknowledgementAsync(row, nextOccurrence);
     }
 
-    private async Task RunAcknowledgementAsync(TaskRowViewModel row)
+    private async Task RunAcknowledgementAsync(TaskRowViewModel row, DateOnly? nextOccurrence)
     {
         // Let the circular check pop play and the row settle into its dimmed completed state first…
         await Task.Delay(300);
-        // …then swap the row body for the acknowledgement bar (undo for a one-off, a repeat note + spin
-        // for a repeating task) and start the fold timer.
-        row.BeginCompletionAcknowledgement(row.IsRecurring);
+        // …then swap the row body for the acknowledgement bar (an undo note for a terminal completion, or
+        // a refresh spin + "다음: …" for a repeating one) and start the hold timer.
+        row.BeginCompletionAcknowledgement(nextOccurrence);
         if (row.IsRecurringCompletion)
             DispatcherQueue.TryEnqueue(() => StartRefreshSpin(row));   // after the bar lays out
         StartAckTimer(row);
@@ -893,7 +894,10 @@ public sealed partial class TaskListPage : Page
         timer.Tick += async (_, _) =>
         {
             StopAckTimer(row);
-            await RunSafelyAsync(() => FoldAndFinalizeAsync(row));
+            // A repeating task turns over to its next cycle in place; a terminal completion folds away.
+            await RunSafelyAsync(() => row.IsRecurringCompletion
+                ? RefreshRecurringRowAsync(row)
+                : FoldAndFinalizeAsync(row));
         };
         _ackTimers[row] = timer;
         timer.Start();
@@ -934,6 +938,65 @@ public sealed partial class TaskListPage : Page
         visual.StartAnimation("Scale", scale);
         visual.StartAnimation("Opacity", fade);
         await Task.Delay(180);
+    }
+
+    /// <summary>
+    /// Turns a repeating task's row over to its next cycle in place instead of folding it away: the
+    /// acknowledgement bar (refresh spin + "다음: …") fades out, the list reloads the same-id row with its
+    /// next date and an unchecked box, and the refreshed row fades back in. On a Today list a next
+    /// occurrence that has rolled out of range is dropped by the reload — there the fade-out doubles as the
+    /// row's natural exit, so there is nothing to fade back in.
+    /// </summary>
+    private async Task RefreshRecurringRowAsync(TaskRowViewModel row)
+    {
+        if (FindRowContainer(row) is { } leaving)
+            await AnimateRowFadeOutAsync(leaving);
+
+        // Reconciles this same-id row to its next cycle in place (or drops it if out of range) and clears
+        // the acknowledgement so the normal body — now next date, unchecked — returns.
+        await ViewModel.FinalizeCompletionAsync(row);
+
+        if (FindRowContainer(row) is { } refreshed)
+            AnimateRowFadeIn(refreshed);
+    }
+
+    /// <summary>Fades a row out (a quick opacity drop) ahead of refreshing or dropping it.</summary>
+    private static async Task AnimateRowFadeOutAsync(FrameworkElement element)
+    {
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        visual.StopAnimation("Opacity");
+        var compositor = visual.Compositor;
+        var ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.4f, 0f), new Vector2(1f, 1f));
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(0f, visual.Opacity);
+        fade.InsertKeyFrame(1f, 0f, ease);
+        fade.Duration = TimeSpan.FromMilliseconds(150);
+        visual.StartAnimation("Opacity", fade);
+        await Task.Delay(150);
+    }
+
+    /// <summary>Fades the refreshed row back in with a small scale settle — reusing the list's entrance
+    /// feel so the next cycle reads as a fresh row arriving rather than a hard cut.</summary>
+    private static void AnimateRowFadeIn(FrameworkElement element)
+    {
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        visual.StopAnimation("Opacity");
+        visual.StopAnimation("Scale");
+        var compositor = visual.Compositor;
+        var ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1f));
+
+        var fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(0f, 0f);
+        fade.InsertKeyFrame(1f, 1f, ease);
+        fade.Duration = TimeSpan.FromMilliseconds(240);
+
+        var scale = compositor.CreateVector3KeyFrameAnimation();
+        scale.InsertKeyFrame(0f, new Vector3(0.994f, 0.985f, 1f));
+        scale.InsertKeyFrame(1f, Vector3.One, ease);
+        scale.Duration = TimeSpan.FromMilliseconds(280);
+
+        visual.StartAnimation("Opacity", fade);
+        visual.StartAnimation("Scale", scale);
     }
 
     /// <summary>Spins the acknowledgement bar's refresh glyph a single full turn (repeating-task moment).</summary>

@@ -185,12 +185,12 @@
                             IsChecked="{x:Bind IsCompleted, Mode=TwoWay}"
                             Style="{StaticResource CueCircleCheckBoxStyle}" />
 
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="{StaticResource CueGap8}">
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="{StaticResource CueGap4}">
                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
                                 <TextBlock
                                     MaxWidth="520"
                                     VerticalAlignment="Center"
-                                    FontFamily="{StaticResource CueFontFamilyMedium}"
+                                    FontFamily="{StaticResource CueFontFamilySemiBold}"
                                     FontSize="{StaticResource CueFontListTitle}"
                                     Text="{x:Bind Title, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis" />
@@ -620,7 +620,7 @@
                                 VerticalAlignment="Center"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                FontFamily="{StaticResource CueFontFamilyMedium}"
+                                FontFamily="{StaticResource CueFontFamilySemiBold}"
                                 FontSize="24"
                                 KeyDown="DetailTitle_KeyDown"
                                 LostFocus="DetailText_LostFocus"

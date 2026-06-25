@@ -40,13 +40,19 @@ public sealed class RecurringTaskService : IRecurringTaskService
     public RecurringTaskService(ITaskStore store)
         => _store = store ?? throw new ArgumentNullException(nameof(store));
 
-    public Task CompleteAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default)
+    public async Task<DateOnly?> CompleteAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default)
+    {
+        // The next occurrence (local date) is captured inside the transaction and surfaced to the caller
+        // so it can tell a "rolled to the next cycle" completion apart from a terminal one; null means the
+        // task was completed in place (one-off, exhausted series, unevaluable rule, or a missing task).
+        DateOnly? nextOccurrence = null;
+
         // Run the whole completion as one atomic unit: the read of the task, the Logbook copy, and the
         // advance all happen under the store's write lock, so a concurrent save path (a detail-panel
         // metadata/checklist edit, a list toggle) can neither be clobbered by the advance nor clobber
         // it. The two writes still run in copy-then-advance order, so the crash-idempotency described in
         // the class remarks is unchanged — a crash between them leaves an overwritable orphan copy.
-        => _store.RunInTransactionAsync(async (tx, ct) =>
+        await _store.RunInTransactionAsync(async (tx, ct) =>
         {
             var task = await tx.GetAsync<TaskItem>(taskId, ct).ConfigureAwait(false);
             if (task is null || task.IsDeleted)
@@ -67,6 +73,10 @@ public sealed class RecurringTaskService : IRecurringTaskService
                 await tx.SaveAsync(task, ct).ConfigureAwait(false);
                 return;
             }
+
+            // Surface the advanced cycle's local date (matching how the index projects WhenDate), so the
+            // caller can show a "다음: …" cue and refresh the row in place instead of folding it away.
+            nextOccurrence = DateOnly.FromDateTime(next.Value.ToLocal().DateTime);
 
             // Method B, step 1: leave a completed one-off copy of this instance in the Logbook. The
             // copy's id is derived from (original id, this occurrence) so a retry after a crash between
@@ -89,7 +99,10 @@ public sealed class RecurringTaskService : IRecurringTaskService
             task.CompletedAt = null;
             foreach (var item in task.Checklist) item.IsChecked = false;
             await tx.SaveAsync(task, ct).ConfigureAwait(false);
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
+
+        return nextOccurrence;
+    }
 
     /// <summary>
     /// A standalone, completed snapshot of the instance being finished. It is a distinct

@@ -22,5 +22,12 @@ public interface IRecurringTaskService
     /// </para>
     /// All writes go through <see cref="ITaskStore"/>. A no-op if the task is missing or deleted.
     /// </summary>
-    Task CompleteAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// The advanced task's <b>next occurrence</b> as a local date when a recurring task rolled to its
+    /// next cycle, or <c>null</c> when the task was completed in place (non-recurring, series ended, or
+    /// an RRULE that could not be evaluated, as well as the missing/deleted no-op). The caller uses this
+    /// to tell a "rolled to the next cycle" completion apart from a terminal one — e.g. to refresh the
+    /// row in place rather than fold it away.
+    /// </returns>
+    Task<DateOnly?> CompleteAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default);
 }

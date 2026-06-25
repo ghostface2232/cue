@@ -16,9 +16,11 @@ public sealed record TaskRowTag(string Name, string? Color);
 /// <remarks>
 /// The toggle is wired to a callback the parent list owns, so flipping the checkbox sets/clears
 /// <see cref="TaskItem.CompletedAt"/>. Completing from an active list plays a brief in-row
-/// acknowledgement (undo for a one-off, a repeat note + refresh spin for a repeating task) before the
-/// row folds away; the completed task then resurfaces in a dedicated 완료한 일 section / the Logbook
-/// rather than lingering dimmed in the open list. See the acknowledgement members below.
+/// acknowledgement. A terminal completion (one-off, or a recurring series that has ended) shows an undo
+/// note then folds the row away, resurfacing in a dedicated 완료한 일 section / the Logbook. A repeating
+/// completion instead shows a refresh spin + the next date, then the same-id row is refreshed in place to
+/// its next cycle (unchecked, next date) rather than folded — it leaves the list only on a Today view it
+/// has rolled out of. See the acknowledgement members below.
 /// </remarks>
 public partial class TaskRowViewModel : ObservableObject
 {
@@ -128,9 +130,10 @@ public partial class TaskRowViewModel : ObservableObject
     // --- Completion acknowledgement (the brief in-row moment after the user ticks a task) ---
     // When a task is completed from an active list it is not whisked away at once: the row holds its
     // place for a beat, swapping its normal content for a small acknowledgement bar — an "undo" affordance
-    // for a one-off, or a "completed this occurrence" note for a repeating task — before it folds away and
-    // the list reloads (dropping it into the relevant 완료한 일 section / Logbook). These flags drive that
-    // swap; the View owns the timing and the fold/spin motion.
+    // for a terminal completion, or a refresh spin + "다음: …" next-date note for a repeating one. A
+    // terminal completion then folds away and reloads into the relevant 완료한 일 section / Logbook; a
+    // repeating one is refreshed in place to its next cycle. These flags drive the swap; the View owns the
+    // timing and the fold / spin / fade motion.
 
     /// <summary>True while the post-completion acknowledgement bar is showing in place of the row's normal
     /// content. The View flips this on via <see cref="BeginCompletionAcknowledgement"/> and clears it
@@ -145,27 +148,33 @@ public partial class TaskRowViewModel : ObservableObject
     /// yields to the acknowledgement bar.</summary>
     public bool ShowNormalContent => !IsAcknowledging;
 
-    /// <summary>The acknowledgement message: "할 일을 완료했습니다" for a one-off, "이번 할 일을 완료했습니다"
-    /// for a repeating task (only this occurrence was completed; the series rolls on).</summary>
+    /// <summary>The acknowledgement message: "할 일을 완료했습니다" for a terminal completion, or
+    /// "다음: M월 d일" for a repeating task that rolled on, naming the next occurrence so the bar reads as a
+    /// hand-off to the next cycle rather than an ending.</summary>
     [ObservableProperty]
     public partial string AcknowledgeMessage { get; set; } = string.Empty;
 
-    /// <summary>True when the acknowledgement is for a repeating task: the bar shows a one-turn refresh
-    /// spin in the circle and offers no undo (the series advanced); a one-off shows an undo button.</summary>
+    /// <summary>True when the acknowledgement is for a repeating task that advanced to its next cycle: the
+    /// bar shows a one-turn refresh spin in the circle and offers no undo (the series rolled on), and the
+    /// row is refreshed in place rather than folded away. A terminal completion shows an undo button.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowUndo))]
     public partial bool IsRecurringCompletion { get; set; }
 
-    /// <summary>Whether the acknowledgement bar offers an "실행 취소" (undo) button — one-off completions
+    /// <summary>Whether the acknowledgement bar offers an "실행 취소" (undo) button — terminal completions
     /// only. A repeating completion advanced the series, so it is not casually reversible here.</summary>
     public bool ShowUndo => IsAcknowledging && !IsRecurringCompletion;
 
     /// <summary>Enters the post-completion acknowledgement state. The completion itself is already saved;
-    /// this only flips the row into its acknowledgement presentation.</summary>
-    public void BeginCompletionAcknowledgement(bool recurring)
+    /// this only flips the row into its acknowledgement presentation. A non-null <paramref name="nextOccurrence"/>
+    /// is a repeating task's next cycle (its local date), shown as a "다음: …" hand-off; null is a terminal
+    /// completion (undo affordance).</summary>
+    public void BeginCompletionAcknowledgement(DateOnly? nextOccurrence)
     {
-        IsRecurringCompletion = recurring;
-        AcknowledgeMessage = recurring ? "이번 할 일을 완료했습니다" : "할 일을 완료했습니다";
+        IsRecurringCompletion = nextOccurrence is not null;
+        AcknowledgeMessage = nextOccurrence is { } next
+            ? $"다음: {next.ToString("M월 d일", Korean)}"
+            : "할 일을 완료했습니다";
         IsAcknowledging = true;
         OnPropertyChanged(nameof(ShowUndo));
     }

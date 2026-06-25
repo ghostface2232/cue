@@ -61,11 +61,15 @@ typography:
     fontWeight: 600
   detail-title:
     fontFamily: Pretendard JP SemiBold
-    fontSize: 27px
+    fontSize: 24px
     fontWeight: 600
   section-header:
     fontFamily: Pretendard JP SemiBold
     fontSize: 16px
+    fontWeight: 600
+  bucket-header:         # 중요도 view priority-bucket headers, muted gray (CuePriorityGroupHeaderTextStyle)
+    fontFamily: Pretendard JP SemiBold
+    fontSize: 13px
     fontWeight: 600
   card-header:
     fontFamily: Pretendard JP SemiBold
@@ -77,7 +81,7 @@ typography:
     fontWeight: 400
   list-title:            # main list row title (larger/clearer than the base row)
     fontFamily: Pretendard JP SemiBold
-    fontSize: 16.5px
+    fontSize: 17px
     fontWeight: 600
   list-meta:             # main list row meta line (date · time) and right-edge group/tag chips
     fontFamily: Pretendard JP
@@ -97,14 +101,14 @@ typography:
     fontWeight: 400
   pill:
     fontFamily: Pretendard JP
-    fontSize: 11px
+    fontSize: 12px
     fontWeight: 400
 
 rounded:
   sm: 4px   # buttons, checks, checklist rows, small surfaces
   md: 8px   # task rows, detail inner cards
   lg: 12px  # detail panel
-  chip: 14px # group / tag / priority chips on a task row
+  chip: 8px # group / tag / priority chips on a task row (fixed squircle, not a half-height pill)
   pill: 9999px
 
 # NOTE — Spacing is tokenized in `Styles/DesignTokens.xaml` and consumed from there: gaps
@@ -145,13 +149,14 @@ components:
   completion-check-checked:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.on-accent}"
-  # --- Priority pill (importance label) ---
+  # --- Priority pill (importance label) — one of the shared chip family on a task row ---
   priority-pill:
-    backgroundColor: "{colors.priority-p1}"   # rendered at ~17% alpha tint (PriorityToTint)
+    backgroundColor: "{colors.priority-p1}"   # rendered at ~17% alpha tint (PriorityToTint, alpha 0x2B)
     textColor: "{colors.priority-p1}"          # saturated text via PriorityToBrush
-    typography: "{typography.pill}"
-    rounded: 9px
-    padding: 7px 1px
+    typography: "{typography.pill}"            # 12px label
+    rounded: "{rounded.chip}"                  # 8px squircle, matching the group/tag chips beside it
+    height: 26px                               # {CueChipHeight}, shared by every chip on the row
+    padding: "9px 0"                           # {CuePadChip}, horizontal-only; height is the token, not content
   # --- Quick-add (omnibar pill) ---
   quick-add:
     backgroundColor: "{colors.input-surface}"
@@ -284,14 +289,17 @@ The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship a
 | Token | Family | Size | Use |
 |---|---|---|---|
 | `{typography.page-title}` | SemiBold | 28 | Page title (`CuePageTitleTextStyle`) |
-| `{typography.detail-title}` | SemiBold | 27 | Detail-pane editable title |
+| `{typography.detail-title}` | SemiBold | 24 | Detail-pane editable title |
 | `{typography.section-header}` | SemiBold | 16 | Section headers — settings groups (`CueSectionHeaderTextStyle`) |
+| `{typography.list-title}` | SemiBold | 17 | Main list row task title (`CueFontListTitle`) |
 | `{typography.bucket-header}` | SemiBold | 13 | 중요도 view priority-bucket headers, muted gray (`CuePriorityGroupHeaderTextStyle`) |
-| `{typography.row}` | Regular | 15 | Task-row title |
 | `{typography.card-header}` | SemiBold | 14 | Detail card headers (`CueCardHeaderTextStyle`) |
-| `{typography.row-sub}` | Regular | 14 | Checklist item rows |
-| `{typography.secondary}` | Regular | 12 | Metadata, secondary labels (`MetadataTextStyle`) |
-| `{typography.pill}` | Regular | 11 | Priority pill label |
+| `{typography.row}` | Regular | 15 | Quick-add / text-input base (`{CueFontRow}`) |
+| `{typography.row-sub}` | Regular | 14 | Checklist item rows (`CueFontRowSub`) |
+| `{typography.checklist-item-title}` | Medium | 14 | Checklist item title (editable) |
+| `{typography.list-meta}` | Regular | 13 | Main list row meta (date · time) + group/tag chip names (`MetadataTextStyle`) |
+| `{typography.secondary}` | Regular | 12 | Settings captions, secondary labels (`SettingsCaptionStyle`) |
+| `{typography.pill}` | Regular | 12 | Priority pill label |
 
 ### Color hierarchy
 Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quietest labels (group/tag headers) `{colors.text-tertiary}`.
@@ -320,7 +328,7 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 - The form column **fills the space beside the nav** (variable width, no cap), the same way the main content area fills the space beside the sidebar — a wider window gives the cards more room rather than leaving the right side empty. The per-row measure is held by the row itself, not a column cap: the label column is width-capped (`{CueSettingsLabelMaxWidth}`) so captions wrap, and the trailing control is a fixed width flush right, so a wide card simply widens the gap between label and control.
 - A settings **row** (`settings-row`) is `[label + caption *] [control Auto, flush right]`: the label/caption column is width-capped (`{CueSettingsLabelMaxWidth}`) so captions wrap at a comfortable measure, and the trailing control sits at a shared fixed width (`{CueSettingsControlWidth}`) so controls align across rows. Rows are 52px min-height, separated inside a card by full-bleed `DividerStrokeColorDefault` dividers.
 - Controls consume the shared tokens: combos/inputs round to `{rounded.sm}` (4px, inner ≤ the 8px card), the toggle is stripped of its On/Off content and right-aligned, and list rows (custom date meanings) carry the row-sub font with an even vertical rhythm.
-- Cards, typography (`CueSectionHeaderTextStyle` / `CueCardHeaderTextStyle` / `SettingsCaptionStyle` = `MetadataTextStyle`), and strokes all match the rest of the app — the settings screen carries no bespoke look. There is **no accent-color customization**: Cue consumes the system accent token directly (see "Restrained accent"), so there is no app-level accent override and no swatch picker.
+- Cards, typography (`CueSectionHeaderTextStyle` / `CueCardHeaderTextStyle` / `SettingsCaptionStyle`, the quiet 12px caption tone), and strokes all match the rest of the app — the settings screen carries no bespoke look. There is **no accent-color customization**: Cue consumes the system accent token directly (see "Restrained accent"), so there is no app-level accent override and no swatch picker.
 - A **back-arrow** button sits immediately left of the 설정 title (`CueIconButtonStyle`); it returns to the view shown before Settings was opened (navigation is flat, so it re-selects the remembered nav item rather than walking a Frame back stack). The arrow is a line-art `Path` (Segoe Fluent's back glyph has no bold weight), nudged up via `RenderTransform` for optical centering against the SemiBold title.
 - **Restyled stock controls must `BasedOn` the framework default.** The settings combo / toggle styles set `BasedOn="{StaticResource DefaultComboBoxStyle}"` / `DefaultToggleSwitchStyle`. An explicit `Style` with no `BasedOn` replaces the default wholesale and strips the WinUI 3 template (rounded dropdown popup, Fluent toggle + hover states), leaving a flat Windows-10-looking control.
 - **Stacked-row card padding exception.** A card holding multiple rows separated by full-bleed dividers (the 시간 card) sets vertical padding to **0** and gives each row its own vertical padding; the divider splits the inter-row gap into two halves, so a non-zero card padding would make the top/bottom edges read as double the inter-item gap. With card vertical padding 0, every visible gap equals the row padding (22, matching the single-row cards' centered inset).
@@ -361,10 +369,10 @@ Use only `{rounded.sm}` (4) / `{rounded.md}` (8) / `{rounded.lg}` (12) plus pill
 | `{rounded.sm}` | 4px | Buttons, checks, checklist rows, small surfaces |
 | `{rounded.md}` | 8px | Task rows, detail inner cards |
 | `{rounded.lg}` | 12px | Detail panel |
-| `{rounded.chip}` | 14px | Group / tag / priority chips on a task row (full pill at chip height) |
+| `{rounded.chip}` | 8px | Group / tag / priority chips on a task row (fixed squircle, not a half-height pill) |
 | `{rounded.pill}` | height/2 | Pills |
 
-Pill instances are explicit half-height radii: chips (group/tag/priority) `{rounded.chip}` (14), quick-add `24`, today marker circle `14`.
+The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) — short chips stay clean rounded rects rather than ovals. The remaining pill instances are explicit half-height radii: quick-add `24`, today marker circle `14`.
 
 ### Focus & stroke
 - System focus visuals by default.
@@ -376,22 +384,24 @@ Pill instances are explicit half-height radii: chips (group/tag/priority) `{roun
 ### Task row
 - Layout: `[circular check] [title … priority pill] … [group / tag chips]`. Three columns (check Auto · title+meta star · trailing chips Auto), `{gap.lg}` (16) apart, with a one-line schedule row below the title. The trailing chips are **right-aligned and stacked vertically** (group on top, then each tag) in the wide layout; the schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time, while an all-day (종일) task shows the date alone.
 - **Group and tag are both rendered as squircle chips** (rounded rectangles, radius `{rounded.chip}` = 8, a 12px glyph + 13px name), so the two read as one consistent family rather than two ad-hoc layouts. A fixed squircle radius (not a half-height pill) keeps a short chip — icon + 2 chars — reading as a clean rounded rect; a pill radius would make the rounded ends meet on a narrow chip and look like an oval.
-- **All chip/pill elements on a row share one fixed height** (`CueChipHeight` = 26) with **horizontal-only padding** (`CuePadChip` = `9,0`) and content vertically centered. The group chip, every tag chip, and the priority pill therefore line up exactly and never distort, regardless of glyph vs. text or differing font sizes — height is purely the token, not a function of content. (`VerticalAlignment="Center"` on each chip keeps it from being stretched by a taller sibling.) The **group chip** is a neutral gray pill (`CueChipNeutralFillBrush`, a theme-split overlay) with the group's own glyph + name in secondary text. A **tag chip** is tinted with the tag's *own* color (`HexToTint`, ~14%) and carries the tag glyph (`E8EC`) + name in that saturated color (`HexToBrush`). Each chunk hides itself when the task has no group / no tags.
+- **All chip/pill elements on a row share one fixed height** (`CueChipHeight` = 26) with **horizontal-only padding** (`CuePadChip` = `9,0`) and content vertically centered. The group chip, every tag chip, and the priority pill therefore line up exactly and never distort, regardless of glyph vs. text or differing font sizes — height is purely the token, not a function of content. (`VerticalAlignment="Center"` on each chip keeps it from being stretched by a taller sibling.) The **group chip** is a neutral gray pill (`CueChipNeutralFillBrush`, a theme-split overlay) with the group's own glyph + name in secondary text. A **tag chip** is tinted with the tag's *own* color (`HexToTint`, ~17% — the same tint strength as the priority pill) and carries the tag glyph (`E8EC`) + name in that saturated color (`HexToBrush`). Each chunk hides itself when the task has no group / no tags.
 - A **repeating task** carries a small repeat glyph (Segoe Fluent `RepeatAll`, `E8EE`, secondary text tone) in the schedule row, after the date. It is a quiet informational mark — no accent, no fill — mirroring the recurrence flag the index derives from the task's rule (the rule itself stays in the file).
 - Selected → a **persistent row fill in the hover tone** (`{colors.hover-fill}`) spanning the row + checklist, so the open task reads as selected even when the pointer is elsewhere — the highlight area alone carries the selection, with **no separate accent bar/pill**. Background hover transitions over 83ms. Radius `{rounded.md}`.
-- Rows are **uniform height regardless of content**: a `MinHeight` of 60 with vertically-centered content means a bare title row keeps the same presence as one with a schedule and chips, and the title centers when there is no second line. Generous padding (`16,12`) and a SemiBold title (`{typography.list-title}`, 16.5) over a 13px meta line sharpen the hierarchy. **No row separators** — rows are divided by whitespace (the per-row margin) alone, not lines.
+- Rows are **uniform height regardless of content**: a `MinHeight` of 60 with vertically-centered content means a bare title row keeps the same presence as one with a schedule and chips, and the title centers when there is no second line. Generous padding (`16,12`) and a SemiBold title (`{typography.list-title}`, 17) over a 13px meta line sharpen the hierarchy. **No row separators** — rows are divided by whitespace (the per-row margin) alone, not lines.
 - **Compact reflow:** when the list column is too narrow for the right-edge chips, the same group/tag chips drop to their own line **under the title** (horizontal, left-aligned), driven by `IsCompact` → `ShowRightMeta` / `ShowInlineMeta`.
 - A task's checklist items render as an indented nested list under it, set in further from the task body (with a 1px vertical guide line) so they read as belonging to the task rather than as peers. Their presence is self-evident, so there is no "N items" caption. These rows reuse the same circular check and row-sub font; they are not tasks, so they cannot be dragged or carry a date/priority/group — just a checkbox and a title. The checkbox toggles the item in place; **tapping the rest of the row opens the parent task's detail** (a checklist item has no detail of its own). The parent's **hover and selection highlight spans the checklist rows too** — the highlight surface (hover fill, persistent selected fill) wraps the task row and its checklist as one region, so hovering or selecting the task lights up the whole group (the row's inner padding and the checklist indent are unchanged).
 
 ### Completion state
-- **Completing a task plays a brief in-row acknowledgement, then the row leaves the open list.** On tick: the circular check pops and the title/meta dim to the completed tone; the row then swaps its body for an acknowledgement bar — a one-off shows a filled check + "할 일을 완료했습니다" + an **실행 취소** (undo) button; a repeating task shows a refresh glyph spun one full turn + "이번 할 일을 완료했습니다" and **no** undo (the series advanced). After ~2s (a one-off, extendable by hovering/pressing the row) or ~1.3s (a repeating task) the row **folds away** (scale-Y collapse + fade) and the list reloads.
+- **Completing a task plays a brief in-row acknowledgement; what happens next depends on whether the task is terminal or repeating.** On tick the circular check pops and the title/meta dim to the completed tone, then the row swaps its body for an acknowledgement bar.
+  - **Terminal completion** (a one-off, or a repeating series that has *ended*) shows a filled check + "할 일을 완료했습니다" + an **실행 취소** (undo) button. After ~2s (extendable by hovering/pressing the row) the row **folds away** (scale-Y collapse + fade) and the list reloads, dropping it into its 완료한 일 section / Logbook.
+  - **Repeating completion** (the series rolls on) is **not** a disappearing object but an object that **advances to its next cycle** — the same task (same id) lives on, just moved forward — so it must **not** reuse the fold. Its bar shows a refresh glyph spun one full turn + the **next date** ("다음: M월 d일") and **no** undo (the series advanced). After ~1.3s the bar **fades out, the row refreshes in place** to its next cycle — checkbox back to unchecked, date moved to the next occurrence — and fades back in. It leaves the list only on the **오늘 할 일** view, where a next occurrence that has rolled past today naturally drops out (there the fade-out is its exit). On every other list (모든 할 일 / 그룹·태그 / 중요도 …) the refreshed row simply stays, showing its new date.
 - **Completed work does not linger in the open list.** Where it resurfaces depends on the view: the **오늘 할 일** screen gains a collapsible **오늘 완료한 일** section at the foot (default collapsed, hidden when empty); a **그룹 / 태그** screen gains its own collapsible **완료한 일** section the same way; **모든 할 일 / 언젠가 / 앞으로 / 중요도** exclude completed entirely; the **완료한 일** (Logbook) screen lists everything completed, grouped by day (오늘 / 어제 / a "M월 d일" date), newest first. These completed sections reuse the priority/sidebar section header (title + count + chevron). Only open tasks count toward the sidebar badges.
 - A completed row (in a completed section / the Logbook) reads at **opacity 0.48**; during its acknowledgement bar it returns to full opacity so the message stays legible.
 - **Checklist items are independent of the task's completion.** Completing a task leaves its checklist as-is; an item's checked state is its own. A repeating task resets all its checklist items to unchecked when it rolls to the next cycle (the procedure repeats), while the cycle just finished keeps its ticked state on the Logbook copy.
 
 ### Priority pill
 - Rendered **directly beside** the row title as a text pill (not a leading dot). The title is width-capped and truncates, so the pill hugs the title's trailing edge rather than being pushed to the far right. Labels: 매우 중요 / 중요 / 보통 / 사소.
-- Background is a ~17% tint of the priority color; text is the saturated tone. Radius `{rounded.chip}` (a full pill, matching the group/tag chips beside it). Color mapping per the priority tokens; text via `PriorityToLabel`, tint via `PriorityToTint`, saturated color via `PriorityToBrush`.
+- Background is a ~17% tint of the priority color; text is the saturated tone. Radius `{rounded.chip}` (the 8px squircle shared with the group/tag chips beside it). Color mapping per the priority tokens; text via `PriorityToLabel`, tint via `PriorityToTint`, saturated color via `PriorityToBrush`.
 
 ### Circular completion check — `CueCircleCheckBoxStyle`
 - 20×20. Unchecked = 1.6px outline circle (`TextFillColorTertiary`, → secondary on hover). Checked = accent fill + white check glyph + overshoot pop.
@@ -470,7 +480,11 @@ Pill instances are explicit half-height radii: chips (group/tag/priority) `{roun
 ## Motion & Microinteractions
 
 - **Color transitions are unified at 83ms, ease-out.** Task-row backgrounds hover via a declarative `BrushTransition` (`0:0:0.083`), not a code-behind swap.
-- **Completion (celebration moment):** empty outline → filled accent circle + check glyph, with a scale overshoot 0.6 → 1.15 → 1.0 (~280ms; spline `KeySpline 0.1,0.9 0.2,1.0`). The row dims to opacity 0.48, then (~300ms later) swaps its body for the acknowledgement bar; after the hold it **folds away** — a scale-Y collapse to 0 anchored at the top + a fade (~170ms, accelerating ease `(0.4,0)(1,1)`) — and the list reloads it into its 완료한 일 section / Logbook. A **repeating** completion instead spins the bar's refresh glyph a single full turn (~1000ms) before the fold, signalling the occurrence rolled to the next cycle. The timing, hover-to-extend, and undo live in the View (`TaskListPage`); the row view model only exposes the acknowledgement flags. Gated on `UISettings.AnimationsEnabled` — when off, completion finalizes immediately with no bar or fold.
+- **Completion (celebration moment):** empty outline → filled accent circle + check glyph, with a scale overshoot 0.6 → 1.15 → 1.0 (~280ms; spline `KeySpline 0.1,0.9 0.2,1.0`). The row dims to opacity 0.48, then (~300ms later) swaps its body for the acknowledgement bar. The exit motion differs by completion kind, because the two are *different objects*:
+  - A **terminal** completion (one-off / ended series) is leaving the list, so after the hold it **folds away** — a scale-Y collapse to 0 anchored at the top + a fade (~170ms, accelerating ease `(0.4,0)(1,1)`) — and the list reloads it into its 완료한 일 section / Logbook.
+  - A **repeating** completion is *advancing*, not leaving, so it deliberately avoids the fold (folding the row's reused container would leave the same-id next-cycle row stuck at scale-Y 0 / opacity 0). The bar's refresh glyph spins a single full turn (~1000ms); then the row **fades out** (~150ms), the list reloads the same row in place to its next cycle, and the refreshed row **fades back in** with a small scale settle (~240ms, ease `(0.1,0.9)(0.2,1.0)`) — reusing the list's entrance feel so it reads as a fresh occurrence arriving. On a Today list a next occurrence past today simply doesn't come back (the fade-out is its exit).
+
+  The timing, hover-to-extend, and undo live in the View (`TaskListPage`); the row view model only exposes the acknowledgement flags, and the recurrence service reports the next occurrence so the View knows which exit to play. Gated on `UISettings.AnimationsEnabled` — when off, completion finalizes immediately with no bar, fold, or fade.
 - **Detail-panel entrance:** Composition `Translation` (28→0) + `Opacity`, slide-in over ~350ms on the signature cubic-bezier `(0.1,0.9)(0.2,1.0)`, run on the compositor thread.
 - **Detail-panel close:** the reverse — `Translation` (0→24) + `Opacity` fade out, faster (~180ms slide / ~160ms fade) on an accelerating ease `(0.4,0)(1,1)`. The actual close is deferred ~170ms so the panel animates out before it is removed.
 - **Page transition:** subtle `Opacity` + `Scale` settle (≈0.99→1.0) on navigation.

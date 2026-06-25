@@ -14,7 +14,7 @@ namespace Cue;
 /// </summary>
 public sealed partial class HexToTintBrushConverter : IValueConverter
 {
-    private const byte TintAlpha = 0x24; // ~14%
+    private const byte TintAlpha = 0x2B; // ~17% — matches the priority pill tint (PriorityToTintBrushConverter)
 
     public object Convert(object value, Type targetType, object parameter, string language)
     {
