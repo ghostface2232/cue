@@ -261,7 +261,9 @@ public sealed class KoreanDateParserTests
     [InlineData("담달 보험 갱신하는 거 까먹지 말기", "보험 갱신하는 거 까먹지 말기", 2026, 7, 23)]
     [InlineData("다음달 보험 갱신", "보험 갱신", 2026, 7, 23)]
     [InlineData("다음 달 보험 갱신", "보험 갱신", 2026, 7, 23)]
+    [InlineData("담 달 보험 갱신", "보험 갱신", 2026, 7, 23)]
     [InlineData("담달 10일 카드값 정산", "카드값 정산", 2026, 7, 10)]
+    [InlineData("담 달 10일 카드값 정산", "카드값 정산", 2026, 7, 10)]
     [InlineData("다음 10일 카드값 정산", "카드값 정산", 2026, 7, 10)]
     [InlineData("담 10일 카드값 정산", "카드값 정산", 2026, 7, 10)]
     public void NextOrDamBeforeDateToken_IsDateNotSomeday(string input, string title, int y, int mo, int d)
