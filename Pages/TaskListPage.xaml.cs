@@ -52,7 +52,7 @@ public sealed partial class TaskListPage : Page
     private readonly List<ItemsRepeater> _taskRepeaters = new();
     // Per-row pending fold timers for the completion-acknowledgement moment, so a hover can pause one and
     // an undo/finalize can cancel it.
-    private readonly Dictionary<TaskRowViewModel, DispatcherQueueTimer> _ackTimers = new();
+    private readonly Dictionary<TaskRowViewModel, Microsoft.UI.Dispatching.DispatcherQueueTimer> _ackTimers = new();
     private Visual? _detailPanelVisual;
     private bool _isResizingDetail;
     private double _detailPreferredWidth;
