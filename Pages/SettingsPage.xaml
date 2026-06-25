@@ -571,19 +571,21 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <!-- App icon, sized to the row's two-line text block. -->
+                                <!-- App icon, sized to the row's two-line text block. Sourced from the 256px
+                                     app-icon asset (not AppIcon.ico, whose largest frame is only 32px) so it
+                                     stays crisp on high-DPI displays. -->
                                 <Image
                                     Width="44"
                                     Height="44"
                                     VerticalAlignment="Center"
-                                    Source="ms-appx:///Assets/AppIcon.ico" />
+                                    Source="ms-appx:///Assets/Square44x44Logo.targetsize-256_altform-unplated.png" />
                                 <StackPanel
                                     Grid.Column="1"
                                     Margin="14,0,0,0"
                                     VerticalAlignment="Center"
                                     Spacing="{StaticResource CueGap2}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="Cue" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="한국어 우선 할 일 앱" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="한국어를 자동으로 할 일로 정리해서 바꿔주는, 가장 쉬운 To-Do 앱" />
                                 </StackPanel>
                                 <TextBlock
                                     x:Name="VersionText"
