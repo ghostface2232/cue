@@ -769,20 +769,6 @@ public partial class TaskDetailViewModel : ObservableObject
             await LoadTimelineAsync(task);
     }
 
-    /// <summary>이번 회차 건너뛰기 — records the current cycle as 건너뜀 and advances the series, leaving it
-    /// open. Refreshes the owning list and the panel (the head pip rolls to the next cycle, a new 건너뜀 pip
-    /// joins the history).</summary>
-    [RelayCommand]
-    private async Task SkipCurrentAsync()
-    {
-        if (_taskId is not { } id) return;
-        await FlushAsync();
-        await _recurrence.SkipAsync(id, _clock.GetUtcNow());
-        await _refreshOwner();
-        _navNotifier.NotifyCountsChanged();
-        await OpenAsync(id); // reload the advanced cycle + the new history pip
-    }
-
     /// <summary>반복 종료 — ends the series (the only path that completes a recurring task): stamps its
     /// completion so it leaves the active lists and lands in the Logbook, then closes the panel and
     /// refreshes the list. The recorded cycle history is preserved on the (now completed) series.</summary>

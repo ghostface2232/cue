@@ -865,11 +865,6 @@
                                         <FontIcon FontSize="13" Glyph="&#xE76C;" />
                                     </Button>
                                 </Grid>
-                                <Button
-                                    HorizontalAlignment="Left"
-                                    Click="SkipCurrent_Click"
-                                    Content="이번 회차 건너뛰기"
-                                    Style="{StaticResource CueSubtleTextButtonStyle}" />
                             </StackPanel>
                         </Border>
 

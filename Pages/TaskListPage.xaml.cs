@@ -304,9 +304,6 @@ public sealed partial class TaskListPage : Page
                 await ViewModel.Detail.EndSeriesCommand.ExecuteAsync(null);
         });
 
-    private async void SkipCurrent_Click(object sender, RoutedEventArgs e)
-        => await RunSafelyAsync(() => ViewModel.Detail.SkipCurrentCommand.ExecuteAsync(null));
-
     /// <summary>‹ — pages older recorded cycles in if any remain (history loads on demand, never all at
     /// once), otherwise just nudges the strip toward the older end.</summary>
     private void TimelinePrev_Click(object sender, RoutedEventArgs e)
