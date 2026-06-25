@@ -34,7 +34,7 @@
 
 ## 작동 원리
 
-이 프로젝트의 모든 요소가 따르는 단 하나의 규칙은 바로 파일이 Source of Truth이며, SQLite는 일시적인 캐시라는 점입니다.
+이 프로젝트 전반의 일관된 규칙은 파일이 Source of Truth이며, SQLite는 일시적인 캐시라는 점입니다.
 
 할 일, 그룹, 태그를 비롯한 모든 레코드는 단일 {guid}.json 파일로 저장됩니다. 모든 쓰기 작업은 하나의 ITaskStore를 거치며, 이 저장소는 파일을 먼저 기록한 뒤 해당 레코드 하나를 SQLite 인덱스에 반영합니다. 모든 목록 조회 쿼리는 이 인덱스를 읽으며, 폴더 전체를 스캔하지 않습니다. 인덱스를 삭제하고 앱을 재시작하면 오직 파일들만 가지고 인덱스를 다시 구축합니다.
 
@@ -47,7 +47,7 @@ View (XAML)
   → IDateParser  (UI나 스토리지 의존성이 없는 독립형 컴포넌트)
 ```
 
-각 레코드별로 깔끔하게 병합되는 세분화된 파일 구조를 채택했습니다. 이 규칙에 따라 몇 가지 의도적인 설계가 적용되었습니다.
+각 레코드별로 병합되는 세분화된 파일 구조를 채택했습니다. 이 규칙에 따라 몇 가지 설계가 적용되었습니다.
 
 * 삭제 작업은 Soft Delete 방식을 사용합니다. 파일을 실제로 지우지 않고 DeletedAt Tombstone 마킹을 남겨두어, 인덱스 재구축이나 동기화 프로세스에서도 삭제 여부를 인식할 수 있도록 합니다.
 * 파일 쓰기는 원자적으로 수행되며(임시 파일 생성 후 교체), 파일 손상 격리가 적용됩니다. 읽을 수 없는 파일이 있더라도 해당 파일만 건너뛸 뿐 전체 목록을 불러오는 데 치명적인 오류를 일으키지 않습니다.
@@ -58,12 +58,12 @@ View (XAML)
 
 ## 기술 스택
 
-* WinUI (Windows App SDK 2.2) - 웹뷰 래퍼가 아닌 네이티브 Fluent UI를 사용합니다.
-* C# / .NET 10 - net10.0-windows10.0.26100.0 버전을 타겟팅합니다.
-* MVVM - CommunityToolkit.Mvvm 소스 제너레이터를 활용합니다.
-* 개별 레코드 파일 처리에는 System.Text.Json을 사용하며, 파생 인덱스 관리에는 ORM(EF Core) 없이 기본 SQL을 다루는 Microsoft.Data.Sqlite를 사용합니다.
-* RRULE 분석을 위해 Ical.Net을 사용하지만, 이는 스토리지 레이어 내부에만 격리되어 있으며 도메인이나 뷰 모델에서는 참조하지 않습니다.
-* 앱 전반의 서체로 [Pretendard](https://github.com/orioncactus/pretendard) JP 버전을 포함하고 있습니다.
+* WinUI (Windows App SDK 2.2) - 네이티브 Fluent WinUI 3 경험을 위함.
+* C# / .NET 10 - net10.0-windows10.0.26100.0 버전을 타겟팅.
+* MVVM - CommunityToolkit.Mvvm 소스 제너레이터를 활용.
+* 개별 레코드 파일 처리에는 System.Text.Json을 사용하며, 파생 인덱스 관리에는 ORM(EF Core) 없이 기본 SQL을 다루는 Microsoft.Data.Sqlite를 사용.
+* RRULE 분석을 위해 Ical.Net을 사용하지만, 이는 스토리지 레이어 내부에만 격리되어 있으며 도메인이나 뷰 모델에서는 참조하지 않음.
+* 앱 전반의 서체로 [Pretendard](https://github.com/orioncactus/pretendard) JP 버전을 포함.
 
 한국어 파서는 직접 작성했습니다. Microsoft.Recognizers.Text 라이브러리가 Fallback으로 연결되어 있으나, 현재 기준으로는 한국어 날짜/시간 모델이 작동하지 않습니다. 따라서 자체 내장된 규칙 파이프라인이 실질적인 작업을 수행하며, 향후 해당 라이브러리가 한국어를 공식 지원하게 되면 자동으로 연동되어 작동합니다.
 
