@@ -923,9 +923,10 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 반복 종료 (end the series). Explicit action in place of any hidden gesture, shown
-                             only for a recurring task. "완료" is intentionally avoided here — that word means
-                             the current cycle; ending the series moves the whole task to 완료한 일. -->
+                        <!-- 반복 종료 (stop the recurrence). Explicit action in place of any hidden gesture,
+                             shown only for a recurring task. "완료" is intentionally avoided — that word means
+                             the current cycle; ending the series just stops the repeat and leaves the task as
+                             a plain, still-open one. -->
                         <Button
                             x:Name="EndSeriesButton"
                             Margin="4,2,8,4"

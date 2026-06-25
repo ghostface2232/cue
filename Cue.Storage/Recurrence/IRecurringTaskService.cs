@@ -45,13 +45,13 @@ public interface IRecurringTaskService
     Task<DateOnly?> SkipAsync(Guid taskId, DateTimeOffset skippedAt, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Ends the recurring series with <paramref name="taskId"/>: stamps the original's
-    /// <see cref="TaskItem.CompletedAt"/> at <paramref name="completedAt"/> so it leaves the active lists
-    /// and lands in the Logbook. This is the <i>only</i> path that completes a recurring task. The
-    /// recurrence rule is left on the (now completed) record as historical context; the cycle history is
-    /// untouched. A no-op if the task is missing, deleted, or not recurring.
+    /// Ends the recurring series with <paramref name="taskId"/> by <b>stopping the recurrence</b>: clears
+    /// its <see cref="TaskItem.Recurrence"/> so it stops rolling forward and becomes a plain, still-open
+    /// task at its current cycle. This is deliberately <i>not</i> a completion — "완료" means the current
+    /// cycle, never the series — so the task is left open for the user to finish or delete normally; the
+    /// recorded cycle history is preserved. A no-op if the task is missing, deleted, or not recurring.
     /// </summary>
-    Task EndSeriesAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default);
+    Task EndSeriesAsync(Guid taskId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Re-classifies a single past cycle (<paramref name="occurrenceId"/>) to <paramref name="status"/>.

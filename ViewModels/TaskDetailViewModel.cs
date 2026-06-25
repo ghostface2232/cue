@@ -783,18 +783,17 @@ public partial class TaskDetailViewModel : ObservableObject
         await OpenAsync(id); // reload the advanced cycle + the new history pip
     }
 
-    /// <summary>반복 종료 — ends the series (the only path that completes a recurring task): stamps its
-    /// completion so it leaves the active lists and lands in the Logbook, then closes the panel and
-    /// refreshes the list. The recorded cycle history is preserved on the (now completed) series.</summary>
+    /// <summary>반복 종료 — stops the recurrence so the task becomes a plain, still-open one at its current
+    /// cycle. It is deliberately not a completion ("완료"는 현재 회차에만): the panel stays open and is
+    /// reloaded as a non-recurring task (the timeline and 반복 종료 affordances drop). History is preserved.</summary>
     [RelayCommand]
     private async Task EndSeriesAsync()
     {
         if (_taskId is not { } id) return;
         await FlushAsync();
-        await _recurrence.EndSeriesAsync(id, _clock.GetUtcNow());
-        Close();
+        await _recurrence.EndSeriesAsync(id);
         await _refreshOwner();
-        _navNotifier.NotifyCountsChanged();
+        await OpenAsync(id); // reload as a plain task — timeline/반복 종료 hide
     }
 
     /// <summary>Removes one checklist item from the open task, persists the parent, and drops its row

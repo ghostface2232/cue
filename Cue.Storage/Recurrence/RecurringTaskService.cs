@@ -119,18 +119,17 @@ public sealed class RecurringTaskService : IRecurringTaskService
         return nextOccurrence;
     }
 
-    public Task EndSeriesAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default)
-        => _store.RunInTransactionAsync(async (tx, ct) =>
+    public Task EndSeriesAsync(Guid taskId, CancellationToken cancellationToken = default)
+        => _store.MutateAsync<TaskItem>(taskId, task =>
         {
-            var task = await tx.GetAsync<TaskItem>(taskId, ct).ConfigureAwait(false);
-            if (task is null || task.IsDeleted || task.Recurrence is null)
-                return;
+            if (task.Recurrence is null)
+                return false; // not recurring — nothing to end
 
-            // Ending the series is the only way a recurring task itself becomes completed: stamp
-            // CompletedAt so it leaves the active lists and lands in the Logbook. The rule is kept on the
-            // (now completed) record as historical context; it never advances again because IsCompleted.
-            task.CompletedAt = completedAt;
-            await tx.SaveAsync(task, ct).ConfigureAwait(false);
+            // Ending the series stops the recurrence and leaves the task open as a plain one-off at its
+            // current cycle. It is NOT a completion (그 표현은 현재 회차에만 쓴다): the user finishes or
+            // deletes it normally afterward. Only Recurrence is cleared; the recorded cycle history stays.
+            task.Recurrence = null;
+            return true;
         }, cancellationToken);
 
     public Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, CancellationToken cancellationToken = default)

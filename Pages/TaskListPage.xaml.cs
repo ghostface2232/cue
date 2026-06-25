@@ -288,11 +288,11 @@ public sealed partial class TaskListPage : Page
     private const double TimelineScrollStep = (52 + 4) * 3;
 
     /// <summary>Confirms 반복 종료 with a light anchored popover. Not destructive (nothing is deleted) —
-    /// the series is completed and moves to 완료한 일 — so it uses a plain confirm, not the red delete tone.</summary>
+    /// the recurrence stops and the task stays as a plain open one — so it uses a plain confirm.</summary>
     private Task<bool> ConfirmEndSeriesAsync(FrameworkElement anchor)
         => ConfirmPopover.ShowAsync(anchor, new ConfirmPopoverOptions
         {
-            Message = "반복을 종료하고 완료한 일로 옮길까요?",
+            Message = "반복을 종료할까요? 현재 할 일은 일반 할 일로 남습니다.",
             ConfirmText = "반복 종료",
             Destructive = false,
         });

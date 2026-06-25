@@ -799,15 +799,16 @@ public partial class TaskListViewModel : ObservableObject
         if (renamed is not null) await LoadAsync();
     }
 
-    /// <summary>Ends a recurring series straight from a row's context menu (반복 종료): completes the
-    /// series so it leaves the active lists and lands in the Logbook, closes the detail panel if this task
-    /// was open, and refreshes. A no-op for a non-recurring task. The recorded cycle history is preserved.</summary>
+    /// <summary>Ends a recurring series straight from a row's context menu (반복 종료): stops the
+    /// recurrence so the task becomes a plain, still-open one at its current cycle — it is not completed.
+    /// The row stays in the list, now without the repeat mark; if the task is open in the detail panel it is
+    /// reopened so its timeline/반복 종료 affordances drop. A no-op for a non-recurring task; history kept.</summary>
     public async Task EndSeriesAsync(Guid id)
     {
-        await _recurrence.EndSeriesAsync(id, _clock.GetUtcNow());
-        if (Detail.IsOpen && Detail.CurrentTaskId == id) Detail.Close();
+        await _recurrence.EndSeriesAsync(id);
         await LoadAsync();
-        _navNotifier.NotifyCountsChanged();
+        if (Detail.IsOpen && Detail.CurrentTaskId == id)
+            await Detail.OpenAsync(id);
     }
 
     /// <summary>Soft-deletes a task (its embedded checklist goes with it), closes the detail panel if

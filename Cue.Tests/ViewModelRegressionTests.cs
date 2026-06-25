@@ -1030,7 +1030,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task EndSeries_FromListViewModel_CompletesSeriesIntoLogbook()
+    public async Task EndSeries_FromListViewModel_StopsRecurrence_LeavesPlainOpenTask()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
@@ -1039,6 +1039,7 @@ public sealed class ViewModelRegressionTests
             clock,
             TimeZoneInfo.Utc);
 
+        // Today so the row sits in the Today list; ending the series must keep it there (just non-recurring).
         var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
         var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
         await store.SaveAsync(task);
@@ -1046,17 +1047,18 @@ public sealed class ViewModelRegressionTests
         var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
         vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
         await vm.LoadCommand.ExecuteAsync(null);
-        Assert.Single(vm.Tasks);
+        Assert.True(Assert.Single(vm.Tasks).IsRecurring);
 
         await vm.EndSeriesAsync(task.Id);
 
-        // 반복 종료 completes the series: it leaves the open list and lands in the Logbook (its rule kept).
-        await vm.LoadCommand.ExecuteAsync(null);
-        Assert.Empty(vm.Tasks);
+        // 반복 종료 stops the recurrence: the row stays in the open list, now without the repeat mark, and the
+        // task is NOT completed (not in the Logbook).
+        var row = Assert.Single(vm.Tasks);
+        Assert.False(row.IsRecurring);
         var ended = await store.GetAsync<TaskItem>(task.Id);
-        Assert.True(ended!.IsCompleted);
-        Assert.NotNull(ended.Recurrence);
-        Assert.Contains(await store.GetLogbookAsync(), t => t.Id == task.Id);
+        Assert.False(ended!.IsCompleted);
+        Assert.Null(ended.Recurrence);
+        Assert.DoesNotContain(await store.GetLogbookAsync(), t => t.Id == task.Id);
     }
 
     [Theory]

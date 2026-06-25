@@ -382,7 +382,7 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task EndSeries_CompletesOriginal_KeepsRecurrenceAndHistory()
+    public async Task EndSeries_StopsRecurrence_LeavesTaskOpen_AndKeepsHistory()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root);
@@ -392,14 +392,16 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         await store.SaveAsync(task);
 
         await service.CompleteAsync(task.Id, Now); // one recorded cycle, advanced to tomorrow
-        await service.EndSeriesAsync(task.Id, Now);
+        await service.EndSeriesAsync(task.Id);
 
-        // Ending the series is the only path that completes a recurring task: it lands in the Logbook with
-        // its recurrence rule preserved as historical context, and its recorded cycle history is untouched.
+        // Ending the series stops the recurrence and leaves the task a plain, still-open one at its current
+        // cycle — it is NOT completed and does NOT land in the Logbook. The recorded history is preserved.
         var ended = await store.GetAsync<TaskItem>(task.Id);
-        Assert.True(ended!.IsCompleted);
-        Assert.NotNull(ended.Recurrence);
-        Assert.Contains(await store.GetLogbookAsync(), t => t.Id == task.Id);
+        Assert.False(ended!.IsCompleted);
+        Assert.Null(ended.Recurrence);
+        Assert.Equal(Today.AddDays(1), WhenDay(ended)); // stays at its current (advanced) cycle
+        Assert.DoesNotContain(await store.GetLogbookAsync(), t => t.Id == task.Id);
+        Assert.Contains(await store.GetAllActiveAsync(), t => t.Id == task.Id && !t.IsRecurring);
         Assert.Equal(1, await store.GetOccurrenceCountAsync(task.Id));
     }
 
@@ -413,8 +415,10 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         var task = new TaskItem { Title = "한 번만", When = OnDay(Today) };
         await store.SaveAsync(task);
 
-        await service.EndSeriesAsync(task.Id, Now);
-        Assert.False((await store.GetAsync<TaskItem>(task.Id))!.IsCompleted); // untouched
+        await service.EndSeriesAsync(task.Id);
+        var after = await store.GetAsync<TaskItem>(task.Id);
+        Assert.False(after!.IsCompleted); // untouched
+        Assert.Null(after.Recurrence);
     }
 
     [Fact]
