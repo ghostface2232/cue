@@ -71,7 +71,11 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         };
         await store.SaveAsync(task);
 
-        await service.CompleteAsync(task.Id, Now);
+        var next = await service.CompleteAsync(task.Id, Now);
+
+        // The service reports the advanced cycle's local date (today → tomorrow) so the UI can show a
+        // "다음: …" cue and refresh the row in place rather than fold it away.
+        Assert.Equal(Today.AddDays(1), next);
 
         // The original is still open and advanced exactly one cycle (today → tomorrow). Rank and the
         // recurrence rule are untouched; only When moved.
@@ -275,7 +279,8 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         var task = new TaskItem { Title = "한 번만", When = OnDay(Today) };
         await store.SaveAsync(task);
 
-        await service.CompleteAsync(task.Id, Now);
+        var next = await service.CompleteAsync(task.Id, Now);
+        Assert.Null(next); // a terminal completion reports no next occurrence
 
         var all = await store.GetAllAsync<TaskItem>();
         Assert.Single(all); // no copy made
@@ -302,7 +307,8 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         };
         await store.SaveAsync(task);
 
-        await service.CompleteAsync(task.Id, Now);
+        var next = await service.CompleteAsync(task.Id, Now);
+        Assert.Null(next); // an unevaluable rule completes in place, reporting no next occurrence
 
         var all = await store.GetAllAsync<TaskItem>();
         Assert.Single(all); // no copy, no advance

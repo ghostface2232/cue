@@ -84,10 +84,12 @@ public partial class TaskListViewModel : ObservableObject
     /// collapsed/expanded state survives list refreshes.</summary>
     public CompletedSectionViewModel CompletedSection { get; } = new();
 
-    /// <summary>Raised right after a task is completed from an active list and its row has entered the
-    /// acknowledgement state, so the View can run the fold/spin timing and then call
-    /// <see cref="FinalizeCompletionAsync"/>. Carries the row that was just completed.</summary>
-    public event Action<TaskRowViewModel>? CompletionAcknowledged;
+    /// <summary>Raised right after a task is completed from an active list, so the View can run the in-row
+    /// acknowledgement timing. Carries the completed row and the recurrence outcome: a non-null local date
+    /// is the <b>next occurrence</b> of a repeating task that rolled to its next cycle (the View refreshes
+    /// the row in place to that date); <c>null</c> is a terminal completion (one-off or exhausted series,
+    /// which folds away). The View then calls <see cref="FinalizeCompletionAsync"/> to reload.</summary>
+    public event Action<TaskRowViewModel, DateOnly?>? CompletionAcknowledged;
 
     public TaskDetailViewModel Detail { get; }
 
@@ -763,16 +765,19 @@ public partial class TaskListViewModel : ObservableObject
             if (completed)
             {
                 // Completion runs through the recurrence service: a repeating task leaves a completed
-                // Logbook copy and advances to its next cycle, a one-off is simply stamped done. The
-                // task's embedded checklist items are independent and left as they are.
-                await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
+                // Logbook copy and advances to its next cycle (returning that next occurrence), a one-off
+                // is simply stamped done (returning null). The task's embedded checklist items are
+                // independent and left as they are.
+                var nextOccurrence = await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
                 _navNotifier.NotifyCountsChanged();
 
-                // Hold the row in place (now completed, so dimmed) and hand off to the View for the
-                // acknowledgement moment: it lets the check + dim register, swaps in the undo / repeat
-                // note, then folds the row away and calls FinalizeCompletionAsync — which reloads and drops
-                // the row into its 완료한 일 section. No reload here — that would whisk it away too soon.
-                CompletionAcknowledged?.Invoke(row);
+                // Hold the row in place and hand off to the View for the acknowledgement moment, passing the
+                // recurrence outcome. A terminal completion (nextOccurrence == null) lets the check + dim
+                // register, swaps in the undo note, then folds the row away and calls FinalizeCompletionAsync
+                // — dropping it into its 완료한 일 section. A repeating completion instead spins the refresh
+                // glyph, shows the next date, then refreshes the row in place to its next cycle (it stays in
+                // every list but a Today it has rolled out of). No reload here — that would whisk it away.
+                CompletionAcknowledged?.Invoke(row, nextOccurrence);
             }
             else
             {
@@ -796,9 +801,11 @@ public partial class TaskListViewModel : ObservableObject
         }
     }
 
-    /// <summary>Ends a row's completion acknowledgement and reloads the list, so the just-completed task
-    /// leaves the open list and reappears in its 완료한 일 section / Logbook. Called by the View once the
-    /// fold (and, for a repeating task, the refresh spin) has played.</summary>
+    /// <summary>Ends a row's completion acknowledgement and reloads the list. For a terminal completion the
+    /// just-completed task then leaves the open list and reappears in its 완료한 일 section / Logbook; for a
+    /// repeating completion the same-id row is reconciled in place to its next cycle (new date, unchecked),
+    /// or dropped if it has rolled out of the current view's range (e.g. Today). Called by the View once the
+    /// fold — or, for a repeating task, the refresh spin + fade — has played.</summary>
     public async Task FinalizeCompletionAsync(TaskRowViewModel row)
     {
         row.EndCompletionAcknowledgement();
