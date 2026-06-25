@@ -629,7 +629,7 @@
                             <ScalarTransition Duration="0:0:0.083" />
                         </Border.OpacityTransition>
                     </Border>
-                    <ScrollViewer behaviors:ScrollBarAutoHide.IsEnabled="True" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="DetailScrollViewer" IsTabStop="True" behaviors:ScrollBarAutoHide.IsEnabled="True" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="2,0,4,0" Spacing="{StaticResource CueGap12}">
                         <Grid ColumnSpacing="{StaticResource CueGap8}">
                             <Grid.ColumnDefinitions>
@@ -933,7 +933,7 @@
                                 <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="체크리스트" />
                                 <Grid ColumnSpacing="{StaticResource CueGap8}">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <TextBox PlaceholderText="체크리스트 항목" Text="{x:Bind ViewModel.Detail.NewChecklistItemTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBox PlaceholderText="체크리스트 항목" KeyDown="NewChecklistItem_KeyDown" Text="{x:Bind ViewModel.Detail.NewChecklistItemTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                     <Button Grid.Column="1" Click="AddChecklistItem_Click" Content="추가" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Checklist}">

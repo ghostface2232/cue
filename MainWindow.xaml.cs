@@ -956,7 +956,17 @@ public sealed partial class MainWindow : Window
     private static void AddDeleteAccelerator(NavigationViewItem item, Func<FrameworkElement, Task> deleteFlow)
     {
         var accelerator = new KeyboardAccelerator { Key = VirtualKey.Delete };
-        accelerator.Invoked += (accel, args) => { args.Handled = true; _ = deleteFlow(item); };
+        accelerator.Invoked += (accel, args) =>
+        {
+            // A KeyboardAccelerator with no ScopeOwner is window-global: it would fire wherever focus sits
+            // (e.g. in the detail panel with no text box focused), popping this group's delete confirm out
+            // of nowhere. Delete only deletes the row that is itself focused — matching how a focused task
+            // row handles Delete. A focused descendant (the inline rename box) leaves the item Unfocused, so
+            // Delete there still edits text. When unfocused, leave args.Handled false so others can respond.
+            if (item.FocusState == FocusState.Unfocused) return;
+            args.Handled = true;
+            _ = deleteFlow(item);
+        };
         item.KeyboardAccelerators.Add(accelerator);
     }
 

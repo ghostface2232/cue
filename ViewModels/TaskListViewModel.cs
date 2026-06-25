@@ -832,11 +832,12 @@ public partial class TaskListViewModel : ObservableObject
     {
         if (Detail.IsOpen && Detail.CurrentTaskId != id)
         {
-            // Persist and drain the outgoing task's pending edits before tearing the panel down, so a
-            // queued autosave can't resume against the next task's freshly loaded fields.
+            // Switching tasks swaps the panel's content in place — the panel never hides, so it doesn't
+            // play its slide-out only to slide back in (and the list column never reflows wider then
+            // narrow again). Persist and drain the outgoing task's pending edits first so a queued
+            // autosave can't resume against the next task's freshly loaded fields; OpenAsync's loading
+            // guard then suppresses saves while it repopulates.
             await Detail.FlushAsync();
-            Detail.Close();
-            await Task.Delay(90);
         }
 
         await Detail.OpenAsync(id);

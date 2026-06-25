@@ -142,7 +142,21 @@ public sealed partial class TaskListPage : Page
         e.Handled = true;
         // Give the row keyboard focus too, so a follow-up Delete acts on the just-selected task.
         element.Focus(FocusState.Pointer);
+        await SelectTaskAndCenterTimelineAsync(id);
+    }
+
+    /// <summary>Selects a task and, when this swaps the content of an already-open panel (no Visibility
+    /// toggle to drive it), re-centers the recurrence strip on the current cycle once the new content lays
+    /// out. For a fresh open the panel's Visibility callback already arms the same scroll.</summary>
+    private async Task SelectTaskAndCenterTimelineAsync(Guid id)
+    {
+        var switching = ViewModel.Detail.IsOpen && ViewModel.Detail.CurrentTaskId != id;
+        if (switching) _timelineScrollToEndPending = true;
         await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(id));
+        // The strip relays out asynchronously after the swap; a same-size strip may not raise SizeChanged,
+        // so post one viewport refresh after layout settles to consume the pending scroll.
+        if (switching)
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, RefreshTimelineViewport);
     }
 
     /// <summary>Tapping a nested checklist row opens its parent task's detail (its <c>Tag</c> is the
@@ -153,7 +167,7 @@ public sealed partial class TaskListPage : Page
         if (sender is not FrameworkElement { Tag: Guid parentId } || IsInteractiveElement(e.OriginalSource as DependencyObject))
             return;
         e.Handled = true;
-        await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(parentId));
+        await SelectTaskAndCenterTimelineAsync(parentId);
     }
 
     /// <summary>Delete on a focused row soft-deletes that task (with confirmation).</summary>
@@ -335,6 +349,13 @@ public sealed partial class TaskListPage : Page
     /// recent history to its left and the future to its right. Cleared after the first scroll so paging
     /// older cycles in (‹) doesn't snap back.</summary>
     private void TimelineRepeater_SizeChanged(object sender, SizeChangedEventArgs e)
+        => RefreshTimelineViewport();
+
+    /// <summary>Keeps the strip filled with future pips for its current width and, while a scroll-to-current
+    /// is pending, lands it on the current cycle once the content has laid out wide enough to scroll. Driven
+    /// by the strip's SizeChanged and re-posted after an in-place task switch (where no Visibility toggle
+    /// fires) so the recurrence strip still centers on the live head pip.</summary>
+    private void RefreshTimelineViewport()
     {
         if (TimelineScroller is not { } scroller) return;
 
@@ -950,23 +971,38 @@ public sealed partial class TaskListPage : Page
     private async void DetailText_LostFocus(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await ViewModel.Detail.FlushAsync();
 
-    // The title commits on Enter too (it binds live, so this just flushes the save now). AcceptsReturn is
-    // off, so Enter never inserts a newline.
-    private async void DetailTitle_KeyDown(object sender, KeyRoutedEventArgs e)
+    // The title commits on Enter by blurring: the box binds live, and dropping focus fires LostFocus →
+    // FlushAsync. AcceptsReturn is off, so Enter never inserts a newline.
+    private void DetailTitle_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != VirtualKey.Enter) return;
         e.Handled = true;
-        await ViewModel.Detail.FlushAsync();
+        ReleaseDetailInputFocus();
     }
 
     // A checklist item commits on Enter by pushing the box's current text to its row view model (the Text
-    // binding otherwise updates only on focus-out), which fires the checklist save right away.
+    // binding otherwise updates only on focus-out) and then blurring so the edit reads as done.
     private void ChecklistItemTitle_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != VirtualKey.Enter || sender is not TextBox { DataContext: ChecklistItemViewModel item } box) return;
         e.Handled = true;
         item.Title = box.Text;
+        ReleaseDetailInputFocus();
     }
+
+    // The new-item field adds on Enter (mirroring the 추가 button), then blurs so focus leaves the box.
+    private async void NewChecklistItem_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter) return;
+        e.Handled = true;
+        ReleaseDetailInputFocus();
+        await RunSafelyAsync(() => ViewModel.Detail.AddChecklistItemCommand.ExecuteAsync(null));
+    }
+
+    /// <summary>Moves focus off a just-committed detail input onto the panel's scroll host — a neutral,
+    /// non-text focus stop — so Enter reads as "done": the box blurs (its LostFocus save fires) and the
+    /// caret leaves the field.</summary>
+    private void ReleaseDetailInputFocus() => DetailScrollViewer.Focus(FocusState.Programmatic);
 
     private async void AddChecklistItem_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.AddChecklistItemCommand.ExecuteAsync(null));
