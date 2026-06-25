@@ -71,6 +71,20 @@ public partial class TaskListViewModel : ObservableObject
     private TaskListMode _mode = TaskListMode.AllTasks;
     private Guid? _filterId;
 
+    // How many completed rows the "완료한 일" section pages in per batch — the first expand realizes one
+    // batch, each "더 보기" adds another. Sized so a typical session never builds more completed
+    // TaskRowViewModels than fit a screenful of scrolling, while a few hundred finished tasks stay cheap.
+    private const int CompletedPageSize = 100;
+
+    // The completed-section paging window for the current view: how many completed rows are currently
+    // requested (0 while collapsed and never opened). A refresh re-fetches this same window so an opened
+    // section keeps its rows; SetNavigation resets it to 0 so each view opens collapsed and unrealized.
+    private int _completedWindow;
+
+    // Fetches a [0, limit) page of the current view's completed rows, set per load to the mode's query
+    // (Today / group / tag). Null on views with no completed section.
+    private Func<int, Task<IReadOnlyList<TaskListItem>>>? _completedPager;
+
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
     /// <summary>Priority sections for the 중요도 (priority) view — one of the sectioned lists.</summary>
@@ -152,6 +166,9 @@ public partial class TaskListViewModel : ObservableObject
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
+        // The completed section pages its rows in on demand; this is the callback its header toggle and
+        // "더 보기" affordance invoke to realize the next batch.
+        CompletedSection.LoadMoreRequested = LoadMoreCompletedAsync;
         Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, navNotifier);
         // Clear the row selection accent when the detail panel closes.
         Detail.PropertyChanged += (_, e) =>
@@ -218,7 +235,10 @@ public partial class TaskListViewModel : ObservableObject
 
         // The completed section's collapsed/expanded state and title are reset when the view changes, so
         // it always opens fresh and collapsed; LoadAsync repopulates and re-titles it for the new mode.
+        // The paging window resets too, so the new view opens with no realized completed rows — only its
+        // count — and the first expand pages the first batch back in.
         CompletedSection.IsExpanded = false;
+        _completedWindow = 0;
         CompletedSection.Title = _mode == TaskListMode.Today ? "오늘 완료한 일" : "완료한 일";
         OnPropertyChanged(nameof(CanQuickAdd));
     }
@@ -285,7 +305,7 @@ public partial class TaskListViewModel : ObservableObject
         {
             case TaskListMode.Priority:
                 SyncRows(Tasks, []);
-                SyncCompletedSection([]);
+                ClearCompletedSection();
                 SyncLogbookSections([]);
                 SyncPrioritySections(await _index.GetByPriorityAsync());
                 IsEmpty = PrioritySections.Count == 0;
@@ -293,7 +313,7 @@ public partial class TaskListViewModel : ObservableObject
 
             case TaskListMode.Logbook:
                 SyncRows(Tasks, []);
-                SyncCompletedSection([]);
+                ClearCompletedSection();
                 SyncPrioritySections([]);
                 SyncLogbookSections(await _index.GetLogbookAsync());
                 IsEmpty = LogbookSections.Count == 0;
@@ -302,19 +322,24 @@ public partial class TaskListViewModel : ObservableObject
             case TaskListMode.Today:
                 await LoadFlatWithCompletedAsync(
                     await _index.GetTodayAsync(),
-                    await _index.GetTodayCompletedAsync());
+                    await _index.GetTodayCompletedCountAsync(),
+                    limit => _index.GetTodayCompletedAsync(limit));
                 break;
 
             case TaskListMode.TaskGroup:
+                var groupId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
-                    await _index.GetByTaskGroupAsync(RequiredFilterId()),
-                    await _index.GetCompletedByTaskGroupAsync(RequiredFilterId()));
+                    await _index.GetByTaskGroupAsync(groupId),
+                    await _index.GetCompletedCountByTaskGroupAsync(groupId),
+                    limit => _index.GetCompletedByTaskGroupAsync(groupId, limit));
                 break;
 
             case TaskListMode.Tag:
+                var tagId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
-                    await _index.GetByTagAsync(RequiredFilterId()),
-                    await _index.GetCompletedByTagAsync(RequiredFilterId()));
+                    await _index.GetByTagAsync(tagId),
+                    await _index.GetCompletedCountByTagAsync(tagId),
+                    limit => _index.GetCompletedByTagAsync(tagId, limit));
                 break;
 
             default:
@@ -329,7 +354,7 @@ public partial class TaskListViewModel : ObservableObject
                 };
                 SyncPrioritySections([]);
                 SyncLogbookSections([]);
-                SyncCompletedSection([]);   // these views exclude completed work outright
+                ClearCompletedSection();   // these views exclude completed work outright
                 SyncRows(Tasks, items);
                 IsEmpty = Tasks.Count == 0;
                 break;
@@ -339,15 +364,58 @@ public partial class TaskListViewModel : ObservableObject
         ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
     }
 
-    /// <summary>Loads a flat open list plus its collapsible "완료한 일" section (Today / group / tag).</summary>
-    private Task LoadFlatWithCompletedAsync(IReadOnlyList<TaskListItem> open, IReadOnlyList<TaskListItem> completed)
+    /// <summary>Loads a flat open list plus its collapsible "완료한 일" section (Today / group / tag). The
+    /// completed section is lazy: <paramref name="completedTotal"/> (a COUNT) drives its header and
+    /// visibility, while only the rows inside the current paging window are realized through
+    /// <paramref name="completedPage"/> — none while collapsed, the opened batch(es) once expanded. A
+    /// refresh re-fetches that same window, so an opened section keeps its rows.</summary>
+    private async Task LoadFlatWithCompletedAsync(
+        IReadOnlyList<TaskListItem> open,
+        int completedTotal,
+        Func<int, Task<IReadOnlyList<TaskListItem>>> completedPage)
     {
         SyncPrioritySections([]);
         SyncLogbookSections([]);
         SyncRows(Tasks, open);
-        SyncCompletedSection(completed);
-        IsEmpty = Tasks.Count == 0 && CompletedSection.Tasks.Count == 0;
-        return Task.CompletedTask;
+
+        _completedPager = completedPage;
+        CompletedSection.TotalCount = completedTotal;
+
+        // Realize only the rows within the current window (0 while collapsed and never opened), capped at
+        // the live total so a just-shrunk list can't ask for more than exists.
+        var window = Math.Min(_completedWindow, completedTotal);
+        SyncCompletedSection(window > 0 ? await completedPage(window) : []);
+
+        IsEmpty = Tasks.Count == 0 && CompletedSection.TotalCount == 0;
+    }
+
+    /// <summary>Pages in the next batch of completed rows for the current view — the callback behind the
+    /// section's header toggle (first expand) and its "더 보기" affordance. Grows the window by one page,
+    /// re-fetches it from the top (the reconcile reuses the rows already realized), and re-applies the
+    /// selection accent to any freshly inserted row.</summary>
+    private async Task LoadMoreCompletedAsync()
+    {
+        if (_completedPager is null || CompletedSection.IsLoading) return;
+        CompletedSection.IsLoading = true;
+        try
+        {
+            _completedWindow = Math.Min(_completedWindow + CompletedPageSize, CompletedSection.TotalCount);
+            SyncCompletedSection(await _completedPager(_completedWindow));
+            ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
+        }
+        finally
+        {
+            CompletedSection.IsLoading = false;
+        }
+    }
+
+    /// <summary>Clears the completed section for a view that carries none: empties its rows, zeroes its
+    /// count (so it hides), and drops the pager so a stale toggle can't realize rows from a prior view.</summary>
+    private void ClearCompletedSection()
+    {
+        _completedPager = null;
+        CompletedSection.TotalCount = 0;
+        SyncCompletedSection([]);
     }
 
     /// <summary>
@@ -592,63 +660,76 @@ public partial class TaskListViewModel : ObservableObject
         => SyncRows(CompletedSection.Tasks, items);
 
     /// <summary>
-    /// Reconciles the Logbook's date sections in place: one section per local completion day, newest day
-    /// first, headed 오늘 / 어제 / a "M월 d일" date. Reuses existing section instances by title so a refresh
-    /// doesn't tear the list down. Pass an empty list to clear the sections for an unsectioned view.
+    /// Reconciles the Logbook's date sections in place: one section per local completion <i>day</i>, newest
+    /// day first, headed 오늘 / 어제 / "M월 d일" (this year) / "yyyy년 M월 d일" (an earlier year). Sections are
+    /// keyed and reused by their full <see cref="DateOnly"/> date — never by the rendered heading, which
+    /// drops the year on older days and would otherwise merge same-day dates a year apart (2025-06-22 and
+    /// 2026-06-22 both read "6월 22일"). A reused section's heading is refreshed so it rolls 오늘 → 어제 as the
+    /// day turns over. Pass an empty list to clear the sections for an unsectioned view.
     /// </summary>
     private void SyncLogbookSections(IReadOnlyList<TaskListItem> items)
     {
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone).DateTime);
 
-        // Group by local completion day, preserving the index's newest-first order. completed_at is set on
-        // every Logbook row, but guard a null defensively (it would sort under a "" title and stay stable).
-        var desired = new List<(string Title, List<TaskListItem> Items)>();
-        var byTitle = new Dictionary<string, List<TaskListItem>>();
+        // Group by the local completion day (a DateOnly), preserving the index's newest-first order.
+        // completed_at is set on every Logbook row, but guard a null defensively — it falls in the
+        // DateOnly.MinValue bucket (heading "") and keeps its position.
+        var desired = new List<(DateOnly Day, List<TaskListItem> Items)>();
+        var byDay = new Dictionary<DateOnly, List<TaskListItem>>();
         foreach (var item in items)
         {
-            var title = item.CompletedAt is { } at
-                ? DayHeading(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, _timeZone).DateTime), today)
-                : "";
-            if (!byTitle.TryGetValue(title, out var bucket))
+            var day = item.CompletedAt is { } at
+                ? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, _timeZone).DateTime)
+                : DateOnly.MinValue;
+            if (!byDay.TryGetValue(day, out var bucket))
             {
                 bucket = new List<TaskListItem>();
-                byTitle[title] = bucket;
-                desired.Add((title, bucket));
+                byDay[day] = bucket;
+                desired.Add((day, bucket));
             }
             bucket.Add(item);
         }
 
-        var desiredTitles = new HashSet<string>(desired.Select(section => section.Title));
+        var desiredDays = new HashSet<DateOnly>(desired.Select(section => section.Day));
         for (var i = LogbookSections.Count - 1; i >= 0; i--)
-            if (!desiredTitles.Contains(LogbookSections[i].Title))
+            if (!desiredDays.Contains(LogbookSections[i].Date))
                 LogbookSections.RemoveAt(i);
 
         for (var i = 0; i < desired.Count; i++)
         {
-            var (title, bucket) = desired[i];
-            if (i >= LogbookSections.Count || LogbookSections[i].Title != title)
+            var (day, bucket) = desired[i];
+            if (i >= LogbookSections.Count || LogbookSections[i].Date != day)
             {
-                var existing = IndexOfLogbookSection(title);
+                var existing = IndexOfLogbookSection(day);
                 if (existing >= 0) LogbookSections.Move(existing, i);
-                else LogbookSections.Insert(i, new DateSectionViewModel(title));
+                else LogbookSections.Insert(i, new DateSectionViewModel(day, DayHeading(day, today)));
             }
+            // Refresh the heading on the (possibly reused) section so a day rollover re-titles 오늘 → 어제.
+            LogbookSections[i].DisplayTitle = DayHeading(day, today);
             SyncRows(LogbookSections[i].Tasks, bucket);
         }
     }
 
-    private int IndexOfLogbookSection(string title)
+    private int IndexOfLogbookSection(DateOnly day)
     {
         for (var i = 0; i < LogbookSections.Count; i++)
-            if (LogbookSections[i].Title == title) return i;
+            if (LogbookSections[i].Date == day) return i;
         return -1;
     }
 
-    /// <summary>A Logbook day heading: 오늘 for the current day, 어제 for the day before, else "M월 d일".</summary>
+    /// <summary>A Logbook day heading: 오늘 for the current day, 어제 for the day before, "M월 d일" for another
+    /// day in the current year, and "yyyy년 M월 d일" for an earlier year — so same-day dates in different
+    /// years read distinctly. The defensive DateOnly.MinValue bucket (a row with no completion instant)
+    /// renders blank.</summary>
     private static string DayHeading(DateOnly day, DateOnly today)
     {
+        if (day == DateOnly.MinValue) return "";
         if (day == today) return "오늘";
         if (day == today.AddDays(-1)) return "어제";
-        return day.ToString("M월 d일", System.Globalization.CultureInfo.GetCultureInfo("ko-KR"));
+        var ko = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
+        return day.Year == today.Year
+            ? day.ToString("M월 d일", ko)
+            : day.ToString("yyyy년 M월 d일", ko);
     }
 
     private int IndexOfPrioritySection(string name)

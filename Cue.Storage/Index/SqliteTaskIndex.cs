@@ -436,20 +436,35 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY t.sort_order;",
             cmd => Bind(cmd, "$tag", tagId.ToString()), cancellationToken);
 
-    // The completed companions of the two classification lists above: the rows of a group's / tag's
-    // collapsible "완료한 일" section, ordered most-recently-completed first.
-    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+    // The completed companions of the two classification lists above: a page of the rows of a group's /
+    // tag's collapsible "완료한 일" section, ordered most-recently-completed first. The section pages its
+    // rows in (it opens showing only its count), so the LIMIT/OFFSET window narrows what is realized; the
+    // default window returns the whole list. The matching GetCompletedCount* answers the header total.
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
         => QueryAsync(
             SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
-            "AND t.group_id = $group ORDER BY t.completed_at DESC;",
-            cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
+            "AND t.group_id = $group ORDER BY t.completed_at DESC LIMIT $limit OFFSET $offset;",
+            cmd => { Bind(cmd, "$group", taskGroupId.ToString()); BindPage(cmd, limit, offset); }, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
         => QueryAsync(
             SelectRows +
             "INNER JOIN task_tags tt ON tt.task_id = t.id " +
             "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
-            "ORDER BY t.completed_at DESC;",
+            "ORDER BY t.completed_at DESC LIMIT $limit OFFSET $offset;",
+            cmd => { Bind(cmd, "$tag", tagId.ToString()); BindPage(cmd, limit, offset); }, cancellationToken);
+
+    public Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+        => QueryScalarAsync(
+            "SELECT COUNT(*) FROM tasks " +
+            "WHERE deleted_at IS NULL AND completed_at IS NOT NULL AND group_id = $group;",
+            cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
+
+    public Task<int> GetCompletedCountByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
+        => QueryScalarAsync(
+            "SELECT COUNT(*) FROM tasks t " +
+            "INNER JOIN task_tags tt ON tt.task_id = t.id " +
+            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NOT NULL;",
             cmd => Bind(cmd, "$tag", tagId.ToString()), cancellationToken);
 
     // The 그룹 없음 / 태그 없음 lists re-create the quick-capture inbox: the home list spans every group,
@@ -479,14 +494,26 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // The Today view's "오늘 완료한 일" section: anything whose completion instant falls within the
     // current local day, newest first. The local day is converted to a UTC [start, end) window and
-    // compared against completed_at (stored as a UTC round-trip "O" string, lexically ordered).
-    public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(CancellationToken cancellationToken = default)
+    // compared against completed_at (stored as a UTC round-trip "O" string, lexically ordered). The
+    // LIMIT/OFFSET window pages the rows in (the section opens showing only its count); the default
+    // window returns the whole day. GetTodayCompletedCountAsync answers the header total.
+    public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
     {
         var (start, end) = TodayUtcRange();
         return QueryAsync(
             SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
             "AND t.completed_at >= $start AND t.completed_at < $end " +
-            "ORDER BY t.completed_at DESC;",
+            "ORDER BY t.completed_at DESC LIMIT $limit OFFSET $offset;",
+            cmd => { Bind(cmd, "$start", start); Bind(cmd, "$end", end); BindPage(cmd, limit, offset); }, cancellationToken);
+    }
+
+    public Task<int> GetTodayCompletedCountAsync(CancellationToken cancellationToken = default)
+    {
+        var (start, end) = TodayUtcRange();
+        return QueryScalarAsync(
+            "SELECT COUNT(*) FROM tasks " +
+            "WHERE deleted_at IS NULL AND completed_at IS NOT NULL " +
+            "AND completed_at >= $start AND completed_at < $end;",
             cmd => { Bind(cmd, "$start", start); Bind(cmd, "$end", end); }, cancellationToken);
     }
 
@@ -589,13 +616,17 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         }
     }
 
-    private async Task<int> QueryScalarAsync(string sql, CancellationToken cancellationToken)
+    private Task<int> QueryScalarAsync(string sql, CancellationToken cancellationToken)
+        => QueryScalarAsync(sql, _ => { }, cancellationToken);
+
+    private async Task<int> QueryScalarAsync(string sql, Action<SqliteCommand> bind, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var cmd = _connection.CreateCommand();
             cmd.CommandText = sql;
+            bind(cmd);
             var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             return result is null or DBNull ? 0 : Convert.ToInt32(result);
         }
@@ -718,6 +749,14 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     private static void Bind(SqliteCommand cmd, string name, object? value)
         => cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+
+    // Binds a LIMIT/OFFSET page window. A negative LIMIT means "no limit" in SQLite, so an int.MaxValue
+    // (the unpaged default) is passed through as-is and returns everything from the offset.
+    private static void BindPage(SqliteCommand cmd, int limit, int offset)
+    {
+        Bind(cmd, "$limit", limit);
+        Bind(cmd, "$offset", offset);
+    }
 
     public async ValueTask DisposeAsync()
     {

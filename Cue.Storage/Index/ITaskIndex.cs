@@ -63,13 +63,24 @@ public interface ITaskIndex
     /// surface in the tag's collapsible "완료한 일" section via <see cref="GetCompletedByTagAsync"/>.</summary>
     Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default);
 
-    /// <summary>Completed tasks belonging to the given task group, most-recently-completed first — the
-    /// rows of the group's collapsible "완료한 일" section.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default);
+    /// <summary>Completed tasks belonging to the given task group, most-recently-completed first — a page
+    /// of the rows of the group's collapsible "완료한 일" section. The section pages its rows in (it starts
+    /// showing only its count), so callers ask for a <paramref name="limit"/> window from
+    /// <paramref name="offset"/>; the defaults return the whole list.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default);
 
-    /// <summary>Completed tasks carrying the given tag, most-recently-completed first — the rows of the
-    /// tag's collapsible "완료한 일" section.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, CancellationToken cancellationToken = default);
+    /// <summary>Completed tasks carrying the given tag, most-recently-completed first — a page of the rows
+    /// of the tag's collapsible "완료한 일" section. Paged like
+    /// <see cref="GetCompletedByTaskGroupAsync"/>.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default);
+
+    /// <summary>Count of completed tasks belonging to the given task group — the header number for the
+    /// group's collapsible "완료한 일" section, so it can show its total without realizing a single row.</summary>
+    Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Count of completed tasks carrying the given tag — the header number for the tag's
+    /// collapsible "완료한 일" section.</summary>
+    Task<int> GetCompletedCountByTagAsync(Guid tagId, CancellationToken cancellationToken = default);
 
     /// <summary>Non-deleted, open tasks in no group at all — the 그룹 없음 list that re-gathers unfiled
     /// captures. Completed tasks are excluded.</summary>
@@ -91,10 +102,16 @@ public interface ITaskIndex
 
     /// <summary>
     /// Tasks completed today (their <see cref="RecordBase"/> completion instant falls on the current
-    /// local day), most-recently-completed first — the rows of the Today view's collapsible
-    /// "오늘 완료한 일" section. A repeating task's completed copy lands here on the day it was finished.
+    /// local day), most-recently-completed first — a page of the rows of the Today view's collapsible
+    /// "오늘 완료한 일" section. A repeating task's completed copy lands here on the day it was finished. The
+    /// section pages its rows in, so callers ask for a <paramref name="limit"/> window from
+    /// <paramref name="offset"/>; the defaults return the whole list.
     /// </summary>
-    Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default);
+
+    /// <summary>Count of tasks completed today — the header number for the Today view's collapsible
+    /// "오늘 완료한 일" section, so it can show its total without realizing a single row.</summary>
+    Task<int> GetTodayCompletedCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Non-deleted, open tasks with a When date on a future day. Excludes anything already due (those are

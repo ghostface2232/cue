@@ -49,6 +49,13 @@ public sealed partial class PrioritySectionViewModel : ObservableObject
 /// list above stays open-only, while completed work for that view collects here. Its header reuses the
 /// sidebar group/tag section look: a title, a task count, and an expand/collapse chevron. The section
 /// starts <b>collapsed</b> and is hidden entirely when it has no rows.
+/// <para>
+/// Completed rows are <b>lazy</b>: while collapsed the section shows only its title and
+/// <see cref="TotalCount"/> (from a cheap COUNT query) and realizes no <see cref="TaskRowViewModel"/> at
+/// all — a long-lived group with hundreds of finished tasks costs nothing until the user opens it. The
+/// first expand pages in <see cref="LoadMoreRequested"/>'s first batch, and the "더 보기" affordance pulls
+/// each further page, so the view never builds more rows than the user actually looks at.
+/// </para>
 /// </summary>
 public sealed partial class CompletedSectionViewModel : ObservableObject
 {
@@ -63,35 +70,102 @@ public sealed partial class CompletedSectionViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsExpanded { get; set; }
 
-    /// <summary>Completed-task count shown in the header, kept in sync with <see cref="Tasks"/>.</summary>
-    public int Count => Tasks.Count;
+    /// <summary>The full completed-task count for this view, from a COUNT query — the header number and the
+    /// section's visibility read this, so the section shows its heading and total without realizing a
+    /// single completed row. Rows are paged into <see cref="Tasks"/> only once the section is expanded.</summary>
+    [ObservableProperty]
+    public partial int TotalCount { get; set; }
+
+    /// <summary>True while a page of completed rows is being fetched, so the header toggle and "더 보기"
+    /// can't re-enter and the affordance can hide itself mid-load.</summary>
+    [ObservableProperty]
+    public partial bool IsLoading { get; set; }
+
+    /// <summary>Realizes the next page of completed rows. Set by the owning list view model: the header
+    /// toggle calls it on the first expand, and the "더 보기" row calls it for each further page. Null until
+    /// wired (and on views that carry no completed section).</summary>
+    public Func<Task>? LoadMoreRequested { get; set; }
+
+    /// <summary>Completed-task count shown in the header — the full total, not just the realized rows.</summary>
+    public int Count => TotalCount;
 
     /// <summary>Drives the section's own visibility — hidden entirely when there is nothing completed.</summary>
-    public bool HasItems => Tasks.Count > 0;
+    public bool HasItems => TotalCount > 0;
+
+    /// <summary>More completed rows exist than are currently realized in <see cref="Tasks"/>.</summary>
+    public bool HasMore => Tasks.Count < TotalCount;
+
+    /// <summary>Drives the "더 보기" affordance: shown only while expanded, with unrealized rows left, and
+    /// not already loading.</summary>
+    public bool CanLoadMore => IsExpanded && HasMore && !IsLoading;
 
     public CompletedSectionViewModel()
     {
         Tasks.CollectionChanged += (_, _) =>
         {
-            OnPropertyChanged(nameof(Count));
-            OnPropertyChanged(nameof(HasItems));
+            OnPropertyChanged(nameof(HasMore));
+            OnPropertyChanged(nameof(CanLoadMore));
         };
     }
 
-    /// <summary>Header click: flips the section between expanded and collapsed.</summary>
+    partial void OnTotalCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(Count));
+        OnPropertyChanged(nameof(HasItems));
+        OnPropertyChanged(nameof(HasMore));
+        OnPropertyChanged(nameof(CanLoadMore));
+    }
+
+    partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(CanLoadMore));
+
+    partial void OnIsLoadingChanged(bool value) => OnPropertyChanged(nameof(CanLoadMore));
+
+    /// <summary>Header click: flips the section between expanded and collapsed. The first expand pages in
+    /// the first batch of completed rows; a re-expand keeps whatever was already loaded.</summary>
     [RelayCommand]
-    private void ToggleExpanded() => IsExpanded = !IsExpanded;
+    private async Task ToggleExpanded()
+    {
+        IsExpanded = !IsExpanded;
+        if (IsExpanded && Tasks.Count == 0 && HasMore && LoadMoreRequested is { } load)
+            await load();
+    }
+
+    /// <summary>"더 보기" click: pages in the next batch of completed rows.</summary>
+    [RelayCommand]
+    private async Task LoadMore()
+    {
+        if (!IsLoading && HasMore && LoadMoreRequested is { } load)
+            await load();
+    }
 }
 
 /// <summary>
-/// One date bucket in the 완료한 일 (Logbook) view — a day heading (오늘 / 어제 / a "M월 d일" date) and the
-/// tasks completed on that day. Plain and always shown (no collapse): the Logbook is a flat date-grouped
-/// history, newest day first.
+/// One date bucket in the 완료한 일 (Logbook) view — the tasks completed on a single local day, under a
+/// day heading. Plain and always shown (no collapse): the Logbook is a flat date-grouped history, newest
+/// day first.
 /// </summary>
+/// <remarks>
+/// The section's identity is its <see cref="Date"/> (a full <see cref="DateOnly"/>), <i>not</i> its
+/// rendered heading. Older days render without the year ("6월 22일"), so two same-day dates in different
+/// years share a heading; keying the reconcile on the date keeps them separate sections instead of
+/// merging 2025-06-22 and 2026-06-22 into one. <see cref="DisplayTitle"/> is refreshed on reconcile so a
+/// section's heading still rolls 오늘 → 어제 as the day turns over.
+/// </remarks>
 public sealed partial class DateSectionViewModel : ObservableObject
 {
-    public string Title { get; }
+    /// <summary>The local completion day this section gathers — the section's reconcile identity.</summary>
+    public DateOnly Date { get; }
+
+    /// <summary>The rendered day heading: 오늘 / 어제 / "M월 d일" (this year) / "yyyy년 M월 d일" (an earlier
+    /// year). Updatable so a reused section re-titles itself as the current day advances.</summary>
+    [ObservableProperty]
+    public partial string DisplayTitle { get; set; }
+
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
-    public DateSectionViewModel(string title) => Title = title;
+    public DateSectionViewModel(DateOnly date, string displayTitle)
+    {
+        Date = date;
+        DisplayTitle = displayTitle;
+    }
 }
