@@ -5,8 +5,8 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>Cue</RootNamespace>
     <!-- Single source of truth for the app/installer version. The release workflow's git tag
-         (e.g. v0.1.0) must match this, and build-installer.ps1 reads it to stamp the Inno setup. -->
-    <Version>0.1.0</Version>
+         (e.g. v0.1.1) must match this, and build-installer.ps1 reads it to stamp the Inno setup. -->
+    <Version>0.1.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
@@ -23,6 +23,18 @@
     -->
     <DefaultItemExcludes>$(DefaultItemExcludes);Cue.Domain\**;Cue.Storage\**;Cue.Parsing\**;Cue.Tests\**;ViewModels\**;References\**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <!--
+    Ensure the bundled Assets (Pretendard fonts + app/tile icons) are copied to the build AND publish
+    output. WinUI's content pipeline indexes them into Cue.pri (by file path) and copies them to the
+    build folder, but `dotnet publish` otherwise drops the loose files — so an installed unpackaged app
+    would show no icons and fall back from Pretendard. CopyToOutputDirectory carries them into publish.
+  -->
+  <ItemDefinitionGroup>
+    <Content>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemDefinitionGroup>
 
   <ItemGroup>
     <Content Include="Assets\SplashScreen.scale-200.png" />
