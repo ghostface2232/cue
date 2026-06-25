@@ -61,7 +61,11 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        // Resolve the icon next to the executable rather than via a relative path: a relative path is
+        // resolved against the process working directory, which isn't guaranteed to be the install folder
+        // when launched from a shortcut — leaving the taskbar with no icon. AppContext.BaseDirectory is
+        // always the app's own folder.
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         NormalizeSidebarItems();
 
         RestoreOrSetDefaultPlacement();
