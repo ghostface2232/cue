@@ -84,6 +84,9 @@ public static class ConfirmPopover
             TextWrapping = TextWrapping.Wrap,
             FontSize = (double)resources["CueFontRow"],
             Foreground = (Brush)resources["TextFillColorPrimaryBrush"],
+            // Popup content lives in the popup root, outside the page's FontFamily inheritance — pin
+            // Pretendard so this message never falls back to the system font.
+            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)resources["CueFontFamily"],
         };
 
         var cancel = new Button

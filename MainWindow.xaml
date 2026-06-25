@@ -21,6 +21,7 @@
 
         <TitleBar
             x:Name="AppTitleBar"
+            FontFamily="{StaticResource CueFontFamily}"
             Title="Cue"
             BackRequested="TitleBar_BackRequested"
             IsBackButtonVisible="{x:Bind NavFrame.CanGoBack, Mode=OneWay}"

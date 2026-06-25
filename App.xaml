@@ -10,6 +10,19 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
                 <ResourceDictionary Source="ms-appx:///Styles/DesignTokens.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- Suppress the keyboard focus rectangle app-wide. WinUI 3 draws the high-visibility focus
+                 visual from FocusStrokeColorOuterBrush / FocusStrokeColorInnerBrush (generic.xaml). The
+                 legacy SystemControlFocusVisual* keys are only StaticResource aliases to those — overriding
+                 them does nothing, and overriding the FocusStrokeColor* *colors* doesn't help either since
+                 the framework brushes bake the color via StaticResource. So override the BRUSHES directly.
+                 These are theme-independent top-level entries (resolved before the merged XamlControlsResources)
+                 so they win in every theme and every focus path — Tab, Enter-blur, arrow keys — on every
+                 control (buttons, NavigationViewItems, the panel ScrollViewer) without disabling focus. The
+                 legacy aliases are pinned too as a harmless safety net for any custom template. -->
+            <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="FocusStrokeColorInnerBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="SystemControlFocusVisualPrimaryBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="SystemControlFocusVisualSecondaryBrush" Color="Transparent" />
             <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
             <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
             <local:BoolToChevronGlyphConverter x:Key="BoolToChevronGlyph" />

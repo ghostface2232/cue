@@ -88,6 +88,9 @@ public partial class App : Application
         return services.BuildServiceProvider();
     }
 
+    private static readonly Microsoft.UI.Xaml.Media.FontFamily RecoveryFont =
+        new("ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP");
+
     private void ShowStartupFailure(Exception exception)
     {
         _window = new Window
@@ -99,14 +102,18 @@ public partial class App : Application
                 Spacing = 12,
                 Children =
                 {
-                    new TextBlock { Text = "Cue를 시작할 수 없습니다.", FontSize = 24 },
+                    // This recovery window stands outside the normal page tree, so each label pins Pretendard
+                    // directly (family built inline so the failure path never depends on a resource lookup)
+                    // rather than falling back to the system font.
+                    new TextBlock { Text = "Cue를 시작할 수 없습니다.", FontFamily = RecoveryFont, FontSize = 24 },
                     new TextBlock
                     {
                         Text = exception.Message,
+                        FontFamily = RecoveryFont,
                         TextWrapping = TextWrapping.Wrap,
                         MaxWidth = 640,
                     },
-                    new TextBlock { Text = "데이터 폴더 권한과 사용 가능한 디스크 공간을 확인한 뒤 다시 실행해 주세요." },
+                    new TextBlock { Text = "데이터 폴더 권한과 사용 가능한 디스크 공간을 확인한 뒤 다시 실행해 주세요.", FontFamily = RecoveryFont },
                 },
             },
         };
