@@ -399,6 +399,9 @@ public sealed partial class TaskListPage : Page
     {
         var flyout = new Flyout();
         var content = new StackPanel { Spacing = 10, MinWidth = 200, MaxWidth = 280 };
+        // Popup content lives in a separate visual tree (the popup root), so the raw TextBlocks below don't
+        // inherit the page's FontFamily — pin Pretendard on each so none falls back to the system font.
+        var bodyFont = (FontFamily)Application.Current.Resources["CueFontFamily"];
 
         // The cycle's date, status, and (for a completed cycle) its completion time — the pip's own tooltip
         // text already reads exactly this.
@@ -425,6 +428,7 @@ public sealed partial class TaskListPage : Page
                 row.Children.Add(new TextBlock
                 {
                     Text = item.Title,
+                    FontFamily = bodyFont,
                     FontSize = 13,
                     Opacity = item.IsChecked ? 0.55 : 1.0,
                     TextWrapping = TextWrapping.Wrap,
@@ -437,6 +441,7 @@ public sealed partial class TaskListPage : Page
         content.Children.Add(new TextBlock
         {
             Text = "상태 변경",
+            FontFamily = bodyFont,
             FontSize = 12,
             Opacity = 0.6,
         });
@@ -484,9 +489,9 @@ public sealed partial class TaskListPage : Page
     {
         if (sender is not Border border) return;
         border.Background = (Microsoft.UI.Xaml.Media.Brush)Resources["TaskHoverBrush"];
-        // Hovering a row that's mid-acknowledgement holds it open: pause its pending fold (a one-off, where
-        // the undo lives). A repeating completion rolls on regardless, so it isn't paused.
-        if (border.DataContext is TaskRowViewModel { IsAcknowledging: true, IsRecurringCompletion: false } row)
+        // Hovering a row that's mid-acknowledgement holds it open: pause its pending fold so the undo stays
+        // reachable. (Only terminal completions show the bar now — a repeating completion never enters it.)
+        if (border.DataContext is TaskRowViewModel { IsAcknowledging: true } row)
             StopAckTimer(row);
     }
 
@@ -495,7 +500,7 @@ public sealed partial class TaskListPage : Page
         if (sender is not Border border) return;
         border.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
         // Pointer left a paused acknowledgement — restart its fold timer (a fresh ~2s with no hover).
-        if (border.DataContext is TaskRowViewModel { IsAcknowledging: true, IsRecurringCompletion: false } row)
+        if (border.DataContext is TaskRowViewModel { IsAcknowledging: true } row)
             StartAckTimer(row);
     }
 
@@ -1096,59 +1101,58 @@ public sealed partial class TaskListPage : Page
     // --- Completion acknowledgement: the brief in-row moment after a task is ticked ---
 
     /// <summary>
-    /// Runs the in-row acknowledgement after a completion. A terminal completion (<paramref name="nextOccurrence"/>
-    /// null) shows an undo bar then folds the row away. A repeating completion (next occurrence non-null)
-    /// spins its refresh glyph one turn, shows the next date, then refreshes the row in place to its next
-    /// cycle — it is <i>not</i> folded, because the same-id task lives on. With animations off the row is
-    /// finalized immediately (reload either drops it or updates it in place).
+    /// Runs the in-row moment after a completion. A terminal completion (<paramref name="nextOccurrence"/>
+    /// null — a one-off, or a recurring series that has ended/exhausted) shows an undo bar then folds the
+    /// row away. A repeating completion (next occurrence non-null) keeps the row in place: it advanced the
+    /// series, so there is no undo bar or fold — the check pop just registers and the reload reconciles the
+    /// row, which settles ticked + dimmed when it is now ahead of schedule, or unchecked if another cycle is
+    /// still due. With animations off both paths finalize immediately.
     /// </summary>
     private void OnCompletionAcknowledged(TaskRowViewModel row, DateOnly? nextOccurrence)
     {
+        if (nextOccurrence is not null)
+        {
+            _ = RunRecurringCompletionAsync(row);
+            return;
+        }
         if (!_animationsEnabled)
         {
             _ = RunSafelyAsync(() => ViewModel.FinalizeCompletionAsync(row));
             return;
         }
-        _ = RunAcknowledgementAsync(row, nextOccurrence);
+        _ = RunAcknowledgementAsync(row);
     }
 
-    private async Task RunAcknowledgementAsync(TaskRowViewModel row, DateOnly? nextOccurrence)
+    /// <summary>A repeating completion stays in place: let the circular check pop play and the row settle
+    /// into its dimmed ticked state, then reconcile it (an ahead-of-schedule row stays ticked; a still-due
+    /// cycle returns unchecked). No undo bar, no fold — the series lives on.</summary>
+    private async Task RunRecurringCompletionAsync(TaskRowViewModel row)
+    {
+        if (_animationsEnabled)
+            await Task.Delay(300);
+        await RunSafelyAsync(() => ViewModel.FinalizeCompletionAsync(row));
+    }
+
+    private async Task RunAcknowledgementAsync(TaskRowViewModel row)
     {
         // Let the circular check pop play and the row settle into its dimmed completed state first…
         await Task.Delay(300);
-        // …then swap the row body for the acknowledgement bar (an undo note for a terminal completion, or
-        // a refresh spin + "다음: …" for a repeating one) and start the hold timer.
-        row.BeginCompletionAcknowledgement(nextOccurrence);
-        if (row.IsRecurringCompletion)
-        {
-            // The swap can shrink the row (a dated/chipped row drops to the bar's height) and the list
-            // repositions as it does. Let that height change finish before spinning, so the two motions
-            // don't overlap. The wait also guarantees the glyph has laid out, so its rotation centre is
-            // its true middle (the circle's centre) rather than 0,0 — which would orbit it off the circle.
-            await Task.Delay(RecurringAckSettleMs);
-            StartRefreshSpin(row);
-        }
+        // …then swap the row body for the acknowledgement bar (the undo note) and start the hold timer.
+        row.BeginCompletionAcknowledgement();
         StartAckTimer(row);
     }
-
-    // How long to let the acknowledgement bar settle (the row's height change + the list reposition) before
-    // the refresh glyph spins, so the spin starts in a stable layout and reads as a distinct second beat.
-    private const int RecurringAckSettleMs = 240;
 
     private void StartAckTimer(TaskRowViewModel row)
     {
         StopAckTimer(row);
         var timer = DispatcherQueue.CreateTimer();
-        // A repeating completion holds briefly then rolls on; a one-off lingers ~2s so the undo is reachable.
-        timer.Interval = TimeSpan.FromMilliseconds(row.IsRecurringCompletion ? 1300 : 2000);
+        // The bar lingers ~2s so the undo stays reachable before the row folds away.
+        timer.Interval = TimeSpan.FromMilliseconds(2000);
         timer.IsRepeating = false;
         timer.Tick += async (_, _) =>
         {
             StopAckTimer(row);
-            // A repeating task turns over to its next cycle in place; a terminal completion folds away.
-            await RunSafelyAsync(() => row.IsRecurringCompletion
-                ? RefreshRecurringRowAsync(row)
-                : FoldAndFinalizeAsync(row));
+            await RunSafelyAsync(() => FoldAndFinalizeAsync(row));
         };
         _ackTimers[row] = timer;
         timer.Start();
@@ -1189,86 +1193,6 @@ public sealed partial class TaskListPage : Page
         visual.StartAnimation("Scale", scale);
         visual.StartAnimation("Opacity", fade);
         await Task.Delay(180);
-    }
-
-    /// <summary>
-    /// Turns a repeating task's row over to its next cycle in place instead of folding it away: the
-    /// acknowledgement bar (refresh spin + "다음: …") fades out, the list reloads the same-id row with its
-    /// next date and an unchecked box, and the refreshed row fades back in. On a Today list a next
-    /// occurrence that has rolled out of range is dropped by the reload — there the fade-out doubles as the
-    /// row's natural exit, so there is nothing to fade back in.
-    /// </summary>
-    private async Task RefreshRecurringRowAsync(TaskRowViewModel row)
-    {
-        if (FindRowContainer(row) is { } leaving)
-            await AnimateRowFadeOutAsync(leaving);
-
-        // Reconciles this same-id row to its next cycle in place (or drops it if out of range) and clears
-        // the acknowledgement so the normal body — now next date, unchecked — returns.
-        await ViewModel.FinalizeCompletionAsync(row);
-
-        if (FindRowContainer(row) is { } refreshed)
-            AnimateRowFadeIn(refreshed);
-    }
-
-    /// <summary>Fades a row out (a quick opacity drop) ahead of refreshing or dropping it.</summary>
-    private static async Task AnimateRowFadeOutAsync(FrameworkElement element)
-    {
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        visual.StopAnimation("Opacity");
-        var compositor = visual.Compositor;
-        var ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.4f, 0f), new Vector2(1f, 1f));
-        var fade = compositor.CreateScalarKeyFrameAnimation();
-        fade.InsertKeyFrame(0f, visual.Opacity);
-        fade.InsertKeyFrame(1f, 0f, ease);
-        fade.Duration = TimeSpan.FromMilliseconds(150);
-        visual.StartAnimation("Opacity", fade);
-        await Task.Delay(150);
-    }
-
-    /// <summary>Fades the refreshed row back in with a small scale settle — reusing the list's entrance
-    /// feel so the next cycle reads as a fresh row arriving rather than a hard cut.</summary>
-    private static void AnimateRowFadeIn(FrameworkElement element)
-    {
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        visual.StopAnimation("Opacity");
-        visual.StopAnimation("Scale");
-        var compositor = visual.Compositor;
-        var ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f, 0.9f), new Vector2(0.2f, 1f));
-
-        var fade = compositor.CreateScalarKeyFrameAnimation();
-        fade.InsertKeyFrame(0f, 0f);
-        fade.InsertKeyFrame(1f, 1f, ease);
-        fade.Duration = TimeSpan.FromMilliseconds(240);
-
-        var scale = compositor.CreateVector3KeyFrameAnimation();
-        scale.InsertKeyFrame(0f, new Vector3(0.994f, 0.985f, 1f));
-        scale.InsertKeyFrame(1f, Vector3.One, ease);
-        scale.Duration = TimeSpan.FromMilliseconds(280);
-
-        visual.StartAnimation("Opacity", fade);
-        visual.StartAnimation("Scale", scale);
-    }
-
-    /// <summary>Spins the acknowledgement bar's refresh glyph a single full turn (repeating-task moment).</summary>
-    private void StartRefreshSpin(TaskRowViewModel row)
-    {
-        if (FindRowContainer(row) is not { } container) return;
-        if (FindDescendant<FontIcon>(container, "AckSpinIcon") is not { } icon) return;
-
-        var visual = ElementCompositionPreview.GetElementVisual(icon);
-        // Rotate about the glyph's own centre so it spins in place inside the circle. Fall back to the
-        // glyph's font size if it somehow hasn't laid out yet, so the centre is never 0,0 (which would
-        // swing the glyph in an arc out of the circle rather than spinning it on the spot).
-        var halfWidth = (float)(icon.ActualWidth > 0 ? icon.ActualWidth : icon.FontSize) / 2f;
-        var halfHeight = (float)(icon.ActualHeight > 0 ? icon.ActualHeight : icon.FontSize) / 2f;
-        visual.CenterPoint = new Vector3(halfWidth, halfHeight, 0f);
-        visual.RotationAxis = new Vector3(0f, 0f, 1f);
-        var spin = visual.Compositor.CreateScalarKeyFrameAnimation();
-        spin.InsertKeyFrame(0f, 0f);
-        spin.InsertKeyFrame(1f, 360f, visual.Compositor.CreateCubicBezierEasingFunction(new Vector2(0.3f, 0f), new Vector2(0.2f, 1f)));
-        spin.Duration = TimeSpan.FromMilliseconds(1000);
-        visual.StartAnimation("RotationAngleInDegrees", spin);
     }
 
     /// <summary>Finds a task row's realized container across the open list and priority sections, or null

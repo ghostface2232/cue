@@ -45,6 +45,14 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         ", (SELECT group_concat(tg.name || char(31) || COALESCE(tg.color, ''), char(30)) " +
         "FROM task_tags rt JOIN tags tg ON tg.id = rt.tag_id " +
         "WHERE rt.task_id = t.id AND tg.deleted_at IS NULL) AS tags" +
+        // The status of the series' most recent (highest occurrence_utc) live cycle, or NULL when it has
+        // none. A recurring row is "ahead of schedule" when this is Completed and the current When is still
+        // in the future — i.e. the cycle was performed up into the future — which Map combines with the
+        // computed "today" to set IsAheadOfSchedule. Correlated, so it needs no $today binding here and
+        // stays available to every list query that builds on SelectRows.
+        ", (SELECT o.status FROM recurrence_occurrences o " +
+        "WHERE o.series_id = t.id AND o.deleted_at IS NULL " +
+        "ORDER BY o.occurrence_utc DESC LIMIT 1) AS latest_occurrence_status" +
         " FROM tasks t LEFT JOIN task_groups g ON g.id = t.group_id AND g.deleted_at IS NULL ";
 
     private readonly SqliteConnection _connection;
@@ -718,22 +726,38 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         }
     }
 
-    private static TaskListItem Map(SqliteDataReader r) => new(
-        Id: Guid.Parse(r.GetString(0)),
-        Title: r.GetString(1),
-        TaskGroupId: GuidOrNull(r, 2),
-        WhenKind: Enum.Parse<WhenKind>(r.GetString(4)),
-        WhenDate: DateOrNull(r, 5),
-        WhenTime: TimeOrNull(r, 6),
-        IsCompleted: !r.IsDBNull(7),
-        Priority: (Priority)r.GetInt64(8),
-        SortOrder: r.GetString(9),
-        IsRecurring: r.GetInt64(10) != 0,
-        CompletedAt: InstantOrNull(r, 7),
-        TaskGroupName: r.IsDBNull(11) ? null : r.GetString(11),
-        TaskGroupIcon: r.IsDBNull(12) ? null : r.GetString(12),
-        Tags: TagsFrom(r, 13),
-        Checklist: ChecklistFrom(r, 3));
+    // Instance (not static) so it can read the index's clock/zone to resolve "today" for the
+    // IsAheadOfSchedule comparison below.
+    private TaskListItem Map(SqliteDataReader r)
+    {
+        var whenDate = DateOrNull(r, 5);
+        var isRecurring = r.GetInt64(10) != 0;
+        // The series' most recent live cycle (column 14, NULL when it has none): a recurring task is "ahead
+        // of schedule" when that latest cycle was completed AND its current cycle is still in the future —
+        // the cycle was performed up past today. Such a row renders ticked + dimmed and a second tick undoes
+        // the completion rather than advancing further forward. (A genuinely future-scheduled series that was
+        // never performed has no occurrence, so it is not "ahead" and reads as a normal open, due-later row.)
+        var latestCycleCompleted = !r.IsDBNull(14) && r.GetInt64(14) == (long)OccurrenceStatus.Completed;
+        var isAheadOfSchedule = isRecurring && latestCycleCompleted && whenDate is { } when && when > CurrentDay();
+
+        return new(
+            Id: Guid.Parse(r.GetString(0)),
+            Title: r.GetString(1),
+            TaskGroupId: GuidOrNull(r, 2),
+            WhenKind: Enum.Parse<WhenKind>(r.GetString(4)),
+            WhenDate: whenDate,
+            WhenTime: TimeOrNull(r, 6),
+            IsCompleted: !r.IsDBNull(7),
+            Priority: (Priority)r.GetInt64(8),
+            SortOrder: r.GetString(9),
+            IsRecurring: isRecurring,
+            CompletedAt: InstantOrNull(r, 7),
+            TaskGroupName: r.IsDBNull(11) ? null : r.GetString(11),
+            TaskGroupIcon: r.IsDBNull(12) ? null : r.GetString(12),
+            Tags: TagsFrom(r, 13),
+            Checklist: ChecklistFrom(r, 3),
+            IsAheadOfSchedule: isAheadOfSchedule);
+    }
 
     // Deserializes the checklist JSON blob mirrored in the tasks.checklist column (column 3, where
     // the former parent_task_id lived — kept at that ordinal so the rest of Map is unchanged). Only
@@ -772,9 +796,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     }
 
     /// <summary>The current calendar day in the configured zone — computed, never stored.</summary>
-    private string Today()
-        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime)
-            .ToString("yyyy-MM-dd");
+    private DateOnly CurrentDay()
+        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _zone).DateTime);
+
+    /// <summary>The current calendar day as the ISO <c>yyyy-MM-dd</c> string the date columns store.</summary>
+    private string Today() => CurrentDay().ToString("yyyy-MM-dd");
 
     /// <summary>
     /// The current local day as a half-open UTC instant window <c>[start, end)</c>, each formatted as the

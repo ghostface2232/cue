@@ -848,10 +848,13 @@ public partial class TaskListViewModel : ObservableObject
     /// Applies a row's completion change to the store. Serialized through a gate so rapid toggles can't
     /// reorder their writes (concurrent executions are allowed so none are dropped — they queue on the
     /// gate). On <b>completing</b> a row from an active list the row is <i>not</i> reloaded away at once:
-    /// it enters the acknowledgement state (an in-row undo / repeat note) and the View runs the fold timing
-    /// before calling <see cref="FinalizeCompletionAsync"/>, which reloads it into the relevant 완료한 일
-    /// section. <b>Un-completing</b> a row (from a completed section) reloads immediately. On failure the
-    /// checkbox is restored so the UI never disagrees with what's on disk.
+    /// it enters the acknowledgement state (an in-row undo note) and the View runs the fold timing before
+    /// calling <see cref="FinalizeCompletionAsync"/>, which reloads it into the relevant 완료한 일 section.
+    /// <b>Un-completing</b> a row reloads immediately: a row that is <see cref="TaskRowViewModel.IsAheadOfSchedule"/>
+    /// (a recurring series performed up into the future) rolls its latest cycle back instead of clearing
+    /// <see cref="TaskItem.CompletedAt"/> — that, plus the index rendering an ahead row already ticked, is
+    /// what stops a recurring task being completed forever into the future. On failure the checkbox is
+    /// restored so the UI never disagrees with what's on disk.
     /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleCompleteAsync(TaskRowViewModel row)
@@ -870,18 +873,26 @@ public partial class TaskListViewModel : ObservableObject
                 var nextOccurrence = await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
                 _navNotifier.NotifyCountsChanged();
 
-                // Hold the row in place and hand off to the View for the acknowledgement moment, passing the
-                // recurrence outcome. A terminal completion (nextOccurrence == null) lets the check + dim
-                // register, swaps in the undo note, then folds the row away and calls FinalizeCompletionAsync
-                // — dropping it into its 완료한 일 section. A repeating completion instead spins the refresh
-                // glyph, shows the next date, then refreshes the row in place to its next cycle (it stays in
-                // every list but a Today it has rolled out of). No reload here — that would whisk it away.
+                // Hand off to the View for the acknowledgement moment. A terminal completion (nextOccurrence
+                // == null) lets the check + dim register, swaps in the undo note, then folds the row away and
+                // calls FinalizeCompletionAsync — dropping it into its 완료한 일 section. A repeating
+                // completion (next occurrence non-null) keeps the row in place and just reconciles it: it
+                // stays ticked + dimmed once the advance lands in the future (it is now ahead of schedule),
+                // or returns unchecked if another cycle is still due. No reload here — that would whisk a
+                // terminal completion away before its acknowledgement.
                 CompletionAcknowledged?.Invoke(row, nextOccurrence);
+            }
+            else if (row.IsAheadOfSchedule)
+            {
+                // Un-ticking a done-for-now recurring row rolls its latest completed cycle back rather than
+                // pushing the series even further forward — the second tick is an undo, never a new advance.
+                await UndoLatestRecurringCompletionAsync(row);
             }
             else
             {
-                // Un-completing (from a 완료한 일 section): atomic read-modify-write so clearing completion
-                // touches only CompletedAt on the latest record, then reload so it returns to the open list.
+                // Un-completing a terminal row (from a 완료한 일 section, one-off or ended series): atomic
+                // read-modify-write so clearing completion touches only CompletedAt on the latest record,
+                // then reload so it returns to the open list.
                 await _store.MutateAsync<TaskItem>(row.Id, task => { task.CompletedAt = null; return true; });
                 _navNotifier.NotifyCountsChanged();
                 await LoadAsync();
@@ -900,40 +911,60 @@ public partial class TaskListViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Rolls back the most recent completed cycle of a recurring series straight from the list — the action
+    /// behind un-ticking an "ahead of schedule" row. Finds the series' latest live occurrence and, when it is
+    /// a completed cycle, hands it to <see cref="IRecurringTaskService.UndoCompletionAsync"/>, whose own guard
+    /// re-checks that it really is the immediate predecessor of the current cycle before committing. Reloads
+    /// either way so the row reflects the on-disk state (rolled back to a due cycle, or unchanged if declined).
+    /// </summary>
+    private async Task UndoLatestRecurringCompletionAsync(TaskRowViewModel row)
+    {
+        var latest = await _index.GetOccurrencesAsync(row.Id, limit: 1);
+        if (latest.Count > 0 && latest[0].Status == OccurrenceStatus.Completed)
+            await _recurrence.UndoCompletionAsync(row.Id, latest[0].Id, _clock.GetUtcNow());
+        _navNotifier.NotifyCountsChanged();
+        // The roll-back moved the series back a cycle, so an open detail panel on it must reload its strip too.
+        await SyncOpenDetailForRowAsync(row.Id);
+        await LoadAsync();
+    }
+
     /// <summary>Ends a row's completion acknowledgement and reloads the list. For a terminal completion the
     /// just-completed task then leaves the open list and reappears in its 완료한 일 section / Logbook; for a
-    /// repeating completion the same-id row is reconciled in place to its next cycle (new date, unchecked),
+    /// repeating completion the same-id row is reconciled in place to its next cycle — staying ticked +
+    /// dimmed when the series is now ahead of schedule, returning unchecked when another cycle is still due,
     /// or dropped if it has rolled out of the current view's range (e.g. Today). Called by the View once the
-    /// fold — or, for a repeating task, the refresh spin + fade — has played.</summary>
+    /// fold (terminal) or the brief check-pop settle (repeating) has played.</summary>
     public async Task FinalizeCompletionAsync(TaskRowViewModel row)
     {
-        // Keep the detail panel in sync when the just-completed task is the one it shows. Decide from the
-        // task's persisted state, not the row's acknowledgement flag: the View only sets IsRecurringCompletion
-        // when it animates, so under reduced motion the flag is never set — reading the store is robust to
-        // that. A recurring completion advanced the series and left it open (it lives on at its next cycle);
-        // a terminal one (one-off done, or a series ended/exhausted) is now completed and gone from the list.
-        if (Detail.IsOpen && Detail.CurrentTaskId == row.Id)
-        {
-            var task = await _store.GetAsync<TaskItem>(row.Id);
-            if (task is { IsDeleted: false, IsCompleted: false, Recurrence: not null })
-            {
-                // The panel stays open, but its 반복 기록 strip, current cycle, and reset checklist must
-                // reflect the completion just made from the list — reopen it on the same task to reload that
-                // state. OpenAsync flushes any in-flight detail edit first, so this can't race the panel's
-                // own (serialized) save chains.
-                await Detail.OpenAsync(row.Id);
-            }
-            else
-            {
-                // The task left the active list, so close the panel rather than let it linger showing a gone
-                // task. Flush first so any in-flight edit is persisted before the panel tears down.
-                await Detail.FlushAsync();
-                Detail.Close();
-            }
-        }
-
+        await SyncOpenDetailForRowAsync(row.Id);
         row.EndCompletionAcknowledgement();
         await LoadAsync();
+    }
+
+    /// <summary>Keeps the detail panel in sync after a list-driven recurrence change to <paramref name="taskId"/>
+    /// (a completion advanced it, or an undo rolled it back). When the panel shows that task and the series is
+    /// still open, reopen it so its 반복 기록 strip, current cycle, and reset checklist reflect the new state;
+    /// when the task has left the active list (a one-off done, or a series ended/exhausted) close the panel
+    /// rather than let it linger on a gone task. A no-op when the panel is closed or showing something else.</summary>
+    private async Task SyncOpenDetailForRowAsync(Guid taskId)
+    {
+        if (!Detail.IsOpen || Detail.CurrentTaskId != taskId)
+            return;
+
+        var task = await _store.GetAsync<TaskItem>(taskId);
+        if (task is { IsDeleted: false, IsCompleted: false, Recurrence: not null })
+        {
+            // OpenAsync flushes any in-flight detail edit first, so this can't race the panel's own
+            // (serialized) save chains.
+            await Detail.OpenAsync(taskId);
+        }
+        else
+        {
+            // Flush first so any in-flight edit is persisted before the panel tears down.
+            await Detail.FlushAsync();
+            Detail.Close();
+        }
     }
 
     /// <summary>Reverses a one-off completion straight from its acknowledgement bar ("실행 취소"): clears

@@ -145,6 +145,87 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task RecurringList_OncePerformedIntoTheFuture_StaysTickedAndASecondTickUndoesRatherThanAdvancing()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var today = new DateOnly(2026, 6, 22);
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+        Assert.False(row.IsCompleted);
+        Assert.False(row.IsAheadOfSchedule);
+
+        // Tick it from the list: today's cycle is recorded and the series advances to tomorrow (the future).
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.FinalizeCompletionAsync(row);
+
+        // The same-id row stays in the list, now ahead of schedule: held ticked + dimmed, not advanced away —
+        // and exactly one cycle was recorded.
+        row = Assert.Single(vm.Tasks);
+        Assert.True(row.IsAheadOfSchedule);
+        Assert.True(row.IsCompleted);
+        Assert.Equal(today.AddDays(1), DateOnly.FromDateTime((await store.GetAsync<TaskItem>(task.Id))!.When.Date!.Value.ToLocal().DateTime));
+        Assert.Equal(1, await store.GetOccurrenceCountAsync(task.Id));
+
+        // Un-ticking the ahead-of-schedule row undoes the last completion instead of pushing the series even
+        // further forward: back to today's cycle, unchecked, with the occurrence rolled back.
+        row.SetCompletedSilently(false);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+
+        row = Assert.Single(vm.Tasks);
+        Assert.False(row.IsAheadOfSchedule);
+        Assert.False(row.IsCompleted);
+        Assert.Equal(today, DateOnly.FromDateTime((await store.GetAsync<TaskItem>(task.Id))!.When.Date!.Value.ToLocal().DateTime));
+        Assert.Equal(0, await store.GetOccurrenceCountAsync(task.Id));
+    }
+
+    [Fact]
+    public async Task RecurringList_FutureScheduledButNeverPerformed_ReadsAsOpenNotAheadOfSchedule()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        // A weekly series that only starts next week: its current cycle is in the future, but it has never
+        // been performed (no occurrence). It must read as a normal open, due-later row — not ticked — so a
+        // genuinely-future task isn't mistaken for one that was performed ahead.
+        var start = ZonedDateTime.FromLocal(new DateTime(2026, 6, 29, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "주간 회고", When = ScheduledWhen.On(start), Recurrence = new RecurrenceRule("FREQ=WEEKLY;BYDAY=MO", start) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(vm.Tasks);
+        Assert.False(row.IsAheadOfSchedule);
+        Assert.False(row.IsCompleted);
+
+        // And it can still be performed once: ticking it records the cycle and advances — now it is ahead.
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.FinalizeCompletionAsync(row);
+
+        row = Assert.Single(vm.Tasks);
+        Assert.True(row.IsAheadOfSchedule);
+        Assert.True(row.IsCompleted);
+        Assert.Equal(1, await store.GetOccurrenceCountAsync(task.Id));
+    }
+
+    [Fact]
     public async Task CompletingARecurringTaskOpenInTheDetailPanel_SyncsTheStripInsteadOfClosing()
     {
         using var temp = new TempDirectory();

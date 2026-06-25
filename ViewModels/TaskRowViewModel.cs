@@ -17,10 +17,15 @@ public sealed record TaskRowTag(string Name, string? Color);
 /// The toggle is wired to a callback the parent list owns, so flipping the checkbox sets/clears
 /// <see cref="TaskItem.CompletedAt"/>. Completing from an active list plays a brief in-row
 /// acknowledgement. A terminal completion (one-off, or a recurring series that has ended) shows an undo
-/// note then folds the row away, resurfacing in a dedicated 완료한 일 section / the Logbook. A repeating
-/// completion instead shows a refresh spin + the next date, then the same-id row is refreshed in place to
-/// its next cycle (unchecked, next date) rather than folded — it leaves the list only on a Today view it
-/// has rolled out of. See the acknowledgement members below.
+/// note then folds the row away, resurfacing in a dedicated 완료한 일 section / the Logbook.
+/// <para>
+/// A repeating completion instead performs the series' current cycle and advances it one step. If that
+/// advance lands the series in the future the row stays <i>ticked + dimmed</i> in place — it is "done for
+/// now" (<see cref="IsAheadOfSchedule"/>), held until the cycle comes due again; ticking it a second time
+/// undoes the completion rather than advancing further forward. If the advance leaves another cycle still
+/// due today/overdue, the row simply reloads unchecked so the backlog can be worked off. Either way the
+/// series lives on, so a repeating completion never runs the terminal undo/fold acknowledgement.
+/// </para>
 /// </remarks>
 public partial class TaskRowViewModel : ObservableObject
 {
@@ -121,6 +126,16 @@ public partial class TaskRowViewModel : ObservableObject
     public partial bool IsCompleted { get; set; }
 
     /// <summary>
+    /// True when this is a recurring task whose current cycle has been performed up into the future: the
+    /// series' latest cycle is a completed occurrence and its current cycle is still ahead of today. The row
+    /// is "done for now" — it renders ticked (its <see cref="IsCompleted"/> checkbox is seeded on) and
+    /// dimmed, and the list routes a tick on it to <i>undo</i> the last completion rather than advancing the
+    /// series another cycle forward (which is how the runaway "complete the future forever" path is blocked).
+    /// Projected by the index per <see cref="TaskListItem.IsAheadOfSchedule"/>, refreshed on every reload.
+    /// </summary>
+    public bool IsAheadOfSchedule { get; private set; }
+
+    /// <summary>
     /// True while this row's task is the one open in the detail panel. Drives the row's selection
     /// accent. Set by the list view model, not by the user toggling anything.
     /// </summary>
@@ -128,12 +143,12 @@ public partial class TaskRowViewModel : ObservableObject
     public partial bool IsSelected { get; set; }
 
     // --- Completion acknowledgement (the brief in-row moment after the user ticks a task) ---
-    // When a task is completed from an active list it is not whisked away at once: the row holds its
-    // place for a beat, swapping its normal content for a small acknowledgement bar — an "undo" affordance
-    // for a terminal completion, or a refresh spin + "다음: …" next-date note for a repeating one. A
-    // terminal completion then folds away and reloads into the relevant 완료한 일 section / Logbook; a
-    // repeating one is refreshed in place to its next cycle. These flags drive the swap; the View owns the
-    // timing and the fold / spin / fade motion.
+    // When a one-off (or an ended/exhausted recurring series) is completed from an active list it is not
+    // whisked away at once: the row holds its place for a beat, swapping its normal content for a small
+    // acknowledgement bar with an "undo" affordance, then folds away and reloads into the relevant 완료한 일
+    // section / Logbook. A repeating completion does NOT use this bar — it stays ticked + dimmed in place
+    // (see the class remarks), so the bar is purely the terminal-completion presentation. These flags drive
+    // the swap; the View owns the timing and the fold motion.
 
     /// <summary>True while the post-completion acknowledgement bar is showing in place of the row's normal
     /// content. The View flips this on via <see cref="BeginCompletionAcknowledgement"/> and clears it
@@ -142,50 +157,36 @@ public partial class TaskRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowNormalContent))]
     [NotifyPropertyChangedFor(nameof(ShowChecklist))]
     [NotifyPropertyChangedFor(nameof(VisualOpacity))]
+    [NotifyPropertyChangedFor(nameof(ShowUndo))]
     public partial bool IsAcknowledging { get; set; }
 
     /// <summary>Inverse of <see cref="IsAcknowledging"/> — drives the normal row body's visibility so it
     /// yields to the acknowledgement bar.</summary>
     public bool ShowNormalContent => !IsAcknowledging;
 
-    /// <summary>The acknowledgement message: "할 일을 완료했습니다" for a terminal completion, or
-    /// "다음: M월 d일" for a repeating task that rolled on, naming the next occurrence so the bar reads as a
-    /// hand-off to the next cycle rather than an ending.</summary>
+    /// <summary>The acknowledgement message. Always the terminal-completion note now that a repeating
+    /// completion stays in place rather than running the bar.</summary>
     [ObservableProperty]
     public partial string AcknowledgeMessage { get; set; } = string.Empty;
 
-    /// <summary>True when the acknowledgement is for a repeating task that advanced to its next cycle: the
-    /// bar shows a one-turn refresh spin in the circle and offers no undo (the series rolled on), and the
-    /// row is refreshed in place rather than folded away. A terminal completion shows an undo button.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowUndo))]
-    public partial bool IsRecurringCompletion { get; set; }
+    /// <summary>Whether the acknowledgement bar offers an "실행 취소" (undo) button. The bar only ever shows
+    /// for a terminal completion now, so it always carries the undo affordance while it is up.</summary>
+    public bool ShowUndo => IsAcknowledging;
 
-    /// <summary>Whether the acknowledgement bar offers an "실행 취소" (undo) button — terminal completions
-    /// only. A repeating completion advanced the series, so it is not casually reversible here.</summary>
-    public bool ShowUndo => IsAcknowledging && !IsRecurringCompletion;
-
-    /// <summary>Enters the post-completion acknowledgement state. The completion itself is already saved;
-    /// this only flips the row into its acknowledgement presentation. A non-null <paramref name="nextOccurrence"/>
-    /// is a repeating task's next cycle (its local date), shown as a "다음: …" hand-off; null is a terminal
-    /// completion (undo affordance).</summary>
-    public void BeginCompletionAcknowledgement(DateOnly? nextOccurrence)
+    /// <summary>Enters the post-completion acknowledgement state for a terminal completion (a one-off, or a
+    /// recurring series that has ended/exhausted). The completion itself is already saved; this only flips
+    /// the row into its acknowledgement presentation with the undo affordance.</summary>
+    public void BeginCompletionAcknowledgement()
     {
-        IsRecurringCompletion = nextOccurrence is not null;
-        AcknowledgeMessage = nextOccurrence is { } next
-            ? $"다음: {next.ToString("M월 d일", Korean)}"
-            : "할 일을 완료했습니다";
+        AcknowledgeMessage = "할 일을 완료했습니다";
         IsAcknowledging = true;
-        OnPropertyChanged(nameof(ShowUndo));
     }
 
     /// <summary>Leaves the acknowledgement state (on undo, or just before the row is removed/reloaded).</summary>
     public void EndCompletionAcknowledgement()
     {
         IsAcknowledging = false;
-        IsRecurringCompletion = false;
         AcknowledgeMessage = string.Empty;
-        OnPropertyChanged(nameof(ShowUndo));
     }
 
     public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled)
@@ -205,10 +206,13 @@ public partial class TaskRowViewModel : ObservableObject
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
+        IsAheadOfSchedule = item.IsAheadOfSchedule;
         ApplyGroupAndTags(item);
 
         _suppressToggle = true;       // initial state from the index, not a user action
-        IsCompleted = item.IsCompleted;
+        // An "ahead of schedule" recurring task is done-for-now, so its box reads ticked even though the
+        // series itself is not completed (its CompletedAt is null).
+        IsCompleted = item.IsCompleted || item.IsAheadOfSchedule;
         _suppressToggle = false;
     }
 
@@ -225,9 +229,12 @@ public partial class TaskRowViewModel : ObservableObject
         Schedule = BuildSchedule(item);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
+        IsAheadOfSchedule = item.IsAheadOfSchedule;
         SortOrder = item.SortOrder;
         ApplyGroupAndTags(item);
-        SetCompletedSilently(item.IsCompleted);
+        // Seed the box ticked for a done-for-now (ahead-of-schedule) recurring row as well as a genuinely
+        // completed one — see the constructor.
+        SetCompletedSilently(item.IsCompleted || item.IsAheadOfSchedule);
     }
 
     private void ApplyGroupAndTags(TaskListItem item)

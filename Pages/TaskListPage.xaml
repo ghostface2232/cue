@@ -111,10 +111,10 @@
                         RadiusY="8"
                         Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
-                    <!-- Completion acknowledgement bar: takes the row's place for a beat after the task is
-                         ticked. A one-off shows a filled check + "할 일을 완료했습니다" + an 실행 취소 (undo)
-                         button; a repeating task shows a refresh glyph (spun one turn by the View) +
-                         "이번 할 일을 완료했습니다" and no undo. The View folds the row away afterward. -->
+                    <!-- Completion acknowledgement bar: takes the row's place for a beat after a terminal
+                         completion (a one-off, or a recurring series that has ended). Shows a filled check +
+                         "할 일을 완료했습니다" + an 실행 취소 (undo) button, then the View folds the row away. A
+                         repeating completion does not use this bar — it stays ticked + dimmed in place. -->
                     <Grid
                         MinHeight="60"
                         Padding="16,12"
@@ -126,8 +126,8 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <!-- Left margin 2 matches the circle checkbox's RootGrid Padding=2, so this accent
-                             circle (and the spinning refresh glyph in it) lands exactly where the checkbox
-                             circle was — no sideways jump when the bar swaps in. -->
+                             circle lands exactly where the checkbox circle was — no sideways jump when the
+                             bar swaps in. -->
                         <Border
                             Width="20"
                             Height="20"
@@ -135,20 +135,10 @@
                             VerticalAlignment="Center"
                             Background="{ThemeResource AccentFillColorDefaultBrush}"
                             CornerRadius="10">
-                            <Grid>
-                                <FontIcon
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                    Glyph="&#xE73E;"
-                                    Visibility="{x:Bind IsRecurringCompletion, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}" />
-                                <FontIcon
-                                    x:Name="AckSpinIcon"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                    Glyph="&#xE72C;"
-                                    RenderTransformOrigin="0.5,0.5"
-                                    Visibility="{x:Bind IsRecurringCompletion, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                            </Grid>
+                            <FontIcon
+                                FontSize="12"
+                                Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                Glyph="&#xE73E;" />
                         </Border>
                         <TextBlock
                             Grid.Column="1"

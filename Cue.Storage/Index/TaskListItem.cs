@@ -18,6 +18,13 @@ namespace Cue.Storage.Index;
 /// index never stores which view a task falls into; that is computed at query time against the
 /// current day.
 /// </para>
+/// <para>
+/// <see cref="IsAheadOfSchedule"/> is likewise computed at query time: it is <c>true</c> only for a
+/// recurring task whose current cycle (its <see cref="WhenDate"/>) has been performed up into the
+/// future — its most recent cycle is a completed occurrence and the current cycle is still ahead of
+/// today. Such a task is "done for now": the list shows it ticked + dimmed and a second tick undoes
+/// that completion rather than advancing the series further into the future.
+/// </para>
 /// </remarks>
 public sealed record TaskListItem(
     Guid Id,
@@ -34,7 +41,8 @@ public sealed record TaskListItem(
     string? TaskGroupName = null,
     string? TaskGroupIcon = null,
     IReadOnlyList<TaskListTag>? Tags = null,
-    IReadOnlyList<TaskListChecklistItem>? Checklist = null);
+    IReadOnlyList<TaskListChecklistItem>? Checklist = null,
+    bool IsAheadOfSchedule = false);
 
 /// <summary>A task's tag as a list row needs it: the display name and its optional hex color. Derived
 /// from the index join, so it carries no id — the row only shows it, never edits by it.</summary>
