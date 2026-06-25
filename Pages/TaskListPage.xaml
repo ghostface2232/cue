@@ -452,6 +452,23 @@
                                 ItemTemplate="{StaticResource TaskRowTemplate}"
                                 ItemsSource="{x:Bind ViewModel.CompletedSection.Tasks, Mode=OneWay}"
                                 Visibility="{x:Bind ViewModel.CompletedSection.IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+
+                            <!-- "더 보기": completed rows page in (≈100 at a time), so a long history isn't
+                                 realized all at once. Shown only while expanded with more rows left to load. -->
+                            <Button
+                                Margin="14,2,8,2"
+                                Padding="14,4,14,4"
+                                HorizontalAlignment="Left"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Command="{x:Bind ViewModel.CompletedSection.LoadMoreCommand, Mode=OneWay}"
+                                CornerRadius="{StaticResource CueRadiusRow}"
+                                Visibility="{x:Bind ViewModel.CompletedSection.CanLoadMore, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock
+                                    FontSize="{StaticResource CueFontListMeta}"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Text="더 보기" />
+                            </Button>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

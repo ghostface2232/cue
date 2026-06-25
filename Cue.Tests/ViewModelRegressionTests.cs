@@ -134,12 +134,70 @@ public sealed class ViewModelRegressionTests
         await vm.ToggleCompleteCommand.ExecuteAsync(row);
         await vm.FinalizeCompletionAsync(row);
 
-        // Out of the open Today list, into the collapsed "오늘 완료한 일" section.
+        // Out of the open Today list, into the collapsed "오늘 완료한 일" section. While collapsed the section
+        // shows only its count (1) — its rows are lazy, so no completed TaskRowViewModel is realized yet.
         Assert.Empty(vm.Tasks);
         Assert.True(vm.CompletedSection.HasItems);
         Assert.False(vm.CompletedSection.IsExpanded);   // starts collapsed
         Assert.Equal("오늘 완료한 일", vm.CompletedSection.Title);
+        Assert.Equal(1, vm.CompletedSection.TotalCount);
+        Assert.Empty(vm.CompletedSection.Tasks);
+
+        // Expanding pages the rows in: now the completed row is realized.
+        await vm.CompletedSection.ToggleExpandedCommand.ExecuteAsync(null);
+        Assert.True(vm.CompletedSection.IsExpanded);
         Assert.Equal(task.Id, Assert.Single(vm.CompletedSection.Tasks).Id);
+    }
+
+    [Fact]
+    public async Task CompletedSection_LazyLoadsRowsInPages_AndKeepsThemAcrossRefresh()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var group = new TaskGroup { Name = "프로젝트" };
+        await store.SaveAsync(group);
+
+        // 250 completed tasks in the group — comfortably more than the 100-row page size.
+        for (var i = 0; i < 250; i++)
+            await store.SaveAsync(new TaskItem
+            {
+                Title = $"끝낸 일 {i:000}",
+                TaskGroupId = group.Id,
+                CompletedAt = new DateTimeOffset(2026, 6, 20, 0, 0, 0, TimeSpan.Zero).AddSeconds(i),
+            });
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.TaskGroup, group.Id));
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        // Collapsed: the count is known from the COUNT query, but not a single row is realized.
+        Assert.Equal(250, vm.CompletedSection.TotalCount);
+        Assert.Empty(vm.CompletedSection.Tasks);
+        Assert.True(vm.CompletedSection.HasItems);
+        Assert.True(vm.CompletedSection.HasMore);
+
+        // First expand pages in one batch (100).
+        await vm.CompletedSection.ToggleExpandedCommand.ExecuteAsync(null);
+        Assert.Equal(100, vm.CompletedSection.Tasks.Count);
+        Assert.True(vm.CompletedSection.CanLoadMore);
+
+        // "더 보기" pulls each further page: 200, then the final 250 (clamped to the total).
+        await vm.CompletedSection.LoadMoreCommand.ExecuteAsync(null);
+        Assert.Equal(200, vm.CompletedSection.Tasks.Count);
+        await vm.CompletedSection.LoadMoreCommand.ExecuteAsync(null);
+        Assert.Equal(250, vm.CompletedSection.Tasks.Count);
+        Assert.False(vm.CompletedSection.HasMore);
+        Assert.False(vm.CompletedSection.CanLoadMore);
+
+        // A refresh re-fetches the same window, so the opened section keeps all its realized rows rather
+        // than collapsing back to the count.
+        await vm.LoadCommand.ExecuteAsync(null);
+        Assert.Equal(250, vm.CompletedSection.Tasks.Count);
     }
 
     [Fact]

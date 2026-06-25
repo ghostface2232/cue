@@ -71,6 +71,20 @@ public partial class TaskListViewModel : ObservableObject
     private TaskListMode _mode = TaskListMode.AllTasks;
     private Guid? _filterId;
 
+    // How many completed rows the "완료한 일" section pages in per batch — the first expand realizes one
+    // batch, each "더 보기" adds another. Sized so a typical session never builds more completed
+    // TaskRowViewModels than fit a screenful of scrolling, while a few hundred finished tasks stay cheap.
+    private const int CompletedPageSize = 100;
+
+    // The completed-section paging window for the current view: how many completed rows are currently
+    // requested (0 while collapsed and never opened). A refresh re-fetches this same window so an opened
+    // section keeps its rows; SetNavigation resets it to 0 so each view opens collapsed and unrealized.
+    private int _completedWindow;
+
+    // Fetches a [0, limit) page of the current view's completed rows, set per load to the mode's query
+    // (Today / group / tag). Null on views with no completed section.
+    private Func<int, Task<IReadOnlyList<TaskListItem>>>? _completedPager;
+
     public ObservableCollection<TaskRowViewModel> Tasks { get; } = new();
 
     /// <summary>Priority sections for the 중요도 (priority) view — one of the sectioned lists.</summary>
@@ -150,6 +164,9 @@ public partial class TaskListViewModel : ObservableObject
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
+        // The completed section pages its rows in on demand; this is the callback its header toggle and
+        // "더 보기" affordance invoke to realize the next batch.
+        CompletedSection.LoadMoreRequested = LoadMoreCompletedAsync;
         Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, navNotifier);
         // Clear the row selection accent when the detail panel closes.
         Detail.PropertyChanged += (_, e) =>
@@ -216,7 +233,10 @@ public partial class TaskListViewModel : ObservableObject
 
         // The completed section's collapsed/expanded state and title are reset when the view changes, so
         // it always opens fresh and collapsed; LoadAsync repopulates and re-titles it for the new mode.
+        // The paging window resets too, so the new view opens with no realized completed rows — only its
+        // count — and the first expand pages the first batch back in.
         CompletedSection.IsExpanded = false;
+        _completedWindow = 0;
         CompletedSection.Title = _mode == TaskListMode.Today ? "오늘 완료한 일" : "완료한 일";
         OnPropertyChanged(nameof(CanQuickAdd));
     }
@@ -283,7 +303,7 @@ public partial class TaskListViewModel : ObservableObject
         {
             case TaskListMode.Priority:
                 SyncRows(Tasks, []);
-                SyncCompletedSection([]);
+                ClearCompletedSection();
                 SyncLogbookSections([]);
                 SyncPrioritySections(await _index.GetByPriorityAsync());
                 IsEmpty = PrioritySections.Count == 0;
@@ -291,7 +311,7 @@ public partial class TaskListViewModel : ObservableObject
 
             case TaskListMode.Logbook:
                 SyncRows(Tasks, []);
-                SyncCompletedSection([]);
+                ClearCompletedSection();
                 SyncPrioritySections([]);
                 SyncLogbookSections(await _index.GetLogbookAsync());
                 IsEmpty = LogbookSections.Count == 0;
@@ -300,19 +320,24 @@ public partial class TaskListViewModel : ObservableObject
             case TaskListMode.Today:
                 await LoadFlatWithCompletedAsync(
                     await _index.GetTodayAsync(),
-                    await _index.GetTodayCompletedAsync());
+                    await _index.GetTodayCompletedCountAsync(),
+                    limit => _index.GetTodayCompletedAsync(limit));
                 break;
 
             case TaskListMode.TaskGroup:
+                var groupId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
-                    await _index.GetByTaskGroupAsync(RequiredFilterId()),
-                    await _index.GetCompletedByTaskGroupAsync(RequiredFilterId()));
+                    await _index.GetByTaskGroupAsync(groupId),
+                    await _index.GetCompletedCountByTaskGroupAsync(groupId),
+                    limit => _index.GetCompletedByTaskGroupAsync(groupId, limit));
                 break;
 
             case TaskListMode.Tag:
+                var tagId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
-                    await _index.GetByTagAsync(RequiredFilterId()),
-                    await _index.GetCompletedByTagAsync(RequiredFilterId()));
+                    await _index.GetByTagAsync(tagId),
+                    await _index.GetCompletedCountByTagAsync(tagId),
+                    limit => _index.GetCompletedByTagAsync(tagId, limit));
                 break;
 
             default:
@@ -327,7 +352,7 @@ public partial class TaskListViewModel : ObservableObject
                 };
                 SyncPrioritySections([]);
                 SyncLogbookSections([]);
-                SyncCompletedSection([]);   // these views exclude completed work outright
+                ClearCompletedSection();   // these views exclude completed work outright
                 SyncRows(Tasks, items);
                 IsEmpty = Tasks.Count == 0;
                 break;
@@ -337,15 +362,58 @@ public partial class TaskListViewModel : ObservableObject
         ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
     }
 
-    /// <summary>Loads a flat open list plus its collapsible "완료한 일" section (Today / group / tag).</summary>
-    private Task LoadFlatWithCompletedAsync(IReadOnlyList<TaskListItem> open, IReadOnlyList<TaskListItem> completed)
+    /// <summary>Loads a flat open list plus its collapsible "완료한 일" section (Today / group / tag). The
+    /// completed section is lazy: <paramref name="completedTotal"/> (a COUNT) drives its header and
+    /// visibility, while only the rows inside the current paging window are realized through
+    /// <paramref name="completedPage"/> — none while collapsed, the opened batch(es) once expanded. A
+    /// refresh re-fetches that same window, so an opened section keeps its rows.</summary>
+    private async Task LoadFlatWithCompletedAsync(
+        IReadOnlyList<TaskListItem> open,
+        int completedTotal,
+        Func<int, Task<IReadOnlyList<TaskListItem>>> completedPage)
     {
         SyncPrioritySections([]);
         SyncLogbookSections([]);
         SyncRows(Tasks, open);
-        SyncCompletedSection(completed);
-        IsEmpty = Tasks.Count == 0 && CompletedSection.Tasks.Count == 0;
-        return Task.CompletedTask;
+
+        _completedPager = completedPage;
+        CompletedSection.TotalCount = completedTotal;
+
+        // Realize only the rows within the current window (0 while collapsed and never opened), capped at
+        // the live total so a just-shrunk list can't ask for more than exists.
+        var window = Math.Min(_completedWindow, completedTotal);
+        SyncCompletedSection(window > 0 ? await completedPage(window) : []);
+
+        IsEmpty = Tasks.Count == 0 && CompletedSection.TotalCount == 0;
+    }
+
+    /// <summary>Pages in the next batch of completed rows for the current view — the callback behind the
+    /// section's header toggle (first expand) and its "더 보기" affordance. Grows the window by one page,
+    /// re-fetches it from the top (the reconcile reuses the rows already realized), and re-applies the
+    /// selection accent to any freshly inserted row.</summary>
+    private async Task LoadMoreCompletedAsync()
+    {
+        if (_completedPager is null || CompletedSection.IsLoading) return;
+        CompletedSection.IsLoading = true;
+        try
+        {
+            _completedWindow = Math.Min(_completedWindow + CompletedPageSize, CompletedSection.TotalCount);
+            SyncCompletedSection(await _completedPager(_completedWindow));
+            ApplySelection(Detail.IsOpen ? Detail.CurrentTaskId : null);
+        }
+        finally
+        {
+            CompletedSection.IsLoading = false;
+        }
+    }
+
+    /// <summary>Clears the completed section for a view that carries none: empties its rows, zeroes its
+    /// count (so it hides), and drops the pager so a stale toggle can't realize rows from a prior view.</summary>
+    private void ClearCompletedSection()
+    {
+        _completedPager = null;
+        CompletedSection.TotalCount = 0;
+        SyncCompletedSection([]);
     }
 
     /// <summary>
