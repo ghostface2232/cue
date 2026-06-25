@@ -169,7 +169,7 @@ public partial class TaskListViewModel : ObservableObject
         // The completed section pages its rows in on demand; this is the callback its header toggle and
         // "더 보기" affordance invoke to realize the next batch.
         CompletedSection.LoadMoreRequested = LoadMoreCompletedAsync;
-        Detail = new TaskDetailViewModel(store, index, reorder, clock, zone, LoadAsync, navNotifier);
+        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, navNotifier);
         // Clear the row selection accent when the detail panel closes.
         Detail.PropertyChanged += (_, e) =>
         {
@@ -799,6 +799,17 @@ public partial class TaskListViewModel : ObservableObject
         if (renamed is not null) await LoadAsync();
     }
 
+    /// <summary>Ends a recurring series straight from a row's context menu (반복 종료): completes the
+    /// series so it leaves the active lists and lands in the Logbook, closes the detail panel if this task
+    /// was open, and refreshes. A no-op for a non-recurring task. The recorded cycle history is preserved.</summary>
+    public async Task EndSeriesAsync(Guid id)
+    {
+        await _recurrence.EndSeriesAsync(id, _clock.GetUtcNow());
+        if (Detail.IsOpen && Detail.CurrentTaskId == id) Detail.Close();
+        await LoadAsync();
+        _navNotifier.NotifyCountsChanged();
+    }
+
     /// <summary>Soft-deletes a task (its embedded checklist goes with it), closes the detail panel if
     /// this task was open, and refreshes the list.</summary>
     [RelayCommand]
@@ -845,10 +856,11 @@ public partial class TaskListViewModel : ObservableObject
         {
             if (completed)
             {
-                // Completion runs through the recurrence service: a repeating task leaves a completed
-                // Logbook copy and advances to its next cycle (returning that next occurrence), a one-off
-                // is simply stamped done (returning null). The task's embedded checklist items are
-                // independent and left as they are.
+                // Completion runs through the recurrence service: a repeating task records its current
+                // cycle as a history occurrence and advances to its next cycle (returning that next
+                // occurrence) without completing the series itself, while a one-off is simply stamped done
+                // (returning null). The task's embedded checklist resets on a recurring advance; the cycle's
+                // ticked state was frozen on the occurrence record.
                 var nextOccurrence = await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
                 _navNotifier.NotifyCountsChanged();
 

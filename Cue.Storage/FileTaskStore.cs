@@ -136,6 +136,7 @@ public sealed class FileTaskStore : ITaskStore
         _ when recordType == typeof(TaskItem) => "tasks",
         _ when recordType == typeof(TaskGroup) => "groups",
         _ when recordType == typeof(Tag) => "tags",
+        _ when recordType == typeof(RecurrenceOccurrence) => "occurrences",
         _ => throw new NotSupportedException($"No storage partition is defined for '{recordType.Name}'."),
     };
 }

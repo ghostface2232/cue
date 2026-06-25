@@ -18,6 +18,7 @@
             <local:PriorityToLabelConverter x:Key="PriorityToLabel" />
             <local:HexToBrushConverter x:Key="HexToBrush" />
             <local:HexToTintBrushConverter x:Key="HexToTint" />
+            <local:OccurrencePipKindToBrushConverter x:Key="OccurrencePipKindToBrush" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

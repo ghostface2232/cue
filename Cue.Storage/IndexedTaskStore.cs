@@ -69,7 +69,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         var tasks = await _files.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
         var taskGroups = await _files.GetAllAsync<TaskGroup>(cancellationToken).ConfigureAwait(false);
         var tags = await _files.GetAllAsync<Tag>(cancellationToken).ConfigureAwait(false);
-        await _index.RebuildAsync(tasks, taskGroups, tags, cancellationToken).ConfigureAwait(false);
+        var occurrences = await _files.GetAllAsync<RecurrenceOccurrence>(cancellationToken).ConfigureAwait(false);
+        await _index.RebuildAsync(tasks, taskGroups, tags, occurrences, cancellationToken).ConfigureAwait(false);
     }
 
     // Write path: file first, then index (always both)
@@ -226,6 +227,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             case TaskItem task: await _index.ReflectAsync(task, cancellationToken).ConfigureAwait(false); break;
             case TaskGroup taskGroup: await _index.ReflectAsync(taskGroup, cancellationToken).ConfigureAwait(false); break;
             case Tag tag: await _index.ReflectAsync(tag, cancellationToken).ConfigureAwait(false); break;
+            case RecurrenceOccurrence occurrence: await _index.ReflectAsync(occurrence, cancellationToken).ConfigureAwait(false); break;
             default: throw new NotSupportedException($"Index reflection is not defined for {record.GetType().Name}.");
         }
     }
@@ -354,6 +356,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
         => _index.GetByPriorityAsync(cancellationToken);
+
+    public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
+        => _index.GetOccurrencesAsync(seriesId, limit, offset, cancellationToken);
+
+    public Task<int> GetOccurrenceCountAsync(Guid seriesId, CancellationToken cancellationToken = default)
+        => _index.GetOccurrenceCountAsync(seriesId, cancellationToken);
 
     public ValueTask DisposeAsync() => _index.DisposeAsync();
 }

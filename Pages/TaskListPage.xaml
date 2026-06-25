@@ -746,6 +746,100 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 기록 (recurrence cycle timeline). Shown only for a recurring task. A compact,
+                             fixed-height horizontal agenda strip of cycle pips — not a large card carousel —
+                             so a long history never grows the panel vertically. The most recent cycles and
+                             the live head pip (다음 / 종료) read by default; ‹ pages older cycles in on
+                             demand (never eager-loading all), › scrolls back toward the head. Each pip carries
+                             a glyph + date + status word + tooltip + automation name, so status never depends
+                             on color; tapping a recorded pip opens a flyout with its time + checklist snapshot
+                             and lets its status be corrected. -->
+                        <Border
+                            Margin="{StaticResource CuePadDetailCard}"
+                            Padding="{StaticResource CuePadCard}"
+                            Background="{StaticResource DetailCardBrush}"
+                            CornerRadius="{StaticResource CueRadiusCard}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            BackgroundSizing="InnerBorderEdge"
+                            Visibility="{x:Bind ViewModel.Detail.IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel Spacing="{StaticResource CueGap8}">
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="기록" />
+                                <Grid ColumnSpacing="{StaticResource CueGap4}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button
+                                        x:Name="TimelinePrevButton"
+                                        Width="28"
+                                        Height="{StaticResource CueTimelineStripHeight}"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="TimelinePrev_Click"
+                                        AutomationProperties.Name="이전 기록"
+                                        ToolTipService.ToolTip="이전 기록">
+                                        <FontIcon FontSize="13" Glyph="&#xE76B;" />
+                                    </Button>
+                                    <ScrollViewer
+                                        x:Name="TimelineScroller"
+                                        Grid.Column="1"
+                                        Height="{StaticResource CueTimelineStripHeight}"
+                                        HorizontalScrollMode="Auto"
+                                        HorizontalScrollBarVisibility="Hidden"
+                                        VerticalScrollMode="Disabled"
+                                        VerticalScrollBarVisibility="Disabled">
+                                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.Detail.Timeline, Mode=OneWay}" SizeChanged="TimelineRepeater_SizeChanged">
+                                            <ItemsRepeater.Layout>
+                                                <StackLayout Orientation="Horizontal" Spacing="{StaticResource CueGap4}" />
+                                            </ItemsRepeater.Layout>
+                                            <ItemsRepeater.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:OccurrencePipViewModel">
+                                                    <Button
+                                                        Width="{StaticResource CueTimelinePipWidth}"
+                                                        Height="{StaticResource CueTimelineStripHeight}"
+                                                        Padding="0"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        CornerRadius="{StaticResource CueRadiusSmall}"
+                                                        Click="OccurrencePip_Click"
+                                                        AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
+                                                        ToolTipService.ToolTip="{x:Bind Tooltip, Mode=OneWay}">
+                                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="2">
+                                                            <TextBlock HorizontalAlignment="Center" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind DateLabel}" />
+                                                            <TextBlock HorizontalAlignment="Center" FontSize="{StaticResource CueTimelinePipGlyph}" Foreground="{x:Bind Kind, Mode=OneWay, Converter={StaticResource OccurrencePipKindToBrush}}" Text="{x:Bind Glyph, Mode=OneWay}" />
+                                                            <TextBlock HorizontalAlignment="Center" FontSize="{StaticResource CueFontSecondary}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind StatusLabel, Mode=OneWay}" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsRepeater.ItemTemplate>
+                                        </ItemsRepeater>
+                                    </ScrollViewer>
+                                    <Button
+                                        Grid.Column="2"
+                                        Width="28"
+                                        Height="{StaticResource CueTimelineStripHeight}"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="TimelineNext_Click"
+                                        AutomationProperties.Name="다음 기록"
+                                        ToolTipService.ToolTip="다음 기록">
+                                        <FontIcon FontSize="13" Glyph="&#xE76C;" />
+                                    </Button>
+                                </Grid>
+                                <Button
+                                    HorizontalAlignment="Left"
+                                    Click="SkipCurrent_Click"
+                                    Content="이번 회차 건너뛰기"
+                                    Style="{StaticResource CueSubtleTextButtonStyle}" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Margin="{StaticResource CuePadDetailCard}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
                             <StackPanel Spacing="{StaticResource CueGap12}">
                                 <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="BeginAddTag_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
@@ -828,6 +922,27 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
+
+                        <!-- 반복 종료 (end the series). Explicit action in place of any hidden gesture, shown
+                             only for a recurring task. "완료" is intentionally avoided here — that word means
+                             the current cycle; ending the series moves the whole task to 완료한 일. -->
+                        <Button
+                            x:Name="EndSeriesButton"
+                            Margin="4,2,8,4"
+                            Padding="10,9"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="Transparent"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            Click="EndSeries_Click"
+                            CornerRadius="{StaticResource CueRadiusCard}"
+                            Visibility="{x:Bind ViewModel.Detail.IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
+                                <FontIcon FontSize="14" Glyph="&#xE7C1;" />
+                                <TextBlock Text="반복 종료" />
+                            </StackPanel>
+                        </Button>
 
                         <!-- Destructive action lives at the very bottom, set apart by its critical
                              color (DESIGN error token). Soft-delete via DeletedAt, with confirmation. -->

@@ -135,4 +135,19 @@ public interface ITaskIndex
     /// trailing 없음 (no priority) bucket. Completed tasks are excluded entirely.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default);
+
+    // Recurrence history (the detail-panel timeline)
+
+    /// <summary>
+    /// A page of a recurring series' recorded past cycles, most-recent first — the rows behind the
+    /// detail-panel timeline. The timeline shows a recent window and pages older cycles in on demand, so
+    /// it never eager-loads a long history: callers ask for a <paramref name="limit"/> window from
+    /// <paramref name="offset"/>; the defaults return the whole history. Tombstoned occurrences are
+    /// excluded. The matching <see cref="GetOccurrenceCountAsync"/> answers the total without realizing rows.
+    /// </summary>
+    Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default);
+
+    /// <summary>Count of a series' recorded past cycles (excluding tombstones) — lets the timeline know
+    /// whether there are older cycles to page in without realizing them.</summary>
+    Task<int> GetOccurrenceCountAsync(Guid seriesId, CancellationToken cancellationToken = default);
 }
