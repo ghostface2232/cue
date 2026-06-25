@@ -5,6 +5,7 @@ using Cue.Domain;
 using Cue.Storage;
 using Cue.Storage.Index;
 using Cue.Storage.Ranking;
+using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
@@ -122,10 +123,17 @@ public partial class TaskDetailViewModel : ObservableObject
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
     private readonly IReorderService _reorder;
+    private readonly IRecurringTaskService _recurrence;
     private readonly TimeProvider _clock;
     private readonly TimeZoneInfo _zone;
     private readonly Func<Task> _refreshOwner;
     private readonly INavDataChangeNotifier _navNotifier;
+
+    // How many recorded past cycles the timeline realizes per page. The panel opens showing the most
+    // recent page plus the live head pip, and "이전 기록" pages older cycles in on demand — a long history
+    // is never eager-loaded.
+    private const int TimelinePageSize = 12;
+    private int _timelineWindow;
 
     private Guid? _taskId;
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
@@ -190,6 +198,21 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
+    /// <summary>The recurrence timeline pips for a recurring task, oldest cycle first with the live head
+    /// (current/next or terminal) pip last. Empty for a non-recurring task.</summary>
+    public ObservableCollection<OccurrencePipViewModel> Timeline { get; } = new();
+
+    /// <summary>True when the open task carries a recurrence rule — gates the timeline strip and the
+    /// 반복 종료 action in the panel. Tracks the live 반복 selection so clearing it (to "반복 안 함") turns
+    /// the task back into a plain one in the panel at once.</summary>
+    [ObservableProperty]
+    public partial bool IsRecurring { get; set; }
+
+    /// <summary>True while there are older recorded cycles beyond the realized window — drives the
+    /// timeline's "이전 기록" affordance so history pages in rather than loading all at once.</summary>
+    [ObservableProperty]
+    public partial bool HasOlderTimeline { get; set; }
+
     [ObservableProperty]
     public partial bool IsOpen { get; set; }
 
@@ -253,6 +276,7 @@ public partial class TaskDetailViewModel : ObservableObject
         ITaskStore store,
         ITaskIndex index,
         IReorderService reorder,
+        IRecurringTaskService recurrence,
         TimeProvider clock,
         TimeZoneInfo zone,
         Func<Task> refreshOwner,
@@ -261,6 +285,7 @@ public partial class TaskDetailViewModel : ObservableObject
         _store = store;
         _index = index;
         _reorder = reorder;
+        _recurrence = recurrence;
         _clock = clock;
         _zone = zone;
         _refreshOwner = refreshOwner;
@@ -325,7 +350,16 @@ public partial class TaskDetailViewModel : ObservableObject
     partial void OnWhenTimeChanged(TimeSpan? value) => RequestAutoSave();
     partial void OnSelectedPriorityChanged(Priority value) => RequestAutoSave();
     partial void OnSelectedTaskGroupChanged(TaskGroupEditorOption? value) => RequestAutoSave();
-    partial void OnSelectedRecurrenceChanged(RecurrenceEditorOption? value) => RequestAutoSave();
+    partial void OnSelectedRecurrenceChanged(RecurrenceEditorOption? value)
+    {
+        // Clearing 반복 (선택 "반복 안 함") converts the task back to a plain one in the panel immediately:
+        // the timeline strip and 반복 종료 action hide. Re-enabling it shows them again. The autosave
+        // persists Recurrence = null (or the chosen rule) like any other metadata edit — it never
+        // completes the task or touches the cycle history.
+        if (!_isLoading)
+            IsRecurring = value?.Rule is not null;
+        RequestAutoSave();
+    }
 
     partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
     partial void OnSelectedWhenMinuteChanged(TimeOption? value) => SyncWhenTimeFromParts();
@@ -367,6 +401,13 @@ public partial class TaskDetailViewModel : ObservableObject
         await LoadTaskGroupsAsync(task.TaskGroupId);
         await LoadTagsAsync(task.TagIds);
         LoadChecklist(task);
+
+        // The recurrence timeline: a recurring task (open or already-ended) shows its cycle history; a
+        // plain task shows none. The most recent page loads now; older cycles page in on demand.
+        IsRecurring = task.Recurrence is not null;
+        _timelineWindow = TimelinePageSize;
+        await LoadTimelineAsync(task);
+
         IsOpen = true;
         _isLoading = false;
     }
@@ -638,6 +679,121 @@ public partial class TaskDetailViewModel : ObservableObject
         Close();
         await _refreshOwner();
         // A deleted open task drops out of its group/tag counts in the sidebar.
+        _navNotifier.NotifyCountsChanged();
+    }
+
+    // Recurrence timeline + series lifecycle
+
+    /// <summary>
+    /// Rebuilds the recurrence timeline from <paramref name="task"/>: the most recent page of recorded
+    /// cycles (oldest-first), then the live head pip — the current/next cycle for an open series, or a
+    /// terminal "종료" pip once the series has ended. A plain task clears the strip. Older cycles beyond the
+    /// realized window page in via <see cref="LoadOlderTimelineAsync"/>, so a long history is never loaded
+    /// all at once.
+    /// </summary>
+    private async Task LoadTimelineAsync(TaskItem task)
+    {
+        Timeline.Clear();
+        if (task.Recurrence is null)
+        {
+            HasOlderTimeline = false;
+            return;
+        }
+
+        var total = await _index.GetOccurrenceCountAsync(task.Id);
+        var window = Math.Min(_timelineWindow, total);
+        HasOlderTimeline = window < total;
+
+        // The index returns cycles most-recent-first; render oldest-first so the strip reads left→right
+        // with the live head pip on the right.
+        var records = window > 0
+            ? await _index.GetOccurrencesAsync(task.Id, window)
+            : (IReadOnlyList<OccurrenceListItem>)Array.Empty<OccurrenceListItem>();
+        for (var i = records.Count - 1; i >= 0; i--)
+        {
+            var record = records[i];
+            var completedLocal = record.CompletedAt is { } at ? TimeZoneInfo.ConvertTime(at, _zone) : (DateTimeOffset?)null;
+            Timeline.Add(new OccurrencePipViewModel(record.Id, record.OccurrenceDate, MapPipKind(record.Status), completedLocal));
+        }
+
+        Timeline.Add(BuildHeadPip(task));
+    }
+
+    /// <summary>The live head pip: the series' own current/next cycle (◉ 다음) while open, or a terminal
+    /// 종료 pip once the series has been ended/exhausted. Synthesized from the series, not a record, so it
+    /// carries no occurrence id and cannot be edited as a past cycle.</summary>
+    private OccurrencePipViewModel BuildHeadPip(TaskItem task)
+    {
+        var headDate = task.When.Date is { } when
+            ? DateOnly.FromDateTime(when.ToLocal().DateTime)
+            : DateOnly.FromDateTime(task.Recurrence!.Anchor.ToLocal().DateTime);
+
+        if (task.IsCompleted)
+        {
+            var completedLocal = task.CompletedAt is { } at ? TimeZoneInfo.ConvertTime(at, _zone) : (DateTimeOffset?)null;
+            return new OccurrencePipViewModel(null, headDate, OccurrencePipKind.Ended, completedLocal);
+        }
+        return new OccurrencePipViewModel(null, headDate, OccurrencePipKind.Next, null);
+    }
+
+    private static OccurrencePipKind MapPipKind(OccurrenceStatus status) => status switch
+    {
+        OccurrenceStatus.Completed => OccurrencePipKind.Completed,
+        OccurrenceStatus.Skipped => OccurrencePipKind.Skipped,
+        OccurrenceStatus.Missed => OccurrencePipKind.Missed,
+        _ => OccurrencePipKind.Missed,
+    };
+
+    /// <summary>Pages the next older batch of recorded cycles into the timeline.</summary>
+    [RelayCommand]
+    private async Task LoadOlderTimelineAsync()
+    {
+        if (_taskId is not { } id) return;
+        _timelineWindow += TimelinePageSize;
+        if (await _store.GetAsync<TaskItem>(id) is { } task)
+            await LoadTimelineAsync(task);
+    }
+
+    /// <summary>Loads one cycle's full record (its completion time and frozen checklist snapshot) for the
+    /// per-cycle flyout. Lazy — only the opened pip's snapshot is read, never the whole history's.</summary>
+    public Task<RecurrenceOccurrence?> GetOccurrenceAsync(Guid occurrenceId)
+        => _store.GetAsync<RecurrenceOccurrence>(occurrenceId);
+
+    /// <summary>Re-classifies one past cycle from its flyout (완료/건너뜀/미수행) and rebuilds the timeline.
+    /// Editing history never moves the series' next scheduled cycle, so only the strip refreshes — the
+    /// open lists are untouched.</summary>
+    public async Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status)
+    {
+        await _recurrence.UpdateOccurrenceStatusAsync(occurrenceId, status);
+        if (_taskId is { } id && await _store.GetAsync<TaskItem>(id) is { } task)
+            await LoadTimelineAsync(task);
+    }
+
+    /// <summary>이번 회차 건너뛰기 — records the current cycle as 건너뜀 and advances the series, leaving it
+    /// open. Refreshes the owning list and the panel (the head pip rolls to the next cycle, a new 건너뜀 pip
+    /// joins the history).</summary>
+    [RelayCommand]
+    private async Task SkipCurrentAsync()
+    {
+        if (_taskId is not { } id) return;
+        await FlushAsync();
+        await _recurrence.SkipAsync(id, _clock.GetUtcNow());
+        await _refreshOwner();
+        _navNotifier.NotifyCountsChanged();
+        await OpenAsync(id); // reload the advanced cycle + the new history pip
+    }
+
+    /// <summary>반복 종료 — ends the series (the only path that completes a recurring task): stamps its
+    /// completion so it leaves the active lists and lands in the Logbook, then closes the panel and
+    /// refreshes the list. The recorded cycle history is preserved on the (now completed) series.</summary>
+    [RelayCommand]
+    private async Task EndSeriesAsync()
+    {
+        if (_taskId is not { } id) return;
+        await FlushAsync();
+        await _recurrence.EndSeriesAsync(id, _clock.GetUtcNow());
+        Close();
+        await _refreshOwner();
         _navNotifier.NotifyCountsChanged();
     }
 

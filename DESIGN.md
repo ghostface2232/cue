@@ -174,6 +174,15 @@ components:
     backgroundColor: "{colors.card-surface}"
     rounded: "{rounded.md}"
     padding: 16px
+  # --- Recurrence timeline (detail 기록 strip) ---
+  recurrence-timeline:
+    stripHeight: 64px     # CueTimelineStripHeight — fixed, compact agenda strip (not a carousel)
+    pipWidth: 52px        # CueTimelinePipWidth
+    pipGlyph: 15px        # CueTimelinePipGlyph
+    completed: "{colors.accent}"          # CueTimelineCompletedBrush (완료 ●)
+    next: "{colors.accent}"               # CueTimelineNextBrush (다음 ◉)
+    ended: "{colors.text-secondary}"      # CueTimelineEndedBrush (종료 ◉)
+    muted: "{colors.text-tertiary}"       # CueTimelineMutedBrush (건너뜀 × / 미수행 ○)
   # --- Navigation ---
   nav-item-selected:
     textColor: "{colors.text-primary}"
@@ -393,11 +402,12 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 
 ### Completion state
 - **Completing a task plays a brief in-row acknowledgement; what happens next depends on whether the task is terminal or repeating.** On tick the circular check pops and the title/meta dim to the completed tone, then the row swaps its body for an acknowledgement bar.
-  - **Terminal completion** (a one-off, or a repeating series that has *ended*) shows a filled check + "할 일을 완료했습니다" + an **실행 취소** (undo) button. After ~2s (extendable by hovering/pressing the row) the row **folds away** (scale-Y collapse + fade) and the list reloads, dropping it into its 완료한 일 section / Logbook.
+  - **Terminal completion** (a one-off, or a repeating series ended via **반복 종료** / an exhausted rule) shows a filled check + "할 일을 완료했습니다" + an **실행 취소** (undo) button. After ~2s (extendable by hovering/pressing the row) the row **folds away** (scale-Y collapse + fade) and the list reloads, dropping it into its 완료한 일 section / Logbook.
   - **Repeating completion** (the series rolls on) is **not** a disappearing object but an object that **advances to its next cycle** — the same task (same id) lives on, just moved forward — so it must **not** reuse the fold. Its bar shows a refresh glyph spun one full turn + the **next date** ("다음: M월 d일") and **no** undo (the series advanced). After ~1.3s the bar **fades out, the row refreshes in place** to its next cycle — checkbox back to unchecked, date moved to the next occurrence — and fades back in. It leaves the list only on the **오늘 할 일** view, where a next occurrence that has rolled past today naturally drops out (there the fade-out is its exit). On every other list (모든 할 일 / 그룹·태그 / 중요도 …) the refreshed row simply stays, showing its new date.
 - **Completed work does not linger in the open list.** Where it resurfaces depends on the view: the **오늘 할 일** screen gains a collapsible **오늘 완료한 일** section at the foot (default collapsed, hidden when empty); a **그룹 / 태그** screen gains its own collapsible **완료한 일** section the same way; **모든 할 일 / 언젠가 / 앞으로 / 중요도** exclude completed entirely; the **완료한 일** (Logbook) screen lists everything completed, grouped by day (오늘 / 어제 / a "M월 d일" date), newest first. These completed sections reuse the priority/sidebar section header (title + count + chevron). Only open tasks count toward the sidebar badges.
 - A completed row (in a completed section / the Logbook) reads at **opacity 0.48**; during its acknowledgement bar it returns to full opacity so the message stays legible.
-- **Checklist items are independent of the task's completion.** Completing a task leaves its checklist as-is; an item's checked state is its own. A repeating task resets all its checklist items to unchecked when it rolls to the next cycle (the procedure repeats), while the cycle just finished keeps its ticked state on the Logbook copy.
+- **Checking a repeating task records the current cycle, it does not complete the task.** The checkbox means "did this cycle" — it records the cycle (with its checklist frozen) and rolls the same row to the next occurrence; the series stays open. A recurring task only ever moves to 완료한 일 by an explicit **반복 종료** (see the recurrence timeline). "완료" is reserved for the current cycle, never the series.
+- **Checklist items are independent of the task's completion.** Completing a one-off leaves its checklist as-is; an item's checked state is its own. A repeating task resets all its checklist items to unchecked when it rolls to the next cycle (the procedure repeats), while the cycle just finished keeps its ticked state frozen on its occurrence record (visible in that cycle's timeline flyout).
 
 ### Priority pill
 - Rendered **directly beside** the row title as a text pill (not a leading dot). The title is width-capped and truncates, so the pill hugs the title's trailing edge rather than being pushed to the far right. Labels: 매우 중요 / 중요 / 보통 / 사소.
@@ -417,6 +427,16 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 - The editor is one date picker plus an optional time (hour : minute dropdowns). A "종일" (All day) checkbox marks the date as all-day — carried as an explicit flag on the When (`ScheduledWhen.AllDay`), not a sentinel time — which hides the time; a date added with no explicit time defaults to 종일 until the user unchecks it to set a time.
 - In the one-column (compact) layout the time dropdowns stretch to the card width instead of staying fixed-width.
 - **반복 (Recurrence)** lives in this card as a plain labeled field (a `반복` label like 중요도 / 그룹 — not a card header, no decorative glyph) below the date editor, and is shown **only when a concrete 일시 is set** — a recurrence with no date to anchor it doesn't read as meaningful, so removing the date (제거) hides the field and clears the rule (`ClearWhen`). The picker offers common presets (반복 안 함 / 매일 / 매주 / 평일 (월–금) / 매월 / 매년) whose RRULEs match what the parser emits; a loaded rule with no preset (e.g. a parsed 격주 / 특정 요일 rule) appears as its own summarized entry so it round-trips. Editing recurrence stays a domain concern — the view model only holds the RRULE string and builds the `RecurrenceRule` (with an anchor) on save; RRULE *evaluation* stays in the storage layer (invariant 9).
+
+### 기록 (Recurrence timeline)
+- Shown **only for a recurring task**, as a card below the 일시 card. The cycle history is a **compact, fixed-height horizontal agenda strip** — deliberately *not* a large card carousel — so a long history never grows the panel vertically. Height `{CueTimelineStripHeight}` (64); each pip is a fixed `{CueTimelinePipWidth}` (52) wide.
+- The strip reads left→right oldest→newest, with the **live head pip on the right**: the current/next cycle (◉ 다음) while open, or a terminal (◉ 종료) pip once the series has ended. The most recent cycles + the head show **by default** (the strip auto-scrolls to the head on open); a **‹** chevron pages older cycles in **on demand** (history is never eager-loaded) and **›** scrolls back toward the head.
+- Each pip stacks **date · glyph · status word**, and carries a tooltip and an `AutomationProperties.Name` — so a cycle's status is conveyed by **glyph + label + name, never color alone** (reduced-motion and color-blind safe). Status ↔ glyph: 완료 ● · 미수행 ○ · 건너뜀 × · 다음/종료 ◉. The glyph tone comes from the `CueTimeline*Brush` tokens (accent for 완료/다음, secondary for 종료, tertiary for 건너뜀/미수행) — resolved by `OccurrencePipKindToBrushConverter` — but it is only a secondary cue.
+- **Tapping a recorded pip** opens a lightweight **flyout**: the cycle's completion time and its **frozen checklist snapshot** (read-only), plus a 완료 / 건너뜀 / 미수행 status picker to correct that cycle. Editing a past cycle changes only its record — it **never** shifts the series' next scheduled cycle. The head pip is not a record and opens nothing.
+- An **이번 회차 건너뛰기** action sits under the strip: it records the current cycle as 건너뜀 and advances, the same roll-forward a check does.
+
+### 반복 종료 / 삭제 (Series end & delete)
+- The detail panel's bottom actions are **explicit**, not a hidden long-press. A recurring task shows a **반복 종료** button (neutral 1px-stroke, a flag glyph) above the destructive **할 일 삭제**. "완료" is intentionally avoided for the series — that word means the current cycle — so the series-ending action reads as 종료, and a confirm popover ("반복을 종료하고 완료한 일로 옮길까요?") guards it. 반복 종료 also appears in the row's right-click menu for a recurring task. Ending the series is the only path that completes a recurring task (it lands in the Logbook, rule kept as history). Deleting clears the date / 반복 selection ("반복 안 함") in the 일시 card instead turns a repeating task back into a plain one without completing it.
 
 ### Tags
 - The detail tag card is a **checkbox-free list**. Tapping a row confirms selection with a trailing check (color glyph + name + trailing check).

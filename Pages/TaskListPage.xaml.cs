@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Cue.ViewModels;
 using Cue.Services;
+using Cue.Domain;
 using Windows.System;
 using Windows.UI.ViewManagement;
 
@@ -64,6 +65,11 @@ public sealed partial class TaskListPage : Page
     // Set while a drag-reorder commits, so the row that moves in the bound collection does not also
     // play the list's entrance animation on top of the drop settle.
     private bool _suppressItemEntrance;
+
+    // Set when the detail panel opens a recurring task, so the recurrence timeline scrolls to its live
+    // head (next / 종료) pip once the strip lays out — showing the recent cycles and the next by default.
+    // Cleared after the first scroll so paging older cycles in doesn't snap back to the head.
+    private bool _timelineScrollToEndPending;
 
     public TaskListPage()
     {
@@ -233,6 +239,19 @@ public sealed partial class TaskListPage : Page
         });
         menu.Items.Add(rename);
 
+        // 반복 종료 — only for a recurring task. Ends the series (completes it to 완료한 일); distinct from
+        // 삭제, and from completing the current cycle (the row's checkbox).
+        if (task?.Recurrence is not null)
+        {
+            var endSeries = new MenuFlyoutItem { Text = "반복 종료" };
+            endSeries.Click += async (_, _) => await RunSafelyAsync(async () =>
+            {
+                if (await ConfirmEndSeriesAsync(anchor))
+                    await ViewModel.EndSeriesAsync(id);
+            });
+            menu.Items.Add(endSeries);
+        }
+
         menu.Items.Add(new MenuFlyoutSeparator());
 
         var delete = new MenuFlyoutItem { Text = "삭제" };
@@ -262,6 +281,154 @@ public sealed partial class TaskListPage : Page
             if (sender is FrameworkElement anchor && await ConfirmDeleteTaskAsync(anchor))
                 await ViewModel.Detail.DeleteTaskCommand.ExecuteAsync(null);
         });
+
+    // --- Recurrence detail panel: timeline + series lifecycle ---
+
+    // How far the › / ‹ chevrons nudge the timeline strip: a few pips (pip width + spacing).
+    private const double TimelineScrollStep = (52 + 4) * 3;
+
+    /// <summary>Confirms 반복 종료 with a light anchored popover. Not destructive (nothing is deleted) —
+    /// the series is completed and moves to 완료한 일 — so it uses a plain confirm, not the red delete tone.</summary>
+    private Task<bool> ConfirmEndSeriesAsync(FrameworkElement anchor)
+        => ConfirmPopover.ShowAsync(anchor, new ConfirmPopoverOptions
+        {
+            Message = "반복을 종료하고 완료한 일로 옮길까요?",
+            ConfirmText = "반복 종료",
+            Destructive = false,
+        });
+
+    private async void EndSeries_Click(object sender, RoutedEventArgs e)
+        => await RunSafelyAsync(async () =>
+        {
+            if (sender is FrameworkElement anchor && await ConfirmEndSeriesAsync(anchor))
+                await ViewModel.Detail.EndSeriesCommand.ExecuteAsync(null);
+        });
+
+    private async void SkipCurrent_Click(object sender, RoutedEventArgs e)
+        => await RunSafelyAsync(() => ViewModel.Detail.SkipCurrentCommand.ExecuteAsync(null));
+
+    /// <summary>‹ — pages older recorded cycles in if any remain (history loads on demand, never all at
+    /// once), otherwise just nudges the strip toward the older end.</summary>
+    private void TimelinePrev_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.Detail.HasOlderTimeline)
+            _ = RunSafelyAsync(() => ViewModel.Detail.LoadOlderTimelineCommand.ExecuteAsync(null));
+        else
+            ScrollTimeline(-1);
+    }
+
+    /// <summary>› — nudges the strip back toward the live head (next / 종료) pip.</summary>
+    private void TimelineNext_Click(object sender, RoutedEventArgs e) => ScrollTimeline(1);
+
+    private void ScrollTimeline(int direction)
+    {
+        if (TimelineScroller is not { } scroller) return;
+        var target = scroller.HorizontalOffset + direction * TimelineScrollStep;
+        // With animations off the strip jumps rather than glides — the same information, no motion.
+        scroller.ChangeView(target, null, null, disableAnimation: !_animationsEnabled);
+    }
+
+    /// <summary>When the strip's content finishes laying out after an open, scroll it to the live head pip
+    /// on the right so the most recent cycles and the next/terminal cycle read by default. Cleared after
+    /// the first scroll so paging older cycles in (‹) doesn't snap back to the head.</summary>
+    private void TimelineRepeater_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!_timelineScrollToEndPending || TimelineScroller is not { } scroller) return;
+        if (scroller.ScrollableWidth <= 0) return;
+        _timelineScrollToEndPending = false;
+        scroller.ChangeView(scroller.ScrollableWidth, null, null, disableAnimation: true);
+    }
+
+    /// <summary>Opens a recorded cycle's flyout: its completion time, its frozen checklist snapshot, and
+    /// the controls to correct its status. The live head pip (no occurrence id) is not editable, so it
+    /// opens nothing. Editing a past cycle never shifts the series' next scheduled cycle.</summary>
+    private async void OccurrencePip_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: OccurrencePipViewModel pip } anchor) return;
+        if (pip.OccurrenceId is not { } occurrenceId) return; // head pip — not a record
+
+        await RunSafelyAsync(async () =>
+        {
+            var occurrence = await ViewModel.Detail.GetOccurrenceAsync(occurrenceId);
+            if (occurrence is null) return;
+            BuildOccurrenceFlyout(pip, occurrence).ShowAt(anchor);
+        });
+    }
+
+    private Flyout BuildOccurrenceFlyout(OccurrencePipViewModel pip, RecurrenceOccurrence occurrence)
+    {
+        var flyout = new Flyout();
+        var content = new StackPanel { Spacing = 10, MinWidth = 200, MaxWidth = 280 };
+
+        // The cycle's date, status, and (for a completed cycle) its completion time — the pip's own tooltip
+        // text already reads exactly this.
+        content.Children.Add(new TextBlock
+        {
+            Text = pip.Tooltip,
+            FontFamily = (FontFamily)Application.Current.Resources["CueFontFamilyMedium"],
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        // The checklist exactly as it was ticked when the cycle was completed — read-only history.
+        if (occurrence.ChecklistSnapshot.Count > 0)
+        {
+            var list = new StackPanel { Spacing = 4 };
+            foreach (var item in occurrence.ChecklistSnapshot)
+            {
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                row.Children.Add(new FontIcon
+                {
+                    FontSize = 13,
+                    Glyph = item.IsChecked ? "" : "", // CheckMark / unchecked box
+                    Foreground = (Brush)Application.Current.Resources[item.IsChecked ? "CueTimelineCompletedBrush" : "CueTimelineMutedBrush"],
+                });
+                row.Children.Add(new TextBlock
+                {
+                    Text = item.Title,
+                    FontSize = 13,
+                    Opacity = item.IsChecked ? 0.55 : 1.0,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                list.Children.Add(row);
+            }
+            content.Children.Add(list);
+        }
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "상태 변경",
+            FontSize = 12,
+            Opacity = 0.6,
+        });
+        // The three status choices. Picking one corrects this cycle and closes the popover; it never
+        // touches the series' next scheduled cycle (see UpdateOccurrenceStatusAsync).
+        var picker = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        foreach (var (status, label) in new[]
+        {
+            (OccurrenceStatus.Completed, "완료"),
+            (OccurrenceStatus.Skipped, "건너뜀"),
+            (OccurrenceStatus.Missed, "미수행"),
+        })
+        {
+            var captured = status;
+            var button = new Button { Content = label, MinWidth = 56 };
+            // Mark the current status so the picker reads as a choice, not three equal actions.
+            if (occurrence.Status == status
+                && Application.Current.Resources.TryGetValue("AccentButtonStyle", out var accentStyle)
+                && accentStyle is Style accent)
+                button.Style = accent;
+            button.Click += async (_, _) =>
+            {
+                flyout.Hide();
+                await RunSafelyAsync(() => ViewModel.Detail.UpdateOccurrenceStatusAsync(occurrence.Id, captured));
+            };
+            picker.Children.Add(button);
+        }
+        content.Children.Add(picker);
+
+        flyout.Content = content;
+        return flyout;
+    }
 
     private void TaskSurface_Loaded(object sender, RoutedEventArgs e)
     {
@@ -303,6 +470,9 @@ public sealed partial class TaskListPage : Page
         {
             UpdateListObscured();
             var shown = panel.Visibility == Visibility.Visible;
+            // A freshly opened panel should land the recurrence timeline on its live head pip; the strip's
+            // SizeChanged does the actual scroll once it has laid out (no-op for a non-recurring task).
+            if (shown) _timelineScrollToEndPending = true;
             if (!_animationsEnabled)
             {
                 visual.Opacity = shown ? 1f : 0f;

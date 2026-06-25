@@ -83,7 +83,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 7;
+    private const long SchemaVersion = 8;
 
     private void EnsureSchema()
     {
@@ -97,6 +97,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 drop.CommandText =
                     "DROP TABLE IF EXISTS task_tags; DROP TABLE IF EXISTS tasks; " +
                     "DROP TABLE IF EXISTS task_groups; DROP TABLE IF EXISTS sections; DROP TABLE IF EXISTS tags; " +
+                    "DROP TABLE IF EXISTS recurrence_occurrences; " +
                     "DROP TABLE IF EXISTS task_labels; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS labels;";
                 // (sections and the old projects/labels/task_labels tables are dropped only to clear any
                 // stale table from before the model rename.)
@@ -140,13 +141,24 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 deleted_at TEXT NULL,
                 sort_order TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS recurrence_occurrences (
+                id              TEXT PRIMARY KEY,
+                series_id       TEXT NOT NULL,
+                occurrence_utc  TEXT NOT NULL,
+                occurrence_date TEXT NOT NULL,
+                is_all_day      INTEGER NOT NULL DEFAULT 0,
+                status          INTEGER NOT NULL DEFAULT 0,
+                completed_at    TEXT NULL,
+                deleted_at      TEXT NULL
+            );
             CREATE INDEX IF NOT EXISTS ix_tasks_group  ON tasks(group_id);
             CREATE INDEX IF NOT EXISTS ix_tasks_when   ON tasks(when_kind, when_date);
             CREATE INDEX IF NOT EXISTS ix_tasks_active ON tasks(deleted_at, completed_at);
             CREATE INDEX IF NOT EXISTS ix_task_tags_tag ON task_tags(tag_id);
             CREATE INDEX IF NOT EXISTS ix_task_groups_active ON task_groups(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_tags_active ON tags(deleted_at);
-            PRAGMA user_version = 7;
+            CREATE INDEX IF NOT EXISTS ix_occurrences_series ON recurrence_occurrences(series_id, deleted_at, occurrence_utc);
+            PRAGMA user_version = 8;
             """;
         cmd.ExecuteNonQuery();
     }
@@ -160,11 +172,13 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         IEnumerable<TaskItem> tasks,
         IEnumerable<TaskGroup> taskGroups,
         IEnumerable<Tag> tags,
+        IEnumerable<RecurrenceOccurrence> occurrences,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(tasks);
         ArgumentNullException.ThrowIfNull(taskGroups);
         ArgumentNullException.ThrowIfNull(tags);
+        ArgumentNullException.ThrowIfNull(occurrences);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -175,7 +189,8 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             {
                 clear.Transaction = tx;
                 clear.CommandText =
-                    "DELETE FROM task_tags; DELETE FROM tasks; DELETE FROM task_groups; DELETE FROM tags;";
+                    "DELETE FROM task_tags; DELETE FROM tasks; DELETE FROM task_groups; DELETE FROM tags; " +
+                    "DELETE FROM recurrence_occurrences;";
                 await clear.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -189,6 +204,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 await UpsertTaskGroupCoreAsync(taskGroup, tx, cancellationToken).ConfigureAwait(false);
             foreach (var tag in tags)
                 await UpsertTagCoreAsync(tag, tx, cancellationToken).ConfigureAwait(false);
+            foreach (var occurrence in occurrences)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await UpsertOccurrenceCoreAsync(occurrence, tx, cancellationToken).ConfigureAwait(false);
+            }
 
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -225,6 +245,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     public Task ReflectAsync(Tag tag, CancellationToken cancellationToken = default)
         => ReflectRecordAsync(tag, UpsertTagCoreAsync, cancellationToken);
+
+    public Task ReflectAsync(RecurrenceOccurrence occurrence, CancellationToken cancellationToken = default)
+        => ReflectRecordAsync(occurrence, UpsertOccurrenceCoreAsync, cancellationToken);
 
     private async Task ReflectRecordAsync<T>(
         T record,
@@ -330,6 +353,40 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         Bind(cmd, "$icon", taskGroup.Icon);
         Bind(cmd, "$deleted", Instant(taskGroup.DeletedAt));
         Bind(cmd, "$sort", taskGroup.SortOrder);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UpsertOccurrenceCoreAsync(RecurrenceOccurrence occurrence, SqliteTransaction tx, CancellationToken cancellationToken)
+    {
+        await using var cmd = _connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText =
+            """
+            INSERT INTO recurrence_occurrences
+                (id, series_id, occurrence_utc, occurrence_date, is_all_day, status, completed_at, deleted_at)
+            VALUES
+                ($id, $series, $utc, $date, $allDay, $status, $completed, $deleted)
+            ON CONFLICT(id) DO UPDATE SET
+                series_id       = excluded.series_id,
+                occurrence_utc  = excluded.occurrence_utc,
+                occurrence_date = excluded.occurrence_date,
+                is_all_day      = excluded.is_all_day,
+                status          = excluded.status,
+                completed_at    = excluded.completed_at,
+                deleted_at      = excluded.deleted_at;
+            """;
+        // occurrence_utc orders cycles on the rule's grid (a UTC "O" instant, lexically sortable like
+        // every other instant column); occurrence_date is the local day the pip shows. Both come from the
+        // cycle's frozen When (an occurrence always carries a concrete date), falling back defensively.
+        var occurrenceUtc = occurrence.When.Date?.Utc ?? occurrence.CompletedAt ?? occurrence.CreatedAt;
+        Bind(cmd, "$id", occurrence.Id.ToString());
+        Bind(cmd, "$series", occurrence.SeriesId.ToString());
+        Bind(cmd, "$utc", occurrenceUtc.ToUniversalTime().ToString("O"));
+        Bind(cmd, "$date", LocalDate(occurrence.When.Date) ?? DateOnly.FromDateTime(occurrenceUtc.UtcDateTime).ToString("yyyy-MM-dd"));
+        Bind(cmd, "$allDay", occurrence.When.IsAllDay ? 1 : 0);
+        Bind(cmd, "$status", (int)occurrence.Status);
+        Bind(cmd, "$completed", Instant(occurrence.CompletedAt));
+        Bind(cmd, "$deleted", Instant(occurrence.DeletedAt));
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -544,6 +601,31 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
             "ORDER BY t.priority = 0, t.priority, t.sort_order;",
             _ => { }, cancellationToken);
+
+    // Recurrence history (the detail-panel timeline)
+
+    public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
+        => QueryRecordsAsync(
+            "SELECT id, series_id, occurrence_date, is_all_day, status, completed_at " +
+            "FROM recurrence_occurrences " +
+            "WHERE series_id = $series AND deleted_at IS NULL " +
+            "ORDER BY occurrence_utc DESC LIMIT $limit OFFSET $offset;",
+            cmd => { Bind(cmd, "$series", seriesId.ToString()); BindPage(cmd, limit, offset); },
+            MapOccurrence,
+            cancellationToken);
+
+    public Task<int> GetOccurrenceCountAsync(Guid seriesId, CancellationToken cancellationToken = default)
+        => QueryScalarAsync(
+            "SELECT COUNT(*) FROM recurrence_occurrences WHERE series_id = $series AND deleted_at IS NULL;",
+            cmd => Bind(cmd, "$series", seriesId.ToString()), cancellationToken);
+
+    private static OccurrenceListItem MapOccurrence(SqliteDataReader r) => new(
+        Id: Guid.Parse(r.GetString(0)),
+        SeriesId: Guid.Parse(r.GetString(1)),
+        OccurrenceDate: DateOnly.ParseExact(r.GetString(2), "yyyy-MM-dd"),
+        IsAllDay: r.GetInt64(3) != 0,
+        Status: (OccurrenceStatus)r.GetInt64(4),
+        CompletedAt: InstantOrNull(r, 5));
 
     // Plumbing
 

@@ -71,8 +71,9 @@ public partial class App : Application
         // The rank service owns LexoRank assignment and persists reorders through the store.
         services.AddSingleton<IReorderService, ReorderService>();
 
-        // Recurrence completion: advances a repeating task to its next cycle and keeps the Logbook
-        // copy. The Ical.Net engine lives behind this service, inside the storage layer.
+        // Recurrence lifecycle: records a completed/skipped cycle as a RecurrenceOccurrence owned by the
+        // series and advances it to its next cycle, ends a series, and edits past cycles. The Ical.Net
+        // engine lives behind this service, inside the storage layer.
         services.AddSingleton<IRecurringTaskService, RecurringTaskService>();
         services.AddSingleton<DialogService>();
 

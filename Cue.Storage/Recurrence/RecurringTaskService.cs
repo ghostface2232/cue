@@ -8,29 +8,28 @@ namespace Cue.Storage.Recurrence;
 /// <inheritdoc cref="IRecurringTaskService"/>
 /// </summary>
 /// <remarks>
-/// <b>Completion-on-advance policy: method B (Logbook copy + advance), chosen as the default.</b>
-/// When a repeating task is completed we keep a completed, one-off copy in the Logbook and advance
-/// the original to its next cycle. This was chosen over method A (advance only, no history) because
-/// a to-do app's value is partly the record of what was finished: with method A a daily habit would
-/// never leave a trace in the Logbook, so "did I do it yesterday?" becomes unanswerable. The copy is
-/// the cost; an accurate completion history is the benefit.
+/// <b>Occurrence-record model.</b> Performing a recurring task's current cycle does not complete the
+/// task: it writes a <see cref="RecurrenceOccurrence"/> owned by the series (via
+/// <see cref="RecurrenceOccurrence.SeriesId"/>) and advances the original to its next cycle, which
+/// stays open. The series' own <see cref="TaskItem.CompletedAt"/> is set only when the series is ended
+/// (<see cref="EndSeriesAsync"/>) or its rule is exhausted. This replaces the former method-B "Logbook
+/// copy" approach, where each cycle was a standalone completed <see cref="TaskItem"/>: history is now
+/// queryable by series and each cycle keeps its own status and frozen checklist.
 /// <para>
 /// The advance is based on the completed instance's own <see cref="TaskItem.When"/> (falling back to
-/// the recurrence anchor when the task carries no concrete When), <i>not</i> on the completion
-/// moment. This guarantees the original moves exactly one cycle per completion and stays on the
-/// rule's grid (e.g. every Monday stays a Monday), even when the task is completed late. If it lands
-/// in the past it simply surfaces in Today (overdue rolls forward) until completed again.
+/// the recurrence anchor when the task carries no concrete When), <i>not</i> on the completion moment,
+/// so the original moves exactly one cycle and stays on the rule's grid (e.g. every Monday stays a
+/// Monday) even when completed late. If it lands in the past it surfaces in Today (overdue rolls
+/// forward) until performed again. An all-day (종일) cycle stays all-day across the advance.
 /// </para>
 /// <para>
-/// <b>Crash safety: the two saves are made idempotent, not transactional.</b> Completion writes two
-/// separate records — the Logbook copy, then the advanced original — and the store has no cross-file
-/// transaction, so a crash <i>between</i> the writes leaves the copy on disk while the original is
-/// still due (un-advanced). To keep that path from minting a duplicate copy on the retried
-/// completion, the copy's id is <i>derived</i> from the original's id plus the completed instance's
-/// occurrence date (see <see cref="LogbookCopyId"/>) rather than random. Re-completing the same
-/// still-un-advanced instance therefore reproduces the same id and overwrites the orphaned copy in
-/// place; the advance then runs. Once the original has advanced, the next cycle's occurrence yields a
-/// different id, so each cycle still leaves its own distinct history entry.
+/// <b>Crash safety: the two writes are made idempotent, not transactional.</b> A cycle writes the
+/// occurrence record, then advances the original; a crash between them leaves the occurrence on disk
+/// while the original is still due. To keep a retry from minting a duplicate, the occurrence id is
+/// <i>derived</i> from the series id plus the cycle's occurrence instant (see <see cref="OccurrenceId"/>)
+/// rather than random — re-recording the same un-advanced cycle reproduces the same id and overwrites
+/// the orphan in place; the advance then runs. Once advanced, the next cycle has a different occurrence
+/// instant and so a distinct record.
 /// </para>
 /// </remarks>
 public sealed class RecurringTaskService : IRecurringTaskService
@@ -40,59 +39,75 @@ public sealed class RecurringTaskService : IRecurringTaskService
     public RecurringTaskService(ITaskStore store)
         => _store = store ?? throw new ArgumentNullException(nameof(store));
 
-    public async Task<DateOnly?> CompleteAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default)
+    public Task<DateOnly?> CompleteAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default)
+        => RecordCurrentCycleAsync(taskId, OccurrenceStatus.Completed, completedAt, cancellationToken);
+
+    public Task<DateOnly?> SkipAsync(Guid taskId, DateTimeOffset skippedAt, CancellationToken cancellationToken = default)
+        => RecordCurrentCycleAsync(taskId, OccurrenceStatus.Skipped, skippedAt, cancellationToken);
+
+    /// <summary>
+    /// Shared body for performing (<see cref="OccurrenceStatus.Completed"/>) and skipping
+    /// (<see cref="OccurrenceStatus.Skipped"/>) the current cycle: record the cycle, then advance the
+    /// series (or end it in place if the rule has no further cycle).
+    /// </summary>
+    private async Task<DateOnly?> RecordCurrentCycleAsync(Guid taskId, OccurrenceStatus status, DateTimeOffset at, CancellationToken cancellationToken)
     {
-        // The next occurrence (local date) is captured inside the transaction and surfaced to the caller
-        // so it can tell a "rolled to the next cycle" completion apart from a terminal one; null means the
-        // task was completed in place (one-off, exhausted series, unevaluable rule, or a missing task).
+        // Captured inside the transaction and surfaced to the caller so it can tell a "rolled to the next
+        // cycle" action apart from a terminal one (non-recurring complete, exhausted series, or no-op).
         DateOnly? nextOccurrence = null;
 
-        // Run the whole completion as one atomic unit: the read of the task, the Logbook copy, and the
-        // advance all happen under the store's write lock, so a concurrent save path (a detail-panel
-        // metadata/checklist edit, a list toggle) can neither be clobbered by the advance nor clobber
-        // it. The two writes still run in copy-then-advance order, so the crash-idempotency described in
-        // the class remarks is unchanged — a crash between them leaves an overwritable orphan copy.
+        // The whole action runs under the store's write lock so the read, the occurrence write, and the
+        // advance commit together and cannot interleave with a concurrent save (a detail edit, a list
+        // toggle). The two writes still run record-then-advance, so the crash-idempotency in the class
+        // remarks holds — a crash between them leaves an overwritable orphan occurrence.
         await _store.RunInTransactionAsync(async (tx, ct) =>
         {
             var task = await tx.GetAsync<TaskItem>(taskId, ct).ConfigureAwait(false);
             if (task is null || task.IsDeleted)
                 return;
 
-            // Base the advance on the instance being completed: its When if it has one, else the anchor.
-            // This same occurrence instant also keys the Logbook copy's deterministic id below.
-            var occurrenceUtc = task.When.Date?.Utc ?? task.Recurrence?.Anchor.Utc;
-            var next = task.Recurrence is { } recurrence
-                ? RecurrenceCalculator.Next(recurrence, occurrenceUtc!.Value)
-                : null;
+            if (task.Recurrence is null)
+            {
+                // Non-recurring: there is no cycle to record. A complete finishes it in place; a skip is a
+                // no-op (you cannot skip a one-off).
+                if (status == OccurrenceStatus.Completed)
+                {
+                    task.CompletedAt = at;
+                    await tx.SaveAsync(task, ct).ConfigureAwait(false);
+                }
+                return;
+            }
+
+            // Base the advance on the instance being acted on: its When if it has one, else the anchor.
+            // This same occurrence instant keys the occurrence record's deterministic id below.
+            var occurrenceUtc = task.When.Date?.Utc ?? task.Recurrence.Anchor.Utc;
+            var next = RecurrenceCalculator.Next(task.Recurrence, occurrenceUtc);
 
             if (next is null)
             {
-                // Non-recurring, series exhausted, or an RRULE we couldn't evaluate: complete in place.
-                // (Invalid recurrence is intentionally treated like a one-off rather than throwing.)
-                task.CompletedAt = completedAt;
+                // The rule has no further cycle (UNTIL/COUNT exhausted, or it can't be evaluated): the
+                // series ends naturally. Complete the original in place — exactly the one-off completion
+                // path, so the final cycle is the terminal Logbook record rather than a separate occurrence.
+                task.CompletedAt = at;
                 await tx.SaveAsync(task, ct).ConfigureAwait(false);
                 return;
             }
 
-            // Surface the advanced cycle's local date (matching how the index projects WhenDate), so the
+            // Record this advancing cycle as a history entry owned by the series. A completed cycle freezes
+            // the ticked checklist; a skipped/missed cycle keeps no snapshot. (Save before the advance so a
+            // crash between the two leaves an overwritable orphan — see the class remarks.)
+            var occurrence = CreateOccurrence(task, status, status == OccurrenceStatus.Completed ? at : null, occurrenceUtc);
+            await tx.SaveAsync(occurrence, ct).ConfigureAwait(false);
+
+            // Surface the advanced cycle's local date (matching how the index projects WhenDate) so the
             // caller can show a "다음: …" cue and refresh the row in place instead of folding it away.
             nextOccurrence = DateOnly.FromDateTime(next.Value.ToLocal().DateTime);
 
-            // Method B, step 1: leave a completed one-off copy of this instance in the Logbook. The
-            // copy's id is derived from (original id, this occurrence) so a retry after a crash between
-            // this save and the advance overwrites the orphaned copy instead of duplicating it (see
-            // class remarks).
-            var logbookCopy = CreateLogbookCopy(task, completedAt, LogbookCopyId(task.Id, occurrenceUtc!.Value));
-            await tx.SaveAsync(logbookCopy, ct).ConfigureAwait(false);
-
-            // Method B, step 2: advance the original to the next cycle and keep it open (alive as the
-            // next instance). Only When changes; the rank is preserved and the store stamps UpdatedAt
-            // (invariants 4 and 8). The checklist is the recurring procedure for the cycle, so it resets
-            // to unchecked here — last cycle's ticked state was frozen on the Logbook copy above. This is
-            // part of the same idempotent save, so a crash-retry re-resets an already-reset list (a no-op).
-            // Preserve the instance's all-day (종일) state across the advance: a 종일 recurring task must
-            // stay 종일 on every cycle, otherwise the first completion would silently turn it into a timed
-            // task (and an anchor at the start of the day would then surface as 12:00 AM in the list).
+            // Advance the original to the next cycle and keep it open. Only When changes; the rank is
+            // preserved and the store stamps UpdatedAt. The checklist is the recurring procedure for the
+            // cycle, so it resets to unchecked here — the cycle's ticked state was frozen on the occurrence
+            // record above. Preserve all-day (종일) across the advance so a 종일 series stays 종일 every cycle
+            // (otherwise the first cycle would silently turn it into a timed task).
             task.When = task.When.IsAllDay
                 ? ScheduledWhen.AllDay(next.Value)
                 : ScheduledWhen.On(next.Value);
@@ -104,47 +119,65 @@ public sealed class RecurringTaskService : IRecurringTaskService
         return nextOccurrence;
     }
 
+    public Task EndSeriesAsync(Guid taskId, DateTimeOffset completedAt, CancellationToken cancellationToken = default)
+        => _store.RunInTransactionAsync(async (tx, ct) =>
+        {
+            var task = await tx.GetAsync<TaskItem>(taskId, ct).ConfigureAwait(false);
+            if (task is null || task.IsDeleted || task.Recurrence is null)
+                return;
+
+            // Ending the series is the only way a recurring task itself becomes completed: stamp
+            // CompletedAt so it leaves the active lists and lands in the Logbook. The rule is kept on the
+            // (now completed) record as historical context; it never advances again because IsCompleted.
+            task.CompletedAt = completedAt;
+            await tx.SaveAsync(task, ct).ConfigureAwait(false);
+        }, cancellationToken);
+
+    public Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, CancellationToken cancellationToken = default)
+        => _store.MutateAsync<RecurrenceOccurrence>(occurrenceId, occurrence =>
+        {
+            if (occurrence.Status == status)
+                return false; // nothing to persist
+            occurrence.Status = status;
+            // Editing a recorded cycle never touches the series' When, so the next scheduled cycle is
+            // unaffected. Clear the completion instant when a cycle is reclassified away from Completed.
+            if (status != OccurrenceStatus.Completed)
+                occurrence.CompletedAt = null;
+            return true;
+        }, cancellationToken);
+
     /// <summary>
-    /// A standalone, completed snapshot of the instance being finished. It is a distinct
-    /// <see cref="TaskItem"/> record (its own id/file) and never recurs — a copy does not advance.
+    /// A history record of one cycle, owned by the series via <see cref="RecurrenceOccurrence.SeriesId"/>.
+    /// Its id is deterministic (not <see cref="Guid.NewGuid"/>) so a crash-retried record of the same
+    /// un-advanced cycle overwrites rather than duplicates it.
     /// </summary>
-    private static TaskItem CreateLogbookCopy(TaskItem original, DateTimeOffset completedAt, Guid id) => new()
+    private static RecurrenceOccurrence CreateOccurrence(TaskItem series, OccurrenceStatus status, DateTimeOffset? completedAt, DateTimeOffset occurrenceUtc) => new()
     {
-        // Separate record from the original, but a deterministic identity (not Guid.NewGuid) so a
-        // crash-retried completion of the same instance overwrites this copy rather than duplicating it.
-        Id = id,
-        Title = original.Title,
-        Notes = original.Notes,
+        Id = OccurrenceId(series.Id, occurrenceUtc),
+        SeriesId = series.Id,
+        // The cycle's own scheduled date, frozen. Falls back to the anchor when the series carries no
+        // concrete When, preserving the all-day flag either way.
+        When = series.When.HasDate
+            ? series.When
+            : (series.When.IsAllDay ? ScheduledWhen.AllDay(series.Recurrence!.Anchor) : ScheduledWhen.On(series.Recurrence!.Anchor)),
+        Status = status,
         CompletedAt = completedAt,
-        When = original.When, // the instance's own date, frozen as the historical record
-        Priority = original.Priority,
-        TaskGroupId = original.TaskGroupId,
-        // Deep-copy the checklist as it was checked at completion, so the Logbook keeps an accurate
-        // record of what was ticked off this cycle (new item instances — the original's reset below).
-        Checklist = original.Checklist
-            .Select(item => new ChecklistItem { Id = item.Id, Title = item.Title, IsChecked = item.IsChecked })
-            .ToList(),
-        TagIds = new List<Guid>(original.TagIds),
-
-        // No recurrence on the copy: it is a frozen completion record, it does not advance.
-        Recurrence = null,
-
-        // SortOrder is meaningless for a Logbook entry — the Logbook is ordered by CompletedAt
-        // descending, not by rank. We copy the original's rank verbatim rather than leaving it empty
-        // (an empty rank reads as "unranked"), but nothing sorts on it here.
-        SortOrder = original.SortOrder,
+        // Freeze the checklist as it was ticked, for a completed cycle only — a deep copy (new item
+        // instances), independent of the series' reset below. Skipped/missed cycles keep no snapshot.
+        ChecklistSnapshot = status == OccurrenceStatus.Completed
+            ? series.Checklist.Select(item => new ChecklistItem { Id = item.Id, Title = item.Title, IsChecked = item.IsChecked }).ToList()
+            : new List<ChecklistItem>(),
     };
 
     /// <summary>
-    /// A stable, name-based id for the Logbook copy of one completed occurrence, derived from the
-    /// original task id and that occurrence's UTC instant. Two completions of the <i>same</i>
-    /// un-advanced instance map to the same id (so a crash-retry overwrites rather than duplicates),
-    /// while each advanced cycle has a distinct occurrence and so a distinct copy. Deterministic and
-    /// process-independent: a SHA-256 digest of the two values folded into a GUID.
+    /// A stable, name-based id for one cycle's occurrence record, derived from the series id and that
+    /// cycle's UTC instant. Two records of the <i>same</i> un-advanced cycle map to the same id (so a
+    /// crash-retry overwrites rather than duplicates), while each advanced cycle has a distinct instant
+    /// and so a distinct record. Deterministic and process-independent: a SHA-256 digest folded into a GUID.
     /// </summary>
-    private static Guid LogbookCopyId(Guid originalId, DateTimeOffset occurrenceUtc)
+    private static Guid OccurrenceId(Guid seriesId, DateTimeOffset occurrenceUtc)
     {
-        var name = $"cue/logbook-copy/{originalId:N}/{occurrenceUtc.UtcDateTime.Ticks}";
+        var name = $"cue/recurrence-occurrence/{seriesId:N}/{occurrenceUtc.UtcDateTime.Ticks}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(name));
         return new Guid(hash.AsSpan(0, 16));
     }

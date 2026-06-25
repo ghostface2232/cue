@@ -129,4 +129,23 @@ public class DomainModelTests
 
         Assert.Equal(TaskGroupView.List, taskGroup.View);
     }
+
+    [Fact]
+    public void RecurrenceOccurrence_HasSaneDefaults_AndFlattensCompletedAtToUtc()
+    {
+        var occurrence = new RecurrenceOccurrence();
+
+        Assert.NotEqual(Guid.Empty, occurrence.Id);
+        Assert.Equal(Guid.Empty, occurrence.SeriesId);
+        Assert.Equal(OccurrenceStatus.Completed, occurrence.Status);
+        Assert.Null(occurrence.CompletedAt);
+        Assert.NotNull(occurrence.ChecklistSnapshot);
+        Assert.Empty(occurrence.ChecklistSnapshot);
+        Assert.Equal(WhenKind.Unscheduled, occurrence.When.Kind);
+
+        // Like TaskItem.CompletedAt, the setter normalizes any offset to a true UTC instant.
+        occurrence.CompletedAt = new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.FromHours(9));
+        Assert.Equal(TimeSpan.Zero, occurrence.CompletedAt!.Value.Offset);
+        Assert.Equal(new DateTimeOffset(2026, 6, 22, 3, 0, 0, TimeSpan.Zero), occurrence.CompletedAt);
+    }
 }

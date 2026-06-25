@@ -937,6 +937,128 @@ public sealed class ViewModelRegressionTests
         Assert.Equal(monday9, saved.Recurrence!.Anchor); // original anchor preserved verbatim
     }
 
+    [Fact]
+    public async Task DetailTimeline_ShowsRecordedCyclesAndNextHeadPip()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var today = new DateOnly(2026, 6, 22);
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var recurring = new RecurringTaskService(store);
+        await recurring.CompleteAsync(task.Id, clock.GetUtcNow()); // record Today, advance to 6/23
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), recurring, clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        Assert.True(vm.Detail.IsRecurring);
+        // One recorded cycle (Today, 완료) then the live head pip (다음, tomorrow) — recent + next by default.
+        Assert.Equal(2, vm.Detail.Timeline.Count);
+        Assert.Equal(OccurrencePipKind.Completed, vm.Detail.Timeline[0].Kind);
+        Assert.Equal(today, vm.Detail.Timeline[0].Date);
+        Assert.Equal(OccurrencePipKind.Next, vm.Detail.Timeline[1].Kind);
+        Assert.Equal(today.AddDays(1), vm.Detail.Timeline[1].Date);
+        Assert.False(vm.Detail.HasOlderTimeline);
+    }
+
+    [Fact]
+    public async Task DetailTimeline_PagesOlderCyclesOnDemand_NotEagerly()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var recurring = new RecurringTaskService(store);
+        // 20 recorded cycles — more than the timeline's first page (12).
+        for (var i = 0; i < 20; i++)
+            await recurring.CompleteAsync(task.Id, clock.GetUtcNow());
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), recurring, clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Opens with one page of recent cycles (12) + the head pip, and more to page in — not all 20 eagerly.
+        Assert.Equal(13, vm.Detail.Timeline.Count);
+        Assert.True(vm.Detail.HasOlderTimeline);
+
+        await vm.Detail.LoadOlderTimelineCommand.ExecuteAsync(null);
+
+        // A second page realizes the remaining cycles (20) + the head pip; nothing older remains.
+        Assert.Equal(21, vm.Detail.Timeline.Count);
+        Assert.False(vm.Detail.HasOlderTimeline);
+    }
+
+    [Fact]
+    public async Task DetailClearingRecurrence_ConvertsToPlainTask()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.True(vm.Detail.IsRecurring);
+
+        // Clearing 반복 (선택 "반복 안 함") turns it back into a plain open task — not a completion.
+        vm.Detail.SelectedRecurrence = vm.Detail.RecurrenceOptions[0];
+        await vm.Detail.DrainPendingSaveAsync();
+
+        Assert.False(vm.Detail.IsRecurring);
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Null(saved!.Recurrence);
+        Assert.False(saved.IsCompleted);
+    }
+
+    [Fact]
+    public async Task EndSeries_FromListViewModel_CompletesSeriesIntoLogbook()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
+        await vm.LoadCommand.ExecuteAsync(null);
+        Assert.Single(vm.Tasks);
+
+        await vm.EndSeriesAsync(task.Id);
+
+        // 반복 종료 completes the series: it leaves the open list and lands in the Logbook (its rule kept).
+        await vm.LoadCommand.ExecuteAsync(null);
+        Assert.Empty(vm.Tasks);
+        var ended = await store.GetAsync<TaskItem>(task.Id);
+        Assert.True(ended!.IsCompleted);
+        Assert.NotNull(ended.Recurrence);
+        Assert.Contains(await store.GetLogbookAsync(), t => t.Id == task.Id);
+    }
+
     [Theory]
     [InlineData(TaskListMode.Today, WhenKind.OnDate)]          // only Today pins an actual day
     [InlineData(TaskListMode.Upcoming, WhenKind.Unscheduled)]  // names no specific date → Unscheduled
