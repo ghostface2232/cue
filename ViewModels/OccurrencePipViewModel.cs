@@ -66,6 +66,11 @@ public partial class OccurrencePipViewModel : ObservableObject
     /// editable past cycle and reads with a heavier marker.</summary>
     public bool IsHead => Kind is OccurrencePipKind.Next or OccurrencePipKind.Ended;
 
+    /// <summary>The complement of <see cref="IsHead"/>. Lets the recorded-cycle marker (a plain colored
+    /// glyph) and the head marker (an accent disc) swap by visibility, the way the old timeline's day
+    /// header toggled its plain day number against the accent "today" disc.</summary>
+    public bool IsNotHead => !IsHead;
+
     /// <summary>True when the pip is a recorded past cycle whose status can be edited from its flyout.</summary>
     public bool IsEditable => OccurrenceId is not null;
 
