@@ -772,13 +772,18 @@ public partial class TaskListViewModel : ObservableObject
         }
     }
 
-    /// <summary>Adds the tag if absent, removes it if present, then refreshes.</summary>
+    /// <summary>Sets the task's single tag to <paramref name="tagId"/>, replacing any current tag; or
+    /// clears it if that tag is already the one set. Then refreshes.</summary>
     public async Task ToggleTaskTagAsync(Guid taskId, Guid tagId)
     {
-        // Atomic read-modify-write so the tag toggle touches only TagIds on the latest record.
+        // Atomic read-modify-write so the tag change touches only TagIds on the latest record. A task
+        // carries at most one tag, so picking a tag replaces whatever was there; picking the current tag
+        // again clears it.
         var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
         {
-            if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
+            var alreadyOnlyThis = task.TagIds.Count == 1 && task.TagIds[0] == tagId;
+            task.TagIds.Clear();
+            if (!alreadyOnlyThis) task.TagIds.Add(tagId);
             return true;
         });
         if (changed is not null)

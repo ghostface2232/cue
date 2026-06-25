@@ -209,7 +209,8 @@ public sealed partial class TaskListPage : Page
         }
         menu.Items.Add(moveGroup);
 
-        // 태그 — a checkable list; each click toggles one tag on the task.
+        // 태그 — a single-select list; clicking a tag makes it the task's one tag (replacing any
+        // current), and clicking the checked tag clears it.
         var tagGroup = new MenuFlyoutSubItem { Text = "태그" };
         if (tags.Count == 0)
         {

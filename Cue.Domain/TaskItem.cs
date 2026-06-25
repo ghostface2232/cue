@@ -63,7 +63,12 @@ public sealed class TaskItem : RecordBase, ISortable
     /// </summary>
     public List<ChecklistItem> Checklist { get; set; } = new();
 
-    /// <summary>Cross-cutting tags applied to this task.</summary>
+    /// <summary>
+    /// The task's cross-cutting tag. A task carries at most one tag: this list holds zero or one id.
+    /// It stays a list (rather than a single <c>Guid?</c>) so existing per-task JSON files — which may
+    /// still hold several ids from before the single-tag rule — keep deserializing; every write path
+    /// now collapses it to one, and a legacy multi-tag task collapses on its next save.
+    /// </summary>
     public List<Guid> TagIds { get; set; } = new();
 
     /// <summary>Recurrence rule, if the task repeats. <c>null</c> for a one-off task.</summary>

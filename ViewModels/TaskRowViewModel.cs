@@ -234,8 +234,10 @@ public partial class TaskRowViewModel : ObservableObject
     {
         GroupName = item.TaskGroupName ?? string.Empty;
         GroupGlyph = string.IsNullOrEmpty(item.TaskGroupIcon) ? DefaultGroupGlyph : item.TaskGroupIcon!;
+        // A task carries at most one tag; show only the first so a legacy multi-tag row still reads as
+        // single-tag (it collapses to one on next edit).
         Tags = item.Tags is { Count: > 0 }
-            ? item.Tags.Select(tag => new TaskRowTag(tag.Name, tag.Color)).ToArray()
+            ? new[] { new TaskRowTag(item.Tags[0].Name, item.Tags[0].Color) }
             : Array.Empty<TaskRowTag>();
     }
 

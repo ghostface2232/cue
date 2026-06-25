@@ -636,8 +636,9 @@ public partial class TaskDetailViewModel : ObservableObject
         };
         await _store.SaveAsync(tag);
 
-        var selected = Tags.Where(item => item.IsSelected && item.Id != Guid.Empty).Select(item => item.Id).Append(tag.Id);
-        await LoadTagsAsync(selected);
+        // A task carries one tag, so a freshly created tag becomes that single selection (replacing any
+        // previously selected tag) rather than being added alongside it.
+        await LoadTagsAsync(new[] { tag.Id });
         IsAddingTag = false;
         NewTagName = string.Empty;
         // The new tag is selected on the spot — persist the task's tag assignment too.
