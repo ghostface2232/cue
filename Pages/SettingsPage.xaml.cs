@@ -52,6 +52,7 @@ public sealed partial class SettingsPage : Page
         PopulateFirstDays();
         PopulateTimeZones();
         PopulateThemes();
+        PopulateFocusModes();
         ReloadCustomDateRows();
         AutoAfternoonSwitch.IsOn = _preferences.AutoAfternoonForBareOneToSix;
         VersionText.Text = $"버전 {AppVersion()}";
@@ -120,6 +121,16 @@ public sealed partial class SettingsPage : Page
             AddComboItem(ThemeCombo, "다크", CueThemeMode.Dark);
         }
         SelectByTag(ThemeCombo, _preferences.ThemeMode);
+    }
+
+    private void PopulateFocusModes()
+    {
+        if (FocusCombo.Items.Count == 0)
+        {
+            AddComboItem(FocusCombo, "숨김 (기본)", CueFocusVisualMode.Hidden);
+            AddComboItem(FocusCombo, "자동 (Windows 기본)", CueFocusVisualMode.Auto);
+        }
+        SelectByTag(FocusCombo, _preferences.KeyboardFocusMode);
     }
 
     private static void AddComboItem(ComboBox combo, string content, object tag)
@@ -250,6 +261,16 @@ public sealed partial class SettingsPage : Page
             return;
         _preferences.ThemeMode = mode;
         AppPreferences.ApplyTheme(App.CurrentWindow, _preferences);
+        // Auto-mode focus colors follow light/dark, so re-resolve them after a theme switch.
+        AppPreferences.ApplyFocusVisuals(App.CurrentWindow, _preferences);
+    }
+
+    private void FocusCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || FocusCombo.SelectedItem is not ComboBoxItem { Tag: CueFocusVisualMode mode })
+            return;
+        _preferences.KeyboardFocusMode = mode;
+        AppPreferences.ApplyFocusVisuals(App.CurrentWindow, _preferences);
     }
 
     private void AutoAfternoonSwitch_Toggled(object sender, RoutedEventArgs e)

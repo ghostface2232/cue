@@ -40,6 +40,9 @@ public partial class App : Application
             _window = new MainWindow();
             CurrentWindow = _window;
             AppPreferences.ApplyTheme(_window, preferences);
+            // Apply the keyboard-focus preference once the window root exists (default hides the focus
+            // rectangle; 자동 / high contrast show it). MainWindow re-applies on theme / high-contrast change.
+            AppPreferences.ApplyFocusVisuals(_window, preferences);
             _window.Activate();
         }
         catch (Exception exception)

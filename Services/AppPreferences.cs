@@ -1,7 +1,10 @@
 using System.Text.Json;
 using Windows.Foundation.Collections;
 using Windows.Storage;
+using Windows.UI;
+using Windows.UI.ViewManagement;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 
 namespace Cue.Services;
 
@@ -10,6 +13,18 @@ public enum CueThemeMode
     System,
     Light,
     Dark,
+}
+
+/// <summary>How the keyboard focus rectangle is shown. Cue hides Windows' high-visibility focus visual by
+/// default (it reads as visual noise in the app's restrained style); <see cref="Auto"/> opts back into the
+/// standard Windows behavior. High-contrast mode always shows focus regardless of this choice.</summary>
+public enum CueFocusVisualMode
+{
+    /// <summary>키보드 포커스 숨김 (기본) — the focus rectangle is suppressed app-wide.</summary>
+    Hidden,
+
+    /// <summary>자동 (Windows 기본 동작) — the standard Windows focus rectangle is shown.</summary>
+    Auto,
 }
 
 public sealed class CustomDateMeaning
@@ -57,6 +72,14 @@ public sealed class AppPreferences
     {
         get => EnumValue(nameof(ThemeMode), CueThemeMode.System);
         set => Set(nameof(ThemeMode), value.ToString());
+    }
+
+    /// <summary>Whether Windows' keyboard focus rectangle is shown. Defaults to <see cref="CueFocusVisualMode.Hidden"/>
+    /// — Cue suppresses the focus visual app-wide (see <see cref="ApplyFocusVisuals"/> and App.xaml).</summary>
+    public CueFocusVisualMode KeyboardFocusMode
+    {
+        get => EnumValue(nameof(KeyboardFocusMode), CueFocusVisualMode.Hidden);
+        set => Set(nameof(KeyboardFocusMode), value.ToString());
     }
 
     public bool AutoAfternoonForBareOneToSix
@@ -160,6 +183,72 @@ public sealed class AppPreferences
     {
         if (window?.Content is FrameworkElement root)
             root.RequestedTheme = preferences.ResolveTheme();
+    }
+
+    /// <summary>
+    /// Applies the keyboard focus-rectangle preference to the app-wide focus-stroke brushes App.xaml defines
+    /// (see the comment there). Cue suppresses Windows' high-visibility focus rectangle by default;
+    /// <see cref="CueFocusVisualMode.Auto"/> opts back into it. <b>High-contrast mode always shows focus</b>
+    /// regardless of the setting — an accessibility requirement — by forcing the brushes to the system's
+    /// high-contrast colors. Mutates the existing brush <i>instances'</i> Color (control templates reference
+    /// them by StaticResource), so the change takes effect on the next focus draw with no restart. Safe to
+    /// call before the window has content; the active theme then falls back to the app's requested theme.
+    /// </summary>
+    public static void ApplyFocusVisuals(Window? window, AppPreferences preferences)
+    {
+        if (Application.Current?.Resources is not { } resources)
+            return;
+
+        var (outer, inner) = ResolveFocusColors(window, preferences);
+        SetBrushColor(resources, "FocusStrokeColorOuterBrush", outer);
+        SetBrushColor(resources, "FocusStrokeColorInnerBrush", inner);
+        SetBrushColor(resources, "SystemControlFocusVisualPrimaryBrush", outer);
+        SetBrushColor(resources, "SystemControlFocusVisualSecondaryBrush", inner);
+    }
+
+    private static (Color Outer, Color Inner) ResolveFocusColors(Window? window, AppPreferences preferences)
+    {
+        // Accessibility wins over the preference: in high contrast, always show focus, using the system's
+        // own high-contrast text (outer) and window (inner) colors so it reads against the active HC theme.
+        if (IsHighContrast())
+        {
+            try
+            {
+                var ui = new UISettings();
+                return (ui.GetColorValue(UIColorType.Foreground), ui.GetColorValue(UIColorType.Background));
+            }
+            catch
+            {
+                return (Microsoft.UI.Colors.Black, Microsoft.UI.Colors.White);
+            }
+        }
+
+        if (preferences.KeyboardFocusMode == CueFocusVisualMode.Hidden)
+            return (Microsoft.UI.Colors.Transparent, Microsoft.UI.Colors.Transparent);
+
+        // Auto: WinUI's default high-visibility focus colors for the active light/dark theme.
+        return IsDarkTheme(window)
+            ? (Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), Color.FromArgb(0xB3, 0x00, 0x00, 0x00))
+            : (Color.FromArgb(0xE4, 0x00, 0x00, 0x00), Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF));
+    }
+
+    private static bool IsDarkTheme(Window? window)
+        => window?.Content is FrameworkElement root
+            ? root.ActualTheme == ElementTheme.Dark
+            : Application.Current?.RequestedTheme == ApplicationTheme.Dark;
+
+    /// <summary>True when Windows high-contrast is active. Guarded — <see cref="AccessibilitySettings"/> can
+    /// throw on some desktop configurations; we then treat it as off (focus follows the preference).</summary>
+    public static bool IsHighContrast()
+    {
+        try { return new AccessibilitySettings().HighContrast; }
+        catch { return false; }
+    }
+
+    private static void SetBrushColor(ResourceDictionary resources, string key, Color color)
+    {
+        if (resources.TryGetValue(key, out var value) && value is SolidColorBrush brush)
+            brush.Color = color;
     }
 
     private void EnsureDefaultCustomDateMeanings()

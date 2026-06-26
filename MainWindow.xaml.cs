@@ -31,6 +31,9 @@ public sealed partial class MainWindow : Window
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly AppPreferences _preferences;
+    // Kept alive for the lifetime of the window so its HighContrastChanged event keeps firing (a collected
+    // AccessibilitySettings stops raising). Null when the platform refused to create it.
+    private Windows.UI.ViewManagement.AccessibilitySettings? _accessibility;
     private readonly HashSet<NavigationViewItem> _insetNavItems = new();
     // Rows nested under the Groups/Tags sections — they get a deeper left gutter than top-level rows.
     private readonly HashSet<NavigationViewItem> _nestedNavItems = new();
@@ -74,10 +77,26 @@ public sealed partial class MainWindow : Window
 
         // The system caption buttons (minimize/maximize/close) are drawn by AppWindow, not XAML, so
         // their glyph color must be set per theme — otherwise they stay dark in dark mode. Re-apply
-        // whenever the app theme changes.
+        // whenever the app theme changes; the focus-visual colors (auto mode follows light/dark, and high
+        // contrast forces them visible) are re-resolved on the same signal.
         if (Content is FrameworkElement root)
-            root.ActualThemeChanged += (_, _) => ApplyCaptionButtonColors();
+            root.ActualThemeChanged += (_, _) =>
+            {
+                ApplyCaptionButtonColors();
+                AppPreferences.ApplyFocusVisuals(this, _preferences);
+            };
         ApplyCaptionButtonColors();
+
+        // Re-resolve focus visuals when high contrast is toggled mid-session, so the "always show focus in
+        // high contrast" rule holds without a restart. Guarded — AccessibilitySettings/its event can throw
+        // on some desktop configs; focus is still correct on the next theme change or relaunch if so.
+        try
+        {
+            _accessibility = new Windows.UI.ViewManagement.AccessibilitySettings();
+            _accessibility.HighContrastChanged += (_, _) =>
+                DispatcherQueue.TryEnqueue(() => AppPreferences.ApplyFocusVisuals(this, _preferences));
+        }
+        catch { /* live high-contrast updates unavailable on this config */ }
 
         NavView.Loaded += NavView_Loaded;
         NavView.DisplayModeChanged += (_, _) => UpdateNavRowInsets();

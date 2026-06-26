@@ -524,6 +524,24 @@
                                     SelectionChanged="ThemeCombo_SelectionChanged" />
                             </Grid>
                         </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <Grid Style="{StaticResource SettingsRowStyle}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="키보드 포커스" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="포커스 외곽선 표시 방식 · 고대비 모드에서는 항상 표시됩니다" />
+                                </StackPanel>
+                                <ComboBox
+                                    x:Name="FocusCombo"
+                                    Grid.Column="1"
+                                    Style="{StaticResource SettingsControlStyle}"
+                                    SelectionChanged="FocusCombo_SelectionChanged" />
+                            </Grid>
+                        </Border>
                     </StackPanel>
 
                     <!-- 알림 -->

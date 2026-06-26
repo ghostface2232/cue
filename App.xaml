@@ -10,15 +10,18 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
                 <ResourceDictionary Source="ms-appx:///Styles/DesignTokens.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <!-- Suppress the keyboard focus rectangle app-wide. WinUI 3 draws the high-visibility focus
-                 visual from FocusStrokeColorOuterBrush / FocusStrokeColorInnerBrush (generic.xaml). The
-                 legacy SystemControlFocusVisual* keys are only StaticResource aliases to those — overriding
-                 them does nothing, and overriding the FocusStrokeColor* *colors* doesn't help either since
-                 the framework brushes bake the color via StaticResource. So override the BRUSHES directly.
-                 These are theme-independent top-level entries (resolved before the merged XamlControlsResources)
-                 so they win in every theme and every focus path — Tab, Enter-blur, arrow keys — on every
-                 control (buttons, NavigationViewItems, the panel ScrollViewer) without disabling focus. The
-                 legacy aliases are pinned too as a harmless safety net for any custom template. -->
+            <!-- Keyboard focus rectangle, suppressed by default and runtime-toggleable. WinUI 3 draws the
+                 high-visibility focus visual from FocusStrokeColorOuterBrush / FocusStrokeColorInnerBrush
+                 (generic.xaml); the legacy SystemControlFocusVisual* keys are only StaticResource aliases to
+                 those — overriding the FocusStrokeColor* *colors* doesn't help since the framework brushes
+                 bake the color via StaticResource — so we override the BRUSHES directly. These are
+                 theme-independent top-level entries (resolved before the merged XamlControlsResources) so
+                 they win in every theme and focus path — Tab, Enter-blur, arrow keys — on every control
+                 (buttons, NavigationViewItems, the panel ScrollViewer) without ever disabling focus itself.
+                 They start Transparent so focus is hidden from first paint (the default); AppPreferences.
+                 ApplyFocusVisuals mutates these instances' Color at runtime per the 설정 > 외관 choice
+                 (숨김 / 자동) and forces them visible under high contrast. The legacy aliases are pinned too
+                 as a harmless safety net for any custom template. -->
             <SolidColorBrush x:Key="FocusStrokeColorOuterBrush" Color="Transparent" />
             <SolidColorBrush x:Key="FocusStrokeColorInnerBrush" Color="Transparent" />
             <SolidColorBrush x:Key="SystemControlFocusVisualPrimaryBrush" Color="Transparent" />
