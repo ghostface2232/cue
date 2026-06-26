@@ -167,7 +167,6 @@ public partial class TaskDetailViewModel : ObservableObject
     private bool _isLoading;
     private int _activeSaveCount;
     private DateTimeOffset _saveStartInstant = DateTimeOffset.MinValue;
-    private bool _hasActiveSaveFailure;
 
     // Coalesces a single user action that touches several properties into one save. Distinct from
     // <see cref="_isLoading"/>, which suppresses saves entirely while OpenAsync fills the panel.
@@ -607,7 +606,10 @@ public partial class TaskDetailViewModel : ObservableObject
         // belt-and-braces so one bad link can never stall the queue behind it.
         try { await previous; }
         catch { /* logged by the failing save itself */ }
-        await RunSaveOperationWithRetryAsync(() => SaveSnapshotAsync(snapshot));
+        // A metadata write persists the whole snapshot, so a later one fully supersedes an earlier failed
+        // one (see RecordOutcome): only the latest failed snapshot for this task is ever retained.
+        await RunSaveOperationWithRetryAsync(
+            new PendingSave(SaveOperationKind.Metadata, snapshot.Id, () => SaveSnapshotAsync(snapshot)));
     }
 
     /// <summary>
@@ -661,7 +663,22 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
-    private async Task RunSaveOperationWithRetryAsync(Func<Task> saveAction)
+    /// <summary>Which save path a queued operation belongs to. A failure can be superseded only by a later
+    /// save of the <i>same kind for the same task</i>: <see cref="Metadata"/> and <see cref="ChecklistSnapshot"/>
+    /// each rewrite their whole slice (so only the latest failed one matters), while <see cref="ChecklistMutation"/>
+    /// add/remove edits are independent and tracked one-by-one.</summary>
+    private enum SaveOperationKind
+    {
+        Metadata,
+        ChecklistSnapshot,
+        ChecklistMutation,
+    }
+
+    /// <summary>One queued save: the work to run, the task it targets, and its kind. (Kind, TaskId) drives
+    /// supersession of whole-slice writes; object identity distinguishes individual checklist mutations.</summary>
+    private sealed record PendingSave(SaveOperationKind Kind, Guid TaskId, Func<Task> Operation);
+
+    private async Task RunSaveOperationWithRetryAsync(PendingSave save)
     {
         lock (this)
         {
@@ -669,7 +686,6 @@ public partial class TaskDetailViewModel : ObservableObject
             {
                 CurrentSaveStatus = SaveStatus.Saving;
                 _saveStartInstant = _clock.GetUtcNow();
-                _hasActiveSaveFailure = false;
             }
             _activeSaveCount++;
         }
@@ -682,7 +698,7 @@ public partial class TaskDetailViewModel : ObservableObject
         {
             try
             {
-                await saveAction();
+                await save.Operation();
                 success = true;
                 break;
             }
@@ -699,19 +715,7 @@ public partial class TaskDetailViewModel : ObservableObject
         lock (this)
         {
             _activeSaveCount--;
-            if (!success)
-            {
-                _hasActiveSaveFailure = true;
-                if (!_failedOperations.Contains(saveAction))
-                {
-                    _failedOperations.Add(saveAction);
-                }
-            }
-            else
-            {
-                _failedOperations.Remove(saveAction);
-            }
-
+            RecordOutcome(save, success);
             if (_activeSaveCount == 0)
             {
                 _ = CompleteSaveStateAsync();
@@ -724,24 +728,47 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
-    private readonly List<Func<Task>> _failedOperations = new();
+    /// <summary>The save operations whose every retry exhausted — the work still owed to disk. Drives the
+    /// 저장 실패 status and the global retry. Held under <c>lock (this)</c> like the save counters.</summary>
+    private readonly List<PendingSave> _pendingFailures = new();
+
+    /// <summary>Folds one settled save attempt into <see cref="_pendingFailures"/>. A whole-slice write —
+    /// task metadata or a full checklist snapshot — persists the entire slice, so a later one of the same
+    /// kind for the same task supersedes the earlier: on success it clears any pending failure (a newer
+    /// success never leaves a stale snapshot behind that a retry could replay over it), on failure it
+    /// replaces it so only the latest failed snapshot is ever retained. Incremental checklist add/remove
+    /// mutations don't subsume one another, so each is tracked and cleared on its own identity.</summary>
+    private void RecordOutcome(PendingSave save, bool success)
+    {
+        if (save.Kind is SaveOperationKind.Metadata or SaveOperationKind.ChecklistSnapshot)
+        {
+            _pendingFailures.RemoveAll(p => p.Kind == save.Kind && p.TaskId == save.TaskId);
+            if (!success) _pendingFailures.Add(save);
+        }
+        else // ChecklistMutation — independent, keyed by its own reference
+        {
+            _pendingFailures.Remove(save);
+            if (!success) _pendingFailures.Add(save);
+        }
+    }
 
     public async Task RetrySaveAsync()
     {
-        List<Func<Task>> toRetry;
+        List<PendingSave> toRetry;
         lock (this)
         {
-            toRetry = _failedOperations.ToList();
-            _failedOperations.Clear();
-            _hasActiveSaveFailure = false;
+            // Snapshot in queue order so a re-run replays metadata/checklist writes as they were enqueued;
+            // RunSaveOperationWithRetryAsync re-records each outcome, re-adding only the ones that fail again.
+            toRetry = _pendingFailures.ToList();
+            _pendingFailures.Clear();
         }
         if (toRetry.Count == 0) return;
         List<Exception> exceptions = new();
-        foreach (var op in toRetry)
+        foreach (var save in toRetry)
         {
             try
             {
-                await RunSaveOperationWithRetryAsync(op);
+                await RunSaveOperationWithRetryAsync(save);
             }
             catch (Exception ex)
             {
@@ -769,9 +796,11 @@ public partial class TaskDetailViewModel : ObservableObject
 
         lock (this)
         {
+            // Status reflects whether any save is still owed, not whether this batch happened to fail —
+            // a batch that succeeds while an earlier failure is still pending must stay 저장 실패.
             if (_activeSaveCount == 0)
             {
-                CurrentSaveStatus = _hasActiveSaveFailure ? SaveStatus.Failed : SaveStatus.Idle;
+                CurrentSaveStatus = _pendingFailures.Count > 0 ? SaveStatus.Failed : SaveStatus.Idle;
             }
         }
     }
@@ -785,7 +814,7 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         if (_taskId is not { } id || string.IsNullOrWhiteSpace(NewChecklistItemTitle)) return Task.CompletedTask;
         var item = new ChecklistItem { Title = NewChecklistItemTitle.Trim() };
-        return EnqueueChecklistOp(async () =>
+        return EnqueueChecklistOp(SaveOperationKind.ChecklistMutation, id, async () =>
         {
             var saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist.Add(item); return true; });
             if (saved is null) return;
@@ -1083,7 +1112,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private Task DeleteChecklistItemAsync(Guid id)
     {
         if (_taskId is not { } taskId) return Task.CompletedTask;
-        return EnqueueChecklistOp(async () =>
+        return EnqueueChecklistOp(SaveOperationKind.ChecklistMutation, taskId, async () =>
         {
             var saved = await _store.MutateAsync<TaskItem>(taskId, task => { task.Checklist.RemoveAll(item => item.Id == id); return true; });
             if (saved is null) return;
@@ -1109,7 +1138,10 @@ public partial class TaskDetailViewModel : ObservableObject
             Title = row.Title.Trim(),
             IsChecked = row.IsChecked,
         }).ToList();
-        _ = EnqueueChecklistOp(async () =>
+        // A full snapshot replaces the whole checklist, so a later one supersedes an earlier failed snapshot
+        // for this task (see RecordOutcome) — only the latest is retained. Incremental add/remove mutations
+        // are tracked separately, so this never drops one of those.
+        _ = EnqueueChecklistOp(SaveOperationKind.ChecklistSnapshot, id, async () =>
         {
             var saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist = snapshot; return true; });
             if (saved is not null) await _refreshOwner();
@@ -1119,10 +1151,13 @@ public partial class TaskDetailViewModel : ObservableObject
     /// <summary>Appends one checklist operation to the serial checklist chain and returns its completion.
     /// Awaiting the previous link first keeps add/remove/tick/title writes strictly ordered; a prior
     /// link's failure is swallowed here so it can't stall the queue behind it (each op logs its own).
-    /// Called on the UI thread, so the op's store write and owner refresh resume on the UI context.</summary>
-    private Task EnqueueChecklistOp(Func<Task> op)
+    /// Called on the UI thread, so the op's store write and owner refresh resume on the UI context. The
+    /// <paramref name="kind"/> and <paramref name="taskId"/> tag the op so a failure is retained and
+    /// superseded correctly (see <see cref="RecordOutcome"/>).</summary>
+    private Task EnqueueChecklistOp(SaveOperationKind kind, Guid taskId, Func<Task> op)
     {
-        var next = ChainChecklistAsync(_checklistChain, () => RunSaveOperationWithRetryAsync(op));
+        var save = new PendingSave(kind, taskId, op);
+        var next = ChainChecklistAsync(_checklistChain, () => RunSaveOperationWithRetryAsync(save));
         _checklistChain = next;
         ObserveTask(next);
         return next;

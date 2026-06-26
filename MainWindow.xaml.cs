@@ -1165,7 +1165,7 @@ public sealed partial class MainWindow : Window
     public void ShowGlobalErrorNormal(TaskDetailViewModel detailVm)
     {
         _failedDetailVm = detailVm;
-        GlobalErrorInfoBar.Message = "변경 사항을 저장하지 못했습니다";
+        GlobalErrorInfoBar.Message = "저장하지 못한 할 일이 있습니다";
         ForceExitButton.Visibility = Visibility.Collapsed;
         GlobalErrorInfoBar.IsOpen = true;
     }
@@ -1173,7 +1173,7 @@ public sealed partial class MainWindow : Window
     public void ShowGlobalErrorOnClose(TaskDetailViewModel detailVm)
     {
         _failedDetailVm = detailVm;
-        GlobalErrorInfoBar.Message = "변경 사항을 저장하지 못했습니다";
+        GlobalErrorInfoBar.Message = "저장하지 못한 할 일이 있습니다";
         ForceExitButton.Visibility = Visibility.Visible;
         GlobalErrorInfoBar.IsOpen = true;
     }

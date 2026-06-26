@@ -1957,6 +1957,77 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task NewerMetadataSaveSuccess_ClearsTheStaleFailure_AndDoesNotReplayItOnRetry()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        // Fails the first save permanently (6 attempts), then lets every later save through.
+        var failingStore = new FailingTaskStore(store, 6);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        await vm.Detail.OpenAsync(task.Id);
+
+        // First metadata edit fails permanently and is retained as the (stale) pending failure.
+        vm.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+        await Task.Delay(400);
+        Assert.Equal(SaveStatus.Failed, vm.Detail.CurrentSaveStatus);
+
+        // A newer metadata edit succeeds — it persists the whole snapshot, so the stale P1 failure must be
+        // dropped, the status must return to Idle, and a retry must have nothing to replay.
+        vm.Detail.SelectedPriority = Priority.P2;
+        await vm.Detail.DrainPendingSaveAsync();
+        await Task.Delay(400);
+        Assert.Equal(SaveStatus.Idle, vm.Detail.CurrentSaveStatus);
+
+        // RetrySaveAsync is now a no-op: the stale P1 snapshot is gone and cannot clobber the newer P2.
+        await vm.Detail.RetrySaveAsync();
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(Priority.P2, saved.Priority);
+    }
+
+    [Fact]
+    public async Task IndependentSuccessfulSave_DoesNotMaskAStillPendingFailure()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        // The metadata save fails permanently (6 attempts); the later checklist add then succeeds.
+        var failingStore = new FailingTaskStore(store, 6);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        await vm.Detail.OpenAsync(task.Id);
+
+        vm.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+        await Task.Delay(400);
+        Assert.Equal(SaveStatus.Failed, vm.Detail.CurrentSaveStatus);
+
+        // An independent, successful save (a checklist add) settles after the metadata failure. It must NOT
+        // reset the status to Idle while the metadata save is still owed — the status tracks pending failures.
+        vm.Detail.NewChecklistItemTitle = "Check 1";
+        await vm.Detail.AddChecklistItemCommand.ExecuteAsync(null);
+        await Task.Delay(400);
+        Assert.Equal(SaveStatus.Failed, vm.Detail.CurrentSaveStatus);
+    }
+
+    [Fact]
     public async Task ChecklistSaveFailurePropagatesToDrainPendingSave()
     {
         using var temp = new TempDirectory();
