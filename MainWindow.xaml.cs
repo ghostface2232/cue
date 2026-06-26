@@ -74,6 +74,7 @@ public sealed partial class MainWindow : Window
         RestoreOrSetDefaultPlacement();
         ApplyMinimumWindowSize();
         Closed += OnWindowClosed;
+        AppWindow.Closing += OnWindowClosing;
 
         // The system caption buttons (minimize/maximize/close) are drawn by AppWindow, not XAML, so
         // their glyph color must be set per theme — otherwise they stay dark in dark mode. Re-apply
@@ -1088,5 +1089,138 @@ public sealed partial class MainWindow : Window
             };
             await _dialogs.TryShowAsync(dialog);
         }
+    }
+
+    private bool _allowClose = false;
+    private bool _closeFlushInProgress = false;
+    private TaskDetailViewModel? _failedDetailVm;
+
+    private async void OnWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_allowClose) return;
+
+        args.Cancel = true;
+
+        if (_closeFlushInProgress) return;
+        _closeFlushInProgress = true;
+
+        bool isSaving = false;
+        Task flushTask = Task.CompletedTask;
+        TaskDetailViewModel? detailVm = null;
+
+        if (NavFrame.Content is TaskListPage taskListPage)
+        {
+            taskListPage.CommitFocusedTextBox();
+            isSaving = taskListPage.IsDetailSaving;
+            flushTask = taskListPage.FlushDetailAsync();
+            detailVm = taskListPage.DetailViewModel;
+        }
+
+        if (!isSaving)
+        {
+            _allowClose = true;
+            _closeFlushInProgress = false;
+            Close();
+            return;
+        }
+
+        var delayTimer = DispatcherQueue.CreateTimer();
+        delayTimer.Interval = TimeSpan.FromMilliseconds(400);
+        delayTimer.IsRepeating = false;
+        delayTimer.Tick += (s, e) =>
+        {
+            GlobalSavingInfoBar.IsOpen = true;
+        };
+        delayTimer.Start();
+
+        try
+        {
+            await flushTask;
+
+            delayTimer.Stop();
+            GlobalSavingInfoBar.IsOpen = false;
+            _allowClose = true;
+            _closeFlushInProgress = false;
+            Close();
+        }
+        catch (Exception)
+        {
+            delayTimer.Stop();
+            GlobalSavingInfoBar.IsOpen = false;
+            _closeFlushInProgress = false;
+
+            if (detailVm is not null)
+            {
+                ShowGlobalErrorOnClose(detailVm);
+            }
+            else
+            {
+                _allowClose = true;
+                Close();
+            }
+        }
+    }
+
+    public void ShowGlobalErrorNormal(TaskDetailViewModel detailVm)
+    {
+        _failedDetailVm = detailVm;
+        GlobalErrorInfoBar.Message = "변경 사항을 저장하지 못했습니다";
+        ForceExitButton.Visibility = Visibility.Collapsed;
+        GlobalErrorInfoBar.IsOpen = true;
+    }
+
+    public void ShowGlobalErrorOnClose(TaskDetailViewModel detailVm)
+    {
+        _failedDetailVm = detailVm;
+        GlobalErrorInfoBar.Message = "변경 사항을 저장하지 못했습니다";
+        ForceExitButton.Visibility = Visibility.Visible;
+        GlobalErrorInfoBar.IsOpen = true;
+    }
+
+    public void HideGlobalError()
+    {
+        GlobalErrorInfoBar.IsOpen = false;
+    }
+
+    private async void RetryButton_Click(object sender, RoutedEventArgs e)
+    {
+        GlobalErrorInfoBar.IsOpen = false;
+        if (_failedDetailVm is not null)
+        {
+            if (ForceExitButton.Visibility == Visibility.Visible)
+            {
+                GlobalSavingInfoBar.IsOpen = true;
+                try
+                {
+                    await _failedDetailVm.RetrySaveAsync();
+                    GlobalSavingInfoBar.IsOpen = false;
+                    _allowClose = true;
+                    Close();
+                }
+                catch (Exception)
+                {
+                    GlobalSavingInfoBar.IsOpen = false;
+                    ShowGlobalErrorOnClose(_failedDetailVm);
+                }
+            }
+            else
+            {
+                try
+                {
+                    await _failedDetailVm.RetrySaveAsync();
+                }
+                catch (Exception)
+                {
+                    ShowGlobalErrorNormal(_failedDetailVm);
+                }
+            }
+        }
+    }
+
+    private void ForceExitButton_Click(object sender, RoutedEventArgs e)
+    {
+        GlobalErrorInfoBar.IsOpen = false;
+        _allowClose = true;
+        Close();
     }
 }

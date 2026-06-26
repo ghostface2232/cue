@@ -94,6 +94,7 @@ public sealed partial class TaskListPage : Page
         // The view model raises this right after a task is completed from an active list; the page runs
         // the in-row moment (a terminal completion's undo bar + fold, or a repeating one's settle in place).
         ViewModel.CompletionAcknowledged += OnCompletionAcknowledged;
+        ViewModel.Detail.PropertyChanged += Detail_PropertyChanged;
     }
 
     private async void OnNavDataChanged(object? sender, EventArgs e)
@@ -103,6 +104,13 @@ public sealed partial class TaskListPage : Page
     {
         _navNotifier.Changed -= OnNavDataChanged;
         ViewModel.CompletionAcknowledged -= OnCompletionAcknowledged;
+        ViewModel.Detail.PropertyChanged -= Detail_PropertyChanged;
+        if (ViewModel.Detail.IsOpen)
+        {
+            CommitFocusedTextBox();
+            var flushTask = ViewModel.Detail.FlushAsync();
+            ObserveFlushTask(flushTask);
+        }
         foreach (var timer in _ackTimers.Values) timer.Stop();
         _ackTimers.Clear();
         if (_dayRolloverTimer is not null)
@@ -997,9 +1005,10 @@ public sealed partial class TaskListPage : Page
 
     private async Task CloseDetailWithAnimationAsync()
     {
-        // The panel autosaves as fields change, but a title/notes edit whose LostFocus hasn't fired yet
-        // needs a final flush so closing never drops an in-progress text edit.
-        await ViewModel.Detail.FlushAsync();
+        CommitFocusedTextBox();
+
+        var flushTask = ViewModel.Detail.FlushAsync();
+        ObserveFlushTask(flushTask);
 
         if (!_animationsEnabled || _detailPanelVisual is null)
         {
@@ -1013,8 +1022,11 @@ public sealed partial class TaskListPage : Page
     }
 
     // Title and notes are continuous-typing fields: they autosave on focus-out rather than per keystroke.
-    private async void DetailText_LostFocus(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-        => await ViewModel.Detail.FlushAsync();
+    private void DetailText_LostFocus(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        var flushTask = ViewModel.Detail.FlushAsync();
+        ObserveFlushTask(flushTask);
+    }
 
     // The title commits on Enter by blurring: the box binds live, and dropping focus fires LostFocus →
     // FlushAsync. AcceptsReturn is off, so Enter never inserts a newline.
@@ -1273,6 +1285,50 @@ public sealed partial class TaskListPage : Page
                 Content = exception.Message,
                 CloseButtonText = "확인",
             });
+        }
+    }
+
+    public bool IsDetailSaving => ViewModel?.Detail?.IsSaving ?? false;
+    public Task FlushDetailAsync() => ViewModel?.Detail?.FlushAsync() ?? Task.CompletedTask;
+    public TaskDetailViewModel? DetailViewModel => ViewModel?.Detail;
+
+    public void CommitFocusedTextBox()
+    {
+        if (XamlRoot is null) return;
+        if (FocusManager.GetFocusedElement(XamlRoot) is TextBox focusedTextBox)
+        {
+            focusedTextBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        }
+    }
+
+    private static void ObserveFlushTask(Task task)
+    {
+        _ = task.ContinueWith(t =>
+        {
+            if (t.IsFaulted && t.Exception is { } aggEx)
+            {
+                var _ = aggEx.Flatten();
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    private void Detail_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TaskDetailViewModel.CurrentSaveStatus))
+        {
+            var detail = ViewModel.Detail;
+            var mainWindow = App.CurrentWindow as MainWindow;
+            if (mainWindow is not null)
+            {
+                if (detail.CurrentSaveStatus == SaveStatus.Failed)
+                {
+                    mainWindow.ShowGlobalErrorNormal(detail);
+                }
+                else if (detail.CurrentSaveStatus is SaveStatus.Saving or SaveStatus.Idle)
+                {
+                    mainWindow.HideGlobalError();
+                }
+            }
         }
     }
 }

@@ -1909,7 +1909,7 @@ public sealed class ViewModelRegressionTests
         
         Assert.Equal(SaveStatus.Saving, vm.Detail.CurrentSaveStatus);
         
-        await vm.Detail.DrainPendingSaveAsync();
+        await Assert.ThrowsAsync<System.IO.IOException>(() => vm.Detail.DrainPendingSaveAsync());
 
         // Wait for the 300ms minimum display duration of the Saving state to elapse
         await Task.Delay(400);

@@ -220,6 +220,8 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
+    public bool IsSaving => !_saveChain.IsCompleted || !_checklistChain.IsCompleted || CurrentSaveStatus == SaveStatus.Saving || _activeSaveCount > 0;
+
     [ObservableProperty]
     public partial SaveStatus CurrentSaveStatus { get; set; } = SaveStatus.Idle;
 
@@ -553,13 +555,24 @@ public partial class TaskDetailViewModel : ObservableObject
     /// seam: production code fires autosaves and forgets them (the chains keep each path ordered); only
     /// callers that need to observe the persisted result deterministically — or a task switch/close that
     /// must not strand a pending write — await this. Each chain's tail completes only after every link
-    /// before it, so this drains both queues in full. Faults are swallowed (each save logs its own).</summary>
+    /// before it, so this drains both queues in full.</summary>
     internal async Task DrainPendingSaveAsync()
     {
         var metadata = _saveChain;
         var checklist = _checklistChain;
-        try { await metadata; } catch { /* logged by the failing save */ }
-        try { await checklist; } catch { /* logged by the failing save */ }
+
+        Exception? metadataEx = null;
+        try { await metadata; } catch (Exception ex) { metadataEx = ex; }
+
+        Exception? checklistEx = null;
+        try { await checklist; } catch (Exception ex) { checklistEx = ex; }
+
+        if (metadataEx is not null && checklistEx is not null)
+        {
+            throw new AggregateException("저장에 실패했습니다.", metadataEx, checklistEx);
+        }
+        if (metadataEx is not null) throw metadataEx;
+        if (checklistEx is not null) throw checklistEx;
     }
 
     /// <summary>Captures the panel's current edits as an immutable snapshot, or <c>null</c> when no task is
@@ -584,7 +597,21 @@ public partial class TaskDetailViewModel : ObservableObject
     /// the UI synchronization context and the store write + owner refresh resume on it. Awaiting the
     /// returned tail (<see cref="_saveChain"/>) waits for this save and every save queued before it.</summary>
     private void Enqueue(TaskEditSnapshot snapshot)
-        => _saveChain = ChainSaveAsync(_saveChain, snapshot);
+    {
+        _saveChain = ChainSaveAsync(_saveChain, snapshot);
+        ObserveTask(_saveChain);
+    }
+
+    private static void ObserveTask(Task task)
+    {
+        _ = task.ContinueWith(t =>
+        {
+            if (t.IsFaulted && t.Exception is { } aggEx)
+            {
+                var _ = aggEx.Flatten();
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
+    }
 
     private async Task ChainSaveAsync(Task previous, TaskEditSnapshot snapshot)
     {
@@ -687,6 +714,11 @@ public partial class TaskDetailViewModel : ObservableObject
             if (!success)
             {
                 _hasActiveSaveFailure = true;
+                _lastFailedOperation = saveAction;
+            }
+            else
+            {
+                _lastFailedOperation = null;
             }
 
             if (_activeSaveCount == 0)
@@ -699,6 +731,20 @@ public partial class TaskDetailViewModel : ObservableObject
         {
             throw lastException;
         }
+    }
+
+    private Func<Task>? _lastFailedOperation;
+
+    public async Task RetrySaveAsync()
+    {
+        if (_lastFailedOperation is null) return;
+        var op = _lastFailedOperation;
+        _lastFailedOperation = null;
+        lock (this)
+        {
+            _hasActiveSaveFailure = false;
+        }
+        await RunSaveOperationWithRetryAsync(op);
     }
 
     private async Task CompleteSaveStateAsync()
@@ -1067,6 +1113,7 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         var next = ChainChecklistAsync(_checklistChain, () => RunSaveOperationWithRetryAsync(op));
         _checklistChain = next;
+        ObserveTask(next);
         return next;
     }
 

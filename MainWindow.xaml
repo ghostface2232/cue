@@ -171,5 +171,37 @@
             </NavigationView.FooterMenuItems>
             <Frame x:Name="NavFrame" />
         </NavigationView>
+
+        <InfoBar
+            x:Name="GlobalSavingInfoBar"
+            Grid.Row="1"
+            Margin="24"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Right"
+            IsOpen="False"
+            Severity="Informational"
+            Message="변경 사항을 저장하고 있습니다…"
+            IsClosable="False"
+            Canvas.ZIndex="999" />
+
+        <InfoBar
+            x:Name="GlobalErrorInfoBar"
+            Grid.Row="1"
+            Margin="24"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Right"
+            IsOpen="False"
+            Severity="Error"
+            Title="저장 실패"
+            Message="변경 사항을 저장하지 못했습니다"
+            IsClosable="True"
+            Canvas.ZIndex="999">
+            <InfoBar.Content>
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                    <Button x:Name="RetryButton" Content="다시 시도" Click="RetryButton_Click" Style="{ThemeResource AccentButtonStyle}" />
+                    <Button x:Name="ForceExitButton" Content="저장하지 않고 종료" Click="ForceExitButton_Click" Visibility="Collapsed" />
+                </StackPanel>
+            </InfoBar.Content>
+        </InfoBar>
     </Grid>
 </Window>

@@ -850,10 +850,10 @@ public partial class TaskListViewModel : ObservableObject
         {
             // Switching tasks swaps the panel's content in place — the panel never hides, so it doesn't
             // play its slide-out only to slide back in (and the list column never reflows wider then
-            // narrow again). Persist and drain the outgoing task's pending edits first so a queued
-            // autosave can't resume against the next task's freshly loaded fields; OpenAsync's loading
-            // guard then suppresses saves while it repopulates.
-            await Detail.FlushAsync();
+            // narrow again). Persist and drain the outgoing task's pending edits in background so we don't
+            // block the task switch transition.
+            var flushTask = Detail.FlushAsync();
+            ObserveFlushTask(flushTask);
         }
 
         await Detail.OpenAsync(id);
@@ -1002,5 +1002,16 @@ public partial class TaskListViewModel : ObservableObject
         row.SetCompletedSilently(false);
         row.EndCompletionAcknowledgement();
         await LoadAsync();
+    }
+
+    private static void ObserveFlushTask(Task task)
+    {
+        _ = task.ContinueWith(t =>
+        {
+            if (t.IsFaulted && t.Exception is { } aggEx)
+            {
+                var _ = aggEx.Flatten();
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
     }
 }
