@@ -17,7 +17,7 @@ public sealed class SaveStatusToBrushConverter : IValueConverter
         {
             var key = status switch
             {
-                SaveStatus.Saving => "TextFillColorTertiaryBrush",
+                SaveStatus.Saving => "CueSavingBrush",
                 SaveStatus.Failed => "CueDangerFillBrush",
                 _ => null
             };
