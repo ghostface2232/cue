@@ -146,7 +146,7 @@
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="LineHeight" Value="17" />
-            <Setter Property="MaxWidth" Value="200" />
+            <Setter Property="MaxWidth" Value="160" />
             <Setter Property="HorizontalAlignment" Value="Left" />
         </Style>
 
