@@ -157,7 +157,7 @@ public partial class TaskListViewModel : ObservableObject
     public bool HasTitleCaption => TitleCaption.Length > 0;
     public bool CanQuickAdd => _mode is not (TaskListMode.Logbook or TaskListMode.Priority);
 
-    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone, INavDataChangeNotifier navNotifier)
+    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone, INavDataChangeNotifier navNotifier, SaveFailureCoordinator? coordinator = null)
     {
         _store = store;
         _index = index;
@@ -174,7 +174,7 @@ public partial class TaskListViewModel : ObservableObject
         // The completed section pages its rows in on demand; this is the callback its header toggle and
         // "더 보기" affordance invoke to realize the next batch.
         CompletedSection.LoadMoreRequested = LoadMoreCompletedAsync;
-        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, navNotifier);
+        Detail = new TaskDetailViewModel(store, index, reorder, recurrence, clock, zone, LoadAsync, navNotifier, coordinator);
         // Clear the row selection accent when the detail panel closes.
         Detail.PropertyChanged += (_, e) =>
         {

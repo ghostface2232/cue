@@ -1329,20 +1329,16 @@ public sealed partial class TaskListPage : Page
         }
     }
 
+    /// <summary>Observes the navigate-away flush so its fault is never unobserved. The save failure it
+    /// represents is already recorded into the app-scoped SaveFailureCoordinator by the detail view model
+    /// (which drives the global error bar), so nothing more is surfaced here.</summary>
     private void ObserveFlushTask(Task task)
     {
         _ = task.ContinueWith(t =>
         {
             if (t.IsFaulted && t.Exception is { } aggEx)
             {
-                var ex = aggEx.Flatten().InnerException ?? aggEx;
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    if (App.CurrentWindow is MainWindow mainWindow)
-                    {
-                        mainWindow.ShowGlobalErrorNormal(ViewModel.Detail);
-                    }
-                });
+                _ = aggEx.Flatten();
             }
         }, TaskContinuationOptions.OnlyOnFaulted);
     }
@@ -1357,21 +1353,9 @@ public sealed partial class TaskListPage : Page
             UpdateRecurringActionsLayout();
         }
 
-        if (e.PropertyName == nameof(TaskDetailViewModel.CurrentSaveStatus))
-        {
-            var detail = ViewModel.Detail;
-            var mainWindow = App.CurrentWindow as MainWindow;
-            if (mainWindow is not null)
-            {
-                if (detail.CurrentSaveStatus == SaveStatus.Failed)
-                {
-                    mainWindow.ShowGlobalErrorNormal(detail);
-                }
-                else if (detail.CurrentSaveStatus is SaveStatus.Saving or SaveStatus.Idle)
-                {
-                    mainWindow.HideGlobalError();
-                }
-            }
-        }
+        // The global save-error bar is no longer driven from this page's own detail status — a page could only
+        // ever see its own view model, so a failure here would overwrite (or a clean status here would hide) a
+        // failure on another page. The app-scoped SaveFailureCoordinator now owns that bar, fed by every view
+        // model's settled outcomes. The per-panel 저장 중/저장 실패 chip still binds to CurrentSaveStatus directly.
     }
 }

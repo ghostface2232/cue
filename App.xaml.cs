@@ -84,6 +84,11 @@ public partial class App : Application
         // view models, so a change in one reloads the other through this app-scoped notifier.
         services.AddSingleton<INavDataChangeNotifier, NavDataChangeNotifier>();
 
+        // App-scoped registry of every detail view model that still owes work to disk, so a save failure on
+        // one page survives navigating to another (and isn't overwritten by a failure there). The window reads
+        // it on close and the retry button drives it. Each fresh TaskListViewModel injects this singleton.
+        services.AddSingleton<SaveFailureCoordinator>();
+
         // A fresh list view model per navigation.
         services.AddTransient<TaskListViewModel>();
         services.AddTransient<ShellViewModel>();

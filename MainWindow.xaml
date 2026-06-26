@@ -210,6 +210,7 @@
             Title="저장 실패"
             Message="저장하지 못한 할 일이 있습니다"
             IsClosable="True"
+            CloseButtonClick="GlobalErrorInfoBar_CloseButtonClick"
             Canvas.ZIndex="999">
             <!-- 다시 시도 is the inline primary (the clean WinUI ActionButton slot); 지금 종료 is the quiet
                  secondary escape hatch, shown only during the close flow. -->
