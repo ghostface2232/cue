@@ -1920,11 +1920,72 @@ public sealed class ViewModelRegressionTests
         Assert.Equal("저장 실패", vm.Detail.SaveStatusToolTip);
     }
 
+    [Fact]
+    public async Task DetailSaveFailedOperationsCollectionTracksMultipleFailuresAndRetriesAll()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        var failingStore = new FailingTaskStore(store, 15);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        
+        await vm.Detail.OpenAsync(task.Id);
+        
+        vm.Detail.SelectedPriority = Priority.P1; 
+        
+        vm.Detail.NewChecklistItemTitle = "Check 1";
+        try { await vm.Detail.AddChecklistItemCommand.ExecuteAsync(null); } catch { }
+
+        await Assert.ThrowsAsync<AggregateException>(() => vm.Detail.DrainPendingSaveAsync());
+
+        await Task.Delay(400);
+
+        Assert.Equal(SaveStatus.Failed, vm.Detail.CurrentSaveStatus);
+        
+        failingStore.ResetAttemptCount();
+
+        await Assert.ThrowsAsync<AggregateException>(() => vm.Detail.RetrySaveAsync());
+
+        Assert.Equal(12, failingStore.AttemptCount);
+    }
+
+    [Fact]
+    public async Task ChecklistSaveFailurePropagatesToDrainPendingSave()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        var failingStore = new FailingTaskStore(store, 10);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        
+        await vm.Detail.OpenAsync(task.Id);
+        
+        vm.Detail.NewChecklistItemTitle = "Check 1";
+        try { await vm.Detail.AddChecklistItemCommand.ExecuteAsync(null); } catch { }
+
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+    }
+
     private sealed class FailingTaskStore(ITaskStore inner, int failCount) : ITaskStore
     {
         private int _failedAttempts = 0;
 
         public int AttemptCount => _failedAttempts;
+        public void ResetAttemptCount() => _failedAttempts = 0;
 
         public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
             => inner.GetAsync<T>(id, cancellationToken);

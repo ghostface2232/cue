@@ -220,7 +220,7 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
-    public bool IsSaving => !_saveChain.IsCompleted || !_checklistChain.IsCompleted || CurrentSaveStatus == SaveStatus.Saving || _activeSaveCount > 0;
+    public bool IsSaving => !_saveChain.IsCompleted || !_checklistChain.IsCompleted || _activeSaveCount > 0;
 
     [ObservableProperty]
     public partial SaveStatus CurrentSaveStatus { get; set; } = SaveStatus.Idle;
@@ -426,12 +426,6 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public async Task OpenAsync(Guid taskId)
     {
-        lock (this)
-        {
-            _activeSaveCount = 0;
-            _hasActiveSaveFailure = false;
-            CurrentSaveStatus = SaveStatus.Idle;
-        }
         var task = await _store.GetAsync<TaskItem>(taskId);
         if (task is null || task.IsDeleted)
         {
@@ -483,12 +477,6 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         _taskId = null;
         IsOpen = false;
-        lock (this)
-        {
-            _activeSaveCount = 0;
-            _hasActiveSaveFailure = false;
-            CurrentSaveStatus = SaveStatus.Idle;
-        }
     }
 
     public void SetWhenTime(TimeSpan time)
@@ -714,11 +702,14 @@ public partial class TaskDetailViewModel : ObservableObject
             if (!success)
             {
                 _hasActiveSaveFailure = true;
-                _lastFailedOperation = saveAction;
+                if (!_failedOperations.Contains(saveAction))
+                {
+                    _failedOperations.Add(saveAction);
+                }
             }
             else
             {
-                _lastFailedOperation = null;
+                _failedOperations.Remove(saveAction);
             }
 
             if (_activeSaveCount == 0)
@@ -733,18 +724,38 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
-    private Func<Task>? _lastFailedOperation;
+    private readonly List<Func<Task>> _failedOperations = new();
 
     public async Task RetrySaveAsync()
     {
-        if (_lastFailedOperation is null) return;
-        var op = _lastFailedOperation;
-        _lastFailedOperation = null;
+        List<Func<Task>> toRetry;
         lock (this)
         {
+            toRetry = _failedOperations.ToList();
+            _failedOperations.Clear();
             _hasActiveSaveFailure = false;
         }
-        await RunSaveOperationWithRetryAsync(op);
+        if (toRetry.Count == 0) return;
+        List<Exception> exceptions = new();
+        foreach (var op in toRetry)
+        {
+            try
+            {
+                await RunSaveOperationWithRetryAsync(op);
+            }
+            catch (Exception ex)
+            {
+                exceptions.Add(ex);
+            }
+        }
+        if (exceptions.Count > 0)
+        {
+            if (exceptions.Count == 1)
+            {
+                throw exceptions[0];
+            }
+            throw new AggregateException("저장에 실패했습니다.", exceptions);
+        }
     }
 
     private async Task CompleteSaveStateAsync()
@@ -1120,8 +1131,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private static async Task ChainChecklistAsync(Task previous, Func<Task> op)
     {
         try { await previous; } catch { /* logged by the failing op */ }
-        try { await op(); }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Cue] Checklist save failed: {ex.Message}"); }
+        await op();
     }
 
     private ScheduledWhen BuildWhen()

@@ -222,6 +222,32 @@ public sealed partial class MainWindow : Window
             RealizeExpandedSection(GroupsSection);
             RealizeExpandedSection(TagsSection);
         });
+
+        _ = SimulateAutosaveUIStatesAsync();
+    }
+
+    private async Task SimulateAutosaveUIStatesAsync()
+    {
+        await Task.Delay(2000); // UI stabilization delay
+
+        // 1. Show the saving progress InfoBar for 5 seconds
+        GlobalSavingInfoBar.IsOpen = true;
+
+        await Task.Delay(5000);
+
+        // Hide progress
+        GlobalSavingInfoBar.IsOpen = false;
+
+        // 2. Show the error InfoBar (with retry / force exit) for 5 seconds
+        GlobalErrorInfoBar.Message = "변경 사항을 저장하지 못했습니다 (가상 실패 상황 시뮬레이션)";
+        ForceExitButton.Visibility = Visibility.Visible;
+        GlobalErrorInfoBar.IsOpen = true;
+
+        await Task.Delay(5000);
+
+        // Reset elements
+        GlobalErrorInfoBar.IsOpen = false;
+        ForceExitButton.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>Collapses then re-expands a section (on the next dispatcher tick) so its children, added
@@ -1104,19 +1130,19 @@ public sealed partial class MainWindow : Window
         if (_closeFlushInProgress) return;
         _closeFlushInProgress = true;
 
-        bool isSaving = false;
+        bool hasOpenDetail = false;
         Task flushTask = Task.CompletedTask;
         TaskDetailViewModel? detailVm = null;
 
-        if (NavFrame.Content is TaskListPage taskListPage)
+        if (NavFrame.Content is TaskListPage taskListPage && taskListPage.DetailViewModel is { } detail && detail.IsOpen)
         {
+            hasOpenDetail = true;
             taskListPage.CommitFocusedTextBox();
-            isSaving = taskListPage.IsDetailSaving;
             flushTask = taskListPage.FlushDetailAsync();
-            detailVm = taskListPage.DetailViewModel;
+            detailVm = detail;
         }
 
-        if (!isSaving)
+        if (!hasOpenDetail)
         {
             _allowClose = true;
             _closeFlushInProgress = false;

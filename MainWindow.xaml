@@ -199,7 +199,7 @@
             IsClosable="True"
             Canvas.ZIndex="999">
             <InfoBar.Content>
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,12">
                     <Button x:Name="RetryButton" Content="다시 시도" Click="RetryButton_Click" Style="{ThemeResource AccentButtonStyle}" />
                     <Button x:Name="ForceExitButton" Content="저장하지 않고 종료" Click="ForceExitButton_Click" Visibility="Collapsed" />
                 </StackPanel>

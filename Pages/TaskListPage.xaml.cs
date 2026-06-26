@@ -1301,13 +1301,20 @@ public sealed partial class TaskListPage : Page
         }
     }
 
-    private static void ObserveFlushTask(Task task)
+    private void ObserveFlushTask(Task task)
     {
         _ = task.ContinueWith(t =>
         {
             if (t.IsFaulted && t.Exception is { } aggEx)
             {
-                var _ = aggEx.Flatten();
+                var ex = aggEx.Flatten().InnerException ?? aggEx;
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (App.CurrentWindow is MainWindow mainWindow)
+                    {
+                        mainWindow.ShowGlobalErrorNormal(ViewModel.Detail);
+                    }
+                });
             }
         }, TaskContinuationOptions.OnlyOnFaulted);
     }
