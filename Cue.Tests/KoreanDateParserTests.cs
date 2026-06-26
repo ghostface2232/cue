@@ -398,6 +398,38 @@ public sealed class KoreanDateParserTests
         Assert.Equal(31, WhenDate(r.When).Day);
     }
 
+    [Theory]
+    [InlineData("3시까지 보고서 제출", "보고서 제출", 15, 0)]
+    [InlineData("세시까지 보고서 제출", "보고서 제출", 15, 0)]
+    [InlineData("세 시까지 보고서 제출", "보고서 제출", 15, 0)]
+    [InlineData("3시 반까지 보고서 제출", "보고서 제출", 15, 30)]
+    [InlineData("점심때까지 보고서 제출", "보고서 제출", 12, 0)]
+    public void DueTimeOnly_ResolvesToTodayTime_WithCleanTitle(string input, string title, int hour, int minute)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(hour, WhenHour(r.When));
+        Assert.Equal(minute, WhenMinute(r.When));
+    }
+
+    [Theory]
+    [InlineData("금요일 3시까지 보고서 제출", "보고서 제출", 2026, 6, 26, 15, 0)]
+    [InlineData("내일 점심때까지 보고서 제출", "보고서 제출", 2026, 6, 24, 12, 0)]
+    [InlineData("일요일 3시까지 보고서 제출", "보고서 제출", 2026, 6, 28, 15, 0)]
+    [InlineData("다음주 토요일 2시까지 보고서 제출", "보고서 제출", 2026, 7, 4, 14, 0)]
+    [InlineData("26일 점심까지 보고서 제출", "보고서 제출", 2026, 6, 26, 12, 0)]
+    public void DueDateTimeCombination_ResolvesCorrectly(string input, string title, int year, int month, int day, int hour, int minute)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(year, month, day), WhenDate(r.When));
+        Assert.Equal(hour, WhenHour(r.When));
+        Assert.Equal(minute, WhenMinute(r.When));
+    }
+
     // 6. Recurrence
 
     [Theory]

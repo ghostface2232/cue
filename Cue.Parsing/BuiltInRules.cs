@@ -197,6 +197,7 @@ public sealed class DeadlineRule : IQuickAddRule
         @"(?:" +
         @"(?<within>\d+)\s*일\s*(?:안에|이내)" +
         "|" + Korean.Date + @"(?:\s*(?:" + Korean.Time + "|" + Korean.DayPart + @"))?\s*(?:까지|마감)" +
+        @"|(?:" + Korean.Time + "|" + Korean.DayPart + @")\s*(?:까지|마감)" +
         @")" +
         Korean.RightEdge, Opt.Flags);
 
