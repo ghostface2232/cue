@@ -34,7 +34,7 @@ public sealed partial class SettingsPage : Page
     };
 
     /// <summary>Body width below which the settings nav collapses to icon-only (compact) mode.</summary>
-    private const double CompactThreshold = 540;
+    private const double CompactThreshold = 480;
     /// <summary>Hysteresis: expand back only when width exceeds the threshold by this much.</summary>
     private const double CompactHysteresis = 40;
 
@@ -339,10 +339,10 @@ public sealed partial class SettingsPage : Page
         NavLabelNotifications.Visibility = labelVisibility;
         NavLabelAbout.Visibility = labelVisibility;
 
-        // In compact mode, shrink item padding and column spacing to fit nicely in 56px width.
-        // Keep Margin consistent (4, 2) so the hover highlight pill remains inset from the edge in both states.
+        // In compact mode, adjust item padding and column spacing to fit nicely in 50px width.
+        // Keep Margin consistent (4, 2) and Padding (12, 0) consistent in both states.
         var itemMargin = new Thickness(4, 2, 4, 2);
-        var itemPadding = compact ? new Thickness(15, 0, 15, 0) : new Thickness(12, 0, 12, 0);
+        var itemPadding = new Thickness(12, 0, 12, 0);
         var columnSpacing = compact ? 0 : 8; // Default column spacing is CueGap8 = 8
 
         foreach (var item in SectionNav.Items.OfType<ListViewItem>())
@@ -364,8 +364,8 @@ public sealed partial class SettingsPage : Page
         }
         catch { }
 
-        // In compact mode the nav width is fixed to 56px; expanded mode uses the design token.
-        SectionNav.Width = compact ? 56 : expandedWidth;
+        // In compact mode the nav width is fixed to 50px; expanded mode uses the design token.
+        SectionNav.Width = compact ? 50 : expandedWidth;
     }
 }
 
