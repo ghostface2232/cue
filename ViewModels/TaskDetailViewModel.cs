@@ -68,6 +68,10 @@ public partial class TagEditorOption : ObservableObject
         IsSelected = isSelected;
         Color = color;
     }
+
+    /// <summary>Re-raises <see cref="Color"/> so its (OneWay) color converter re-runs. The value is
+    /// unchanged; this exists only to re-resolve the Light-theme darkening after a runtime theme toggle.</summary>
+    public void RefreshColor() => OnPropertyChanged(nameof(Color));
 }
 
 /// <summary>
@@ -219,6 +223,16 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<ChecklistItemViewModel> Checklist { get; } = new();
     public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
+
+    /// <summary>Re-runs the tag color converter on the open task's tag-editor rows after a theme toggle.
+    /// Their color dot is darkened for the Light theme by a converter that reads the theme once at convert
+    /// time, so the dots would otherwise hold the previous theme's color until the panel reloads. The page
+    /// calls this on <c>ActualThemeChanged</c>; mirrors <see cref="TaskListViewModel.RefreshTagColorsForTheme"/>.</summary>
+    public void RefreshTagColorsForTheme()
+    {
+        foreach (var tag in Tags)
+            tag.RefreshColor();
+    }
 
     public bool IsSaving => !_saveChain.IsCompleted || !_checklistChain.IsCompleted || _activeSaveCount > 0;
 

@@ -1,6 +1,7 @@
 using Cue.Domain;
 using Cue.Parsing;
 using Cue.Storage;
+using Cue.Storage.Index;
 using Cue.Storage.Ranking;
 using Cue.Storage.Recurrence;
 using Cue.ViewModels;
@@ -1798,6 +1799,61 @@ public sealed class ViewModelRegressionTests
         // Deleting it likewise changes the counts.
         await vm.DeleteTaskCommand.ExecuteAsync(row.Id);
         Assert.Equal(4, counts);
+    }
+
+    [Fact]
+    public void RefreshTagColorsReProjectsTaggedRow()
+    {
+        // The tag chip color converter darkens bright colors for the Light theme and reads the theme once
+        // when it runs, so a runtime theme toggle must force the binding to re-evaluate. RefreshTagColors
+        // does that by re-assigning Tags, which the row signals via a PropertyChanged on Tags.
+        var row = new TaskRowViewModel(
+            new TaskListItem(
+                Guid.NewGuid(), "tagged", null, WhenKind.Unscheduled, null, null, false, Priority.None, "0|hzzzzz:",
+                Tags: new[] { new TaskListTag("일", "#F1C40F") }),
+            _ => { });
+
+        var notified = 0;
+        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Tags)) notified++; };
+
+        row.RefreshTagColors();
+
+        Assert.Equal(1, notified);
+        Assert.Equal("#F1C40F", Assert.Single(row.Tags).Color);
+    }
+
+    [Fact]
+    public void RefreshTagColorsIsNoOpForUntaggedRow()
+    {
+        // An untagged row has no chip to re-resolve, so the refresh must not churn its Tags binding.
+        var row = new TaskRowViewModel(
+            new TaskListItem(
+                Guid.NewGuid(), "plain", null, WhenKind.Unscheduled, null, null, false, Priority.None, "0|hzzzzz:"),
+            _ => { });
+
+        var notified = 0;
+        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Tags)) notified++; };
+
+        row.RefreshTagColors();
+
+        Assert.Equal(0, notified);
+        Assert.Empty(row.Tags);
+    }
+
+    [Fact]
+    public void TagEditorOptionRefreshColorReRaisesColor()
+    {
+        // The detail panel's tag dots bind Color OneWay through the same theme-sampling converter, so a
+        // theme toggle re-runs them by re-raising Color (the value itself is unchanged).
+        var option = new TagEditorOption(Guid.NewGuid(), "일", isSelected: false, color: "#F1C40F");
+
+        var notified = 0;
+        option.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TagEditorOption.Color)) notified++; };
+
+        option.RefreshColor();
+
+        Assert.Equal(1, notified);
+        Assert.Equal("#F1C40F", option.Color);
     }
 
     /// <summary>Wraps a real store and blocks the first <c>GetAsync&lt;TaskItem&gt;</c> for an armed id until

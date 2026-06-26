@@ -273,6 +273,21 @@ public partial class TaskRowViewModel : ObservableObject
             : Array.Empty<TaskRowTag>();
     }
 
+    /// <summary>
+    /// Forces the row's tag chip color bindings to re-evaluate. The chip label/icon color is darkened for
+    /// the Light theme by <c>HexToBrushConverter</c>, which samples the live theme once at convert time —
+    /// nothing in the binding graph changes when the user toggles the app theme, so the converter never
+    /// re-runs and an already-rendered chip keeps the previously-resolved color until its container is
+    /// recycled. Re-assigning <see cref="Tags"/> to an equivalent list raises its change notification,
+    /// which rebuilds the chip items and re-evaluates the converter against the now-current theme. No tag
+    /// data changes, and an untagged row is a no-op.
+    /// </summary>
+    public void RefreshTagColors()
+    {
+        if (Tags.Count > 0)
+            Tags = Tags.ToArray();
+    }
+
     partial void OnIsCompletedChanged(bool value)
     {
         OnPropertyChanged(nameof(VisualOpacity));
