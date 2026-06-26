@@ -1,7 +1,9 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
+using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
 using Cue.Pages;
 using Cue.Storage;
@@ -102,6 +104,9 @@ public sealed partial class MainWindow : Window
 
         NavView.Loaded += NavView_Loaded;
         NavView.DisplayModeChanged += (_, _) => UpdateNavRowInsets();
+        NavView.Expanding += NavView_Expanding;
+        GroupsSection.RegisterPropertyChangedCallback(NavigationViewItem.IsExpandedProperty, OnSectionIsExpandedChanged);
+        TagsSection.RegisterPropertyChangedCallback(NavigationViewItem.IsExpandedProperty, OnSectionIsExpandedChanged);
     }
 
     /// <summary>Tints the system caption buttons to match the current theme (transparent backgrounds,
@@ -231,8 +236,17 @@ public sealed partial class MainWindow : Window
     private void RealizeExpandedSection(NavigationViewItem section)
     {
         if (!section.IsExpanded) return;
+        // These are bookkeeping toggles, not user intent — suppress the expand/collapse animation around each
+        // so the section just appears open on first launch rather than animating (or triggering the exit path).
+        _suppressSectionAnim = true;
         section.IsExpanded = false;
-        DispatcherQueue.TryEnqueue(() => section.IsExpanded = true);
+        _suppressSectionAnim = false;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _suppressSectionAnim = true;
+            section.IsExpanded = true;
+            _suppressSectionAnim = false;
+        });
     }
 
     private async void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -703,8 +717,120 @@ public sealed partial class MainWindow : Window
         ApplyNavRowInsetForCurrentPane(item);
     }
 
+    // Stock NavigationView gives no reveal motion to an expanding section's own rows — the only thing that
+    // visibly animates is whatever sits *below* the section sliding down. That leaves the last section (태그),
+    // which has nothing beneath it, looking instant. So we drive our own per-row fade+slide on both expand
+    // and collapse, applied to both sections, so a section animates the same way regardless of its position.
+    // Set true while we drive IsExpanded ourselves so those programmatic toggles don't re-enter the handlers.
+    private bool _suppressSectionAnim;
+
+    private void NavView_Expanding(NavigationView sender, NavigationViewItemExpandingEventArgs args)
+    {
+        if (_suppressSectionAnim) return;
+        if (args.ExpandingItem is not NavigationViewItem section) return;
+        if (section != GroupsSection && section != TagsSection) return;
+
+        // Pin every row to its pre-reveal state now, before the framework paints the expanded section, so
+        // there's no full-opacity flash between the section opening and the animation starting.
+        foreach (var row in section.MenuItems.OfType<NavigationViewItem>())
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(row, true);
+            var visual = ElementCompositionPreview.GetElementVisual(row);
+            visual.Opacity = 0f;
+            visual.Properties.InsertVector3("Translation", new Vector3(0f, -8f, 0f));
+        }
+        // The rows lay out as the section expands; animate them in on the next tick once they're realized.
+        DispatcherQueue.TryEnqueue(() => AnimateSectionRows(section, reveal: true));
+    }
+
+    // NavigationView has no "collapsing" (pre-collapse) event — only Collapsed, which fires after the rows
+    // are already gone. So we watch IsExpanded ourselves: when the user collapses a section, revert it open
+    // so the rows stay on screen, play the exit animation, then collapse for real once it finishes.
+    private void OnSectionIsExpandedChanged(DependencyObject sender, DependencyProperty dp)
+    {
+        if (_suppressSectionAnim) return;
+        if (sender is not NavigationViewItem section) return;
+        if (section.IsExpanded) return; // the expand path is driven by NavView_Expanding
+
+        _suppressSectionAnim = true;    // holds through the revert's Expanding and the final collapse
+        section.IsExpanded = true;
+        AnimateSectionRows(section, reveal: false, onComplete: () =>
+        {
+            section.IsExpanded = false;
+            _suppressSectionAnim = false;
+        });
+    }
+
+    // Rooted reference for the in-flight collapse timer (see AnimateSectionRows) so it survives until Tick.
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _collapseTimer;
+
+    private const int RowAnimDurationMs = 200;
+    private const int RowAnimStaggerMs = 22;
+    // Fire the real collapse this much *before* the last row's fade finishes, so the host folding away
+    // overlaps the tail of the fade instead of starting after a dead beat (which read as a stutter).
+    private const int CollapseLeadMs = 70;
+
+    // A staggered fade + 8px slide, run on the composition thread. Reveal cascades top-to-bottom from the
+    // pinned pre-reveal state (opacity 0, nudged up); collapse folds bottom-to-top back to it. onComplete
+    // (collapse only) fires on the UI thread slightly before the last row finishes — see CollapseLeadMs.
+    private void AnimateSectionRows(NavigationViewItem section, bool reveal, Action? onComplete = null)
+    {
+        var rows = section.MenuItems.OfType<NavigationViewItem>().ToList();
+        if (rows.Count == 0)
+        {
+            onComplete?.Invoke();
+            return;
+        }
+
+        var compositor = ElementCompositionPreview.GetElementVisual(rows[0]).Compositor;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(rows[i], true);
+            var visual = ElementCompositionPreview.GetElementVisual(rows[i]);
+            var order = reveal ? i : rows.Count - 1 - i;
+            var delay = TimeSpan.FromMilliseconds(order * RowAnimStaggerMs);
+
+            var slide = compositor.CreateVector3KeyFrameAnimation();
+            slide.Target = "Translation";
+            slide.InsertKeyFrame(1f, reveal ? Vector3.Zero : new Vector3(0f, -8f, 0f));
+            slide.Duration = TimeSpan.FromMilliseconds(RowAnimDurationMs);
+            slide.DelayTime = delay;
+
+            var fade = compositor.CreateScalarKeyFrameAnimation();
+            fade.Target = "Opacity";
+            fade.InsertKeyFrame(1f, reveal ? 1f : 0f);
+            fade.Duration = TimeSpan.FromMilliseconds(RowAnimDurationMs);
+            fade.DelayTime = delay;
+
+            visual.StartAnimation("Translation", slide);
+            visual.StartAnimation("Opacity", fade);
+        }
+
+        if (onComplete == null) return;
+        // Total run = last row's stagger delay + its duration. Trip the collapse a touch before that.
+        var totalMs = (rows.Count - 1) * RowAnimStaggerMs + RowAnimDurationMs;
+        var leadMs = Math.Max(RowAnimDurationMs / 2, totalMs - CollapseLeadMs);
+        // Held in a field, not a local: a DispatcherQueueTimer that nothing references is eligible for GC
+        // before it ticks, which would leave IsExpanded stuck open (the section never actually collapses).
+        _collapseTimer = DispatcherQueue.CreateTimer();
+        _collapseTimer.Interval = TimeSpan.FromMilliseconds(leadMs);
+        _collapseTimer.IsRepeating = false;
+        _collapseTimer.Tick += (t, _) =>
+        {
+            t.Stop();
+            _collapseTimer = null;
+            onComplete();
+        };
+        _collapseTimer.Start();
+    }
+
     private void UpdateNavRowInsets()
     {
+        // The group/tag divider only earns its keep in the expanded pane; in the compact rail it would
+        // sit between bare icons and read as noise, so collapse it there.
+        if (GroupTagSeparator is { } separator)
+            separator.Visibility = NavView.IsPaneOpen ? Visibility.Visible : Visibility.Collapsed;
+
         foreach (var item in _insetNavItems)
         {
             if (item.IsLoaded)

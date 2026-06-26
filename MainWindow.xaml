@@ -127,6 +127,9 @@
                         </Grid>
                     </NavigationViewItem.Content>
                 </NavigationViewItem>
+                <!-- Divides the group block from the tag block. Hidden in the compact pane, where a
+                     separator between icon-only rows reads as noise — see UpdateNavRowInsets. -->
+                <NavigationViewItemSeparator x:Name="GroupTagSeparator" Margin="0,4,0,4" />
                 <NavigationViewItem
                     x:Name="TagsSection"
                     HorizontalContentAlignment="Stretch"
