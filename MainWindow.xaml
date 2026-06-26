@@ -193,15 +193,15 @@
             VerticalAlignment="Bottom"
             HorizontalAlignment="Right"
             IsOpen="False"
-            Severity="Error"
+            Severity="Informational"
             Title="저장 실패"
-            Message="변경 사항을 저장하지 못했습니다"
+            Message="저장하지 못한 할 일이 있습니다"
             IsClosable="True"
             Canvas.ZIndex="999">
             <InfoBar.Content>
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,12">
                     <Button x:Name="RetryButton" Content="다시 시도" Click="RetryButton_Click" Style="{ThemeResource AccentButtonStyle}" />
-                    <Button x:Name="ForceExitButton" Content="저장하지 않고 종료" Click="ForceExitButton_Click" Visibility="Collapsed" />
+                    <Button x:Name="ForceExitButton" Content="지금 종료" Click="ForceExitButton_Click" Visibility="Collapsed" />
                 </StackPanel>
             </InfoBar.Content>
         </InfoBar>
