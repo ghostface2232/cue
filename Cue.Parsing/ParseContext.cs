@@ -65,6 +65,15 @@ public sealed class ParseContext
         return Zoned(date, hour, minute).Utc < Now ? hour + 12 : hour;
     }
 
+    /// <summary>
+    /// The date a bare time — one typed with no date or weekday ("3시", "점심에") — lands on. It
+    /// defaults to today, but rolls to tomorrow when that wall-clock moment has already passed:
+    /// "3시" typed at 16:00 schedules tomorrow's 15:00, not a slot already in the past. The hour
+    /// should already be meridiem-resolved (see <see cref="DisambiguateBareHour"/>) before this call.
+    /// </summary>
+    public DateOnly BareTimeDate(int hour, int minute)
+        => Zoned(Today, hour, minute).Utc < Now ? Today.AddDays(1) : Today;
+
     /// <summary>The next date (today allowed) that lands on <paramref name="target"/>.</summary>
     public DateOnly UpcomingWeekday(DayOfWeek target, bool allowToday = true)
     {

@@ -253,7 +253,8 @@ public sealed class WhenDateRule : IQuickAddRule
     }
 }
 
-/// <summary>A bare time or part-of-day with no date → today at that time (or this evening).</summary>
+/// <summary>A bare time or part-of-day with no date → today at that time, or tomorrow when that
+/// moment has already passed (a date-less time earlier than "now" rolls to the next day).</summary>
 public sealed class TimeOfDayRule : IQuickAddRule
 {
     public Regex Pattern { get; } = new(
@@ -269,7 +270,8 @@ public sealed class TimeOfDayRule : IQuickAddRule
         if (!hasTime)
             return false; // nothing concrete to schedule
         h = context.DisambiguateBareHour(context.Today, h, min, meridiemGiven);
-        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, h, min)), hasTime: true);
+        var date = context.BareTimeDate(h, min);
+        return result.TrySetWhen(ScheduledWhen.On(context.Zoned(date, h, min)), hasTime: true);
     }
 }
 
@@ -290,6 +292,7 @@ public sealed class MealAfterRule : IQuickAddRule
             "저녁" => 19,
             _ => 0,
         };
-        return hour > 0 && result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.Today, hour, 0)), hasTime: true);
+        return hour > 0
+            && result.TrySetWhen(ScheduledWhen.On(context.Zoned(context.BareTimeDate(hour, 0), hour, 0)), hasTime: true);
     }
 }

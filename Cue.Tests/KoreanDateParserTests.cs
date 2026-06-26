@@ -196,6 +196,73 @@ public sealed class KoreanDateParserTests
         Assert.Equal(15, WhenHour(r.When));
     }
 
+    // Past-time rollover: a date-less time/day-part earlier than "now" is read as tomorrow's slot.
+
+    [Fact]
+    public void BareTime_EarlierThanNow_RollsToTomorrow()
+    {
+        // "3시" disambiguates to 15:00; typed at 16:00 that moment is already past → tomorrow 15:00,
+        // not a slot in the past on today.
+        var at16 = new DateTimeOffset(2026, 6, 23, 16, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("3시 미팅", at16, Tz);
+        Assert.Equal("미팅", r.Title);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(15, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void BareTime_StillAheadToday_StaysToday()
+    {
+        // At 14:00, 15:00 is still ahead → stays today (the boundary just below the rollover).
+        var at14 = new DateTimeOffset(2026, 6, 23, 14, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("3시 미팅", at14, Tz);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(15, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void BareLateMorningHour_WhosePmReadingAlsoPassed_RollsToTomorrow()
+    {
+        // At 23:00, "9시" flips to its 21:00 PM reading (morning gone), which is also past → tomorrow 21:00.
+        var at23 = new DateTimeOffset(2026, 6, 23, 23, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("9시 회의", at23, Tz);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(21, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void BareDayPart_EarlierThanNow_RollsToTomorrow()
+    {
+        // "오후에" resolves to 15:00; typed at 19:00 that has passed → tomorrow afternoon.
+        var at19 = new DateTimeOffset(2026, 6, 23, 19, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("오후에 미팅", at19, Tz);
+        Assert.Equal("미팅", r.Title);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(15, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void MealAfter_EarlierThanNow_RollsToTomorrow()
+    {
+        // "점심 먹고" → 12:00; typed at 20:00 that is past → tomorrow's lunch.
+        var at20 = new DateTimeOffset(2026, 6, 23, 20, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("점심 먹고 약 챙겨먹기", at20, Tz);
+        Assert.Equal("약 챙겨먹기", r.Title);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(12, WhenHour(r.When));
+    }
+
+    [Fact]
+    public void DateBearingTime_InThePast_StaysOnItsStatedDate()
+    {
+        // The rollover is only for date-less times. "오늘 3시" names today explicitly, so even after
+        // 15:00 has passed it stays on today — the user pinned the date.
+        var at16 = new DateTimeOffset(2026, 6, 23, 16, 0, 0, TimeSpan.Zero);
+        var r = _parser.Parse("오늘 3시 미팅", at16, Tz);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(15, WhenHour(r.When));
+    }
+
     // Casual / colloquial forms
 
     [Fact]
