@@ -49,11 +49,15 @@ colors:
   success: SystemFillColorSuccess
   error: SystemFillColorCritical
 
-# NOTE — Weight is expressed by FAMILY, not FontWeight.
-# Pretendard JP ships as static OTFs, so each weight is a separate family: Regular (`Pretendard JP`),
-# Medium (`Pretendard JP Medium`), SemiBold (`Pretendard JP SemiBold`). Medium is the emphasis weight
-# for important content text that would otherwise read as Regular (task titles, checklist item titles).
-# In WinUI the hierarchy switches family rather than setting FontWeight. The `fontWeight` values below (400/500/600) are the semantic equivalent for non-WinUI consumers (Figma / Tailwind / web export).
+# NOTE — Weight is expressed by FAMILY (one OTF per weight), not FontWeight.
+# Pretendard JP ships as static OTFs, one weight per file: Regular, Medium, SemiBold. In WinUI the
+# hierarchy switches which file the FontFamily resource loads (CueFontFamily / CueFontFamilyMedium /
+# CueFontFamilySemiBold) rather than setting FontWeight. IMPORTANT: every resource references the
+# shared typographic family name `Pretendard JP` (OTF name ID 16) — NOT the weight-specific GDI name
+# (`Pretendard JP Medium` / `Pretendard JP SemiBold`, name ID 1). A TextBox's editable RichEdit core
+# only resolves the typographic name; using the GDI name there makes typed text fall back to the system
+# font while the placeholder still shows Pretendard. The `fontWeight` values below (400/500/600) are the
+# semantic equivalent for non-WinUI consumers (Figma / Tailwind / web export).
 typography:
   page-title:
     fontFamily: Pretendard JP SemiBold
@@ -291,7 +295,7 @@ The 중요도 view sorts ranked tasks into these four sections in P1→P4 order.
 
 ## Typography
 
-The typeface is **Pretendard JP** (Korean-first). Because the static OTFs ship as separate families, **weight hierarchy switches family, not FontWeight**: Medium (`Pretendard JP Medium`, via `CueFontFamilyMedium`) and SemiBold (`Pretendard JP SemiBold`) are each their own family. Medium is the emphasis weight for important content that would otherwise read as Regular — list task titles and checklist item titles — sitting between Regular body text and SemiBold headers. `ContentControlThemeFontFamily` is overridden to Pretendard so templated controls (buttons, lists, inputs, nav) inherit it; plain `TextBlock`s inherit via the window root's `FontFamily`.
+The typeface is **Pretendard JP** (Korean-first). The static OTFs ship one weight per file, so **weight hierarchy switches which file the FontFamily resource loads, not FontWeight**: `CueFontFamilyMedium` loads the Medium OTF and `CueFontFamilySemiBold` the SemiBold OTF. Every resource references the **shared typographic family name `Pretendard JP`** (OTF name ID 16), not the weight-specific GDI name (`Pretendard JP Medium` / `Pretendard JP SemiBold`, name ID 1): a `TextBox`'s editable RichEdit core only resolves the typographic name, so the GDI name there makes *typed* text fall back to the system font while the placeholder still renders Pretendard. Medium is the emphasis weight for important content that would otherwise read as Regular — list task titles and checklist item titles — sitting between Regular body text and SemiBold headers. `ContentControlThemeFontFamily` is overridden to Pretendard so templated controls (buttons, lists, inputs, nav) inherit it; plain `TextBlock`s inherit via the window root's `FontFamily`.
 
 ### Hierarchy
 

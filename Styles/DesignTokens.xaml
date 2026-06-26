@@ -54,14 +54,20 @@
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
-    <!-- Typeface: Pretendard JP (Korean-first). Static OTFs ship as two families — true
-         SemiBold lives in its own family, so weight hierarchy switches family, not FontWeight. -->
+    <!-- Typeface: Pretendard JP (Korean-first). Static OTFs ship one weight per file, and the weight
+         hierarchy switches file (not FontWeight). Each family token below MUST be the shared
+         typographic family name "Pretendard JP" (OTF name ID 16), NOT the weight-specific GDI/RBIZ
+         name (name ID 1, e.g. "Pretendard JP Medium"). The XAML text stack resolves either, but a
+         TextBox's editable RichEdit core only resolves the typographic name — referencing the RBIZ
+         name there makes typed text fall back to the system font (Malgun Gothic) while the placeholder
+         still shows Pretendard. Each resource loads a single file, so "Pretendard JP" unambiguously
+         resolves to that file's Medium/SemiBold face. -->
     <FontFamily x:Key="CueFontFamily">ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP</FontFamily>
     <!-- Medium is the emphasis weight for important content text that would otherwise read as Regular
          (list task titles, checklist item titles): clearer than Regular, lighter than the
-         SemiBold reserved for headers. Like the others it ships as its own static-OTF family. -->
-    <FontFamily x:Key="CueFontFamilyMedium">ms-appx:///Assets/Fonts/PretendardJP-Medium.otf#Pretendard JP Medium</FontFamily>
-    <FontFamily x:Key="CueFontFamilySemiBold">ms-appx:///Assets/Fonts/PretendardJP-SemiBold.otf#Pretendard JP SemiBold</FontFamily>
+         SemiBold reserved for headers. -->
+    <FontFamily x:Key="CueFontFamilyMedium">ms-appx:///Assets/Fonts/PretendardJP-Medium.otf#Pretendard JP</FontFamily>
+    <FontFamily x:Key="CueFontFamilySemiBold">ms-appx:///Assets/Fonts/PretendardJP-SemiBold.otf#Pretendard JP</FontFamily>
     <!-- Make Pretendard the default for templated controls (buttons, list items, text boxes, nav…).
          Plain TextBlocks inherit it via FontFamily set on the window root in MainWindow.xaml. -->
     <FontFamily x:Key="ContentControlThemeFontFamily">ms-appx:///Assets/Fonts/PretendardJP-Regular.otf#Pretendard JP</FontFamily>
