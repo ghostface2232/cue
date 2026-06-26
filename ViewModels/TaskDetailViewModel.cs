@@ -140,6 +140,10 @@ public partial class TaskDetailViewModel : ObservableObject
     private readonly TimeZoneInfo _zone;
     private readonly Func<Task> _refreshOwner;
     private readonly INavDataChangeNotifier _navNotifier;
+    // App-scoped registry of every detail view model that still owes work to disk. Null in tests (which new
+    // this view model up directly); supplied through DI in the running app so failures from this page survive
+    // a navigation to — and aren't overwritten by — a failure on another page. See SaveFailureCoordinator.
+    private readonly SaveFailureCoordinator? _coordinator;
 
     // How many recorded past cycles the timeline realizes per page. The panel opens showing the most
     // recent page plus the live head pip, and "이전 기록" pages older cycles in on demand — a long history
@@ -243,6 +247,14 @@ public partial class TaskDetailViewModel : ObservableObject
     public bool HasUnsavedFailures
     {
         get { lock (this) { return _pendingFailures.Count > 0; } }
+    }
+
+    /// <summary>The distinct tasks this view model still owes work to disk for. The
+    /// <see cref="SaveFailureCoordinator"/> unions these across every page's view model to show one unsaved-task
+    /// count on close. Read under the same lock as the failure list.</summary>
+    internal IReadOnlyCollection<Guid> UnsavedTaskIds
+    {
+        get { lock (this) { return _pendingFailures.Select(p => p.TaskId).Distinct().ToArray(); } }
     }
 
     [ObservableProperty]
@@ -351,7 +363,8 @@ public partial class TaskDetailViewModel : ObservableObject
         TimeProvider clock,
         TimeZoneInfo zone,
         Func<Task> refreshOwner,
-        INavDataChangeNotifier navNotifier)
+        INavDataChangeNotifier navNotifier,
+        SaveFailureCoordinator? coordinator = null)
     {
         _store = store;
         _index = index;
@@ -361,6 +374,7 @@ public partial class TaskDetailViewModel : ObservableObject
         _zone = zone;
         _refreshOwner = refreshOwner;
         _navNotifier = navNotifier;
+        _coordinator = coordinator;
         SelectedWhenOption = WhenOptions[0];
     }
 
@@ -773,6 +787,14 @@ public partial class TaskDetailViewModel : ObservableObject
             }
         }
 
+        // Notify the coordinator outside the lock: it may call back into other view models (which take their
+        // own lock), so holding this view model's lock across the call could deadlock. A successful whole-slice
+        // write supersedes a stale failure for the same task on another page; either way the registry re-reads
+        // this view model's current failure state.
+        if (success && save.Kind is SaveOperationKind.Metadata or SaveOperationKind.ChecklistSnapshot)
+            _coordinator?.OnTaskPersisted(this, save.TaskId);
+        _coordinator?.Update(this);
+
         if (!success && lastException is not null)
         {
             throw lastException;
@@ -803,6 +825,27 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
+    /// <summary>Drops this view model's whole-slice failures (task metadata / full checklist snapshot) for
+    /// <paramref name="taskId"/> because another page's view model just persisted that whole task — replaying
+    /// this stale snapshot would overwrite the newer write. Incremental checklist add/remove failures are
+    /// independent operations and are left intact. Called by the <see cref="SaveFailureCoordinator"/> on a
+    /// different instance than the one that saved.</summary>
+    internal void DropWholeSliceFailures(Guid taskId)
+    {
+        bool changed;
+        lock (this)
+        {
+            changed = _pendingFailures.RemoveAll(p =>
+                p.TaskId == taskId
+                && p.Kind is SaveOperationKind.Metadata or SaveOperationKind.ChecklistSnapshot) > 0;
+            // Clear the 저장 실패 chip if this emptied the queue and nothing is still in flight.
+            if (changed && _activeSaveCount == 0 && _pendingFailures.Count == 0)
+                CurrentSaveStatus = SaveStatus.Idle;
+        }
+        if (changed)
+            _coordinator?.Update(this);
+    }
+
     public async Task RetrySaveAsync()
     {
         List<PendingSave> toRetry;
@@ -813,6 +856,9 @@ public partial class TaskDetailViewModel : ObservableObject
             toRetry = _pendingFailures.ToList();
             _pendingFailures.Clear();
         }
+        // The queue just emptied; reflect that in the registry up front. RunSaveOperationWithRetryAsync
+        // re-registers this view model for whichever retries fail again.
+        _coordinator?.Update(this);
         if (toRetry.Count == 0) return;
         List<Exception> exceptions = new();
         foreach (var save in toRetry)

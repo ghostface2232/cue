@@ -33,6 +33,10 @@ public sealed partial class MainWindow : Window
     private readonly DialogService _dialogs;
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly AppPreferences _preferences;
+    // App-scoped registry of every detail view model still owing work to disk. Drives the global save-error
+    // bar (so a failure on one page isn't overwritten by one on another) and is what the close flow and the
+    // retry button consult, rather than a single last-failed view model.
+    private readonly SaveFailureCoordinator _saveFailures;
     // Kept alive for the lifetime of the window so its HighContrastChanged event keeps firing (a collected
     // AccessibilitySettings stops raising). Null when the platform refused to create it.
     private Windows.UI.ViewManagement.AccessibilitySettings? _accessibility;
@@ -56,6 +60,10 @@ public sealed partial class MainWindow : Window
         _dialogs = App.Services.GetRequiredService<DialogService>();
         _navNotifier = App.Services.GetRequiredService<INavDataChangeNotifier>();
         _preferences = App.Services.GetRequiredService<AppPreferences>();
+        _saveFailures = App.Services.GetRequiredService<SaveFailureCoordinator>();
+        // The aggregate failure state drives the global error bar. Changed can fire on a background save/retry
+        // continuation, so marshal to the UI thread before touching the InfoBar.
+        _saveFailures.Changed += (_, _) => DispatcherQueue.TryEnqueue(SyncGlobalErrorBar);
         InitializeComponent();
         // A group/tag created/edited in a detail panel reloads the sidebar lists at once.
         _navNotifier.Changed += OnNavDataChanged;
@@ -1245,7 +1253,10 @@ public sealed partial class MainWindow : Window
 
     private bool _allowClose = false;
     private bool _closeFlushInProgress = false;
-    private TaskDetailViewModel? _failedDetailVm;
+    // True once the close flow has surfaced the error bar with the 지금 종료 escape hatch, so a later
+    // coordinator update (a background retry, a fresh failure) re-renders the on-close variant rather than
+    // downgrading to the normal bar. Cleared when the bar is dismissed.
+    private bool _offerForceExit;
 
     private async void OnWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
@@ -1256,32 +1267,25 @@ public sealed partial class MainWindow : Window
         if (_closeFlushInProgress) return;
         _closeFlushInProgress = true;
 
-        // A save failure recorded earlier must block the exit even if the detail panel that produced it has
-        // since been closed or the user has moved to another screen (e.g. Settings). It lives on the view
-        // model, not on whether a panel is open — so checking only for an open panel below would let the app
-        // quit and silently drop the unsaved work.
-        var pendingFailureVm = _failedDetailVm is { HasUnsavedFailures: true } ? _failedDetailVm : null;
-
         bool hasOpenDetail = false;
         Task flushTask = Task.CompletedTask;
-        TaskDetailViewModel? detailVm = null;
 
         if (NavFrame.Content is TaskListPage taskListPage && taskListPage.DetailViewModel is { } detail && detail.IsOpen)
         {
             hasOpenDetail = true;
             taskListPage.CommitFocusedTextBox();
             flushTask = taskListPage.FlushDetailAsync();
-            detailVm = detail;
         }
 
         if (!hasOpenDetail)
         {
-            // No panel to flush. Exit only when nothing is still owed to disk; if there's an unresolved
-            // failure, surface the error InfoBar (다시 시도 / 저장하지 않고 종료) and keep the app open.
-            if (pendingFailureVm is not null)
+            // No panel to flush. Exit only when nothing is still owed to disk anywhere; a failure recorded on
+            // any page — even one since closed or navigated away from — keeps the app open with the error bar
+            // (다시 시도 / 저장하지 않고 종료) so its unsaved work isn't silently dropped.
+            if (_saveFailures.HasFailures)
             {
                 _closeFlushInProgress = false;
-                ShowGlobalErrorOnClose(pendingFailureVm);
+                ShowGlobalErrorOnClose();
                 return;
             }
             _allowClose = true;
@@ -1306,16 +1310,14 @@ public sealed partial class MainWindow : Window
             delayTimer.Stop();
             GlobalSavingInfoBar.IsOpen = false;
 
-            // The open panel flushed cleanly — but only exit when nothing is still owed to disk. A failure
-            // left unresolved on this panel, or carried over from one closed earlier, must still block the
-            // exit and surface the error InfoBar rather than letting the app drop the work.
-            var stillFailing = detailVm is { HasUnsavedFailures: true } ? detailVm
-                : _failedDetailVm is { HasUnsavedFailures: true } ? _failedDetailVm
-                : null;
-            if (stillFailing is not null)
+            // The open panel flushed cleanly — but only exit when nothing is owed to disk across all pages. A
+            // failure on this panel, or carried over from one elsewhere, still blocks the exit. The view model
+            // records every settled failure into the coordinator before this flush completes, so it is the
+            // single source of truth here.
+            if (_saveFailures.HasFailures)
             {
                 _closeFlushInProgress = false;
-                ShowGlobalErrorOnClose(stillFailing);
+                ShowGlobalErrorOnClose();
                 return;
             }
 
@@ -1329,9 +1331,11 @@ public sealed partial class MainWindow : Window
             GlobalSavingInfoBar.IsOpen = false;
             _closeFlushInProgress = false;
 
-            if (detailVm is not null)
+            // The flush faulted, so the view model just recorded the failure into the coordinator. Surface it
+            // rather than exiting; only quit if (defensively) nothing is actually owed.
+            if (_saveFailures.HasFailures)
             {
-                ShowGlobalErrorOnClose(detailVm);
+                ShowGlobalErrorOnClose();
             }
             else
             {
@@ -1341,25 +1345,55 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    public void ShowGlobalErrorNormal(TaskDetailViewModel detailVm)
+    /// <summary>Re-renders the global save-error bar from the coordinator's aggregate state: shown (with the
+    /// 지금 종료 escape hatch while a close is pending) when any page owes work to disk, hidden once every
+    /// failure has cleared. Driven by the coordinator's Changed event.</summary>
+    private void SyncGlobalErrorBar()
     {
-        _failedDetailVm = detailVm;
-        GlobalErrorInfoBar.Message = "저장하지 못한 할 일이 있습니다";
+        if (_saveFailures.HasFailures)
+        {
+            if (_offerForceExit) ShowGlobalErrorOnClose();
+            else ShowGlobalErrorNormal();
+        }
+        else
+        {
+            HideGlobalError();
+        }
+    }
+
+    private string UnsavedFailureMessage()
+    {
+        var count = _saveFailures.UnsavedTaskCount;
+        return count > 0 ? $"저장하지 못한 할 일이 {count}개 있습니다" : "저장하지 못한 할 일이 있습니다";
+    }
+
+    private void ShowGlobalErrorNormal()
+    {
+        GlobalErrorInfoBar.Message = UnsavedFailureMessage();
         ForceExitButton.Visibility = Visibility.Collapsed;
         GlobalErrorInfoBar.IsOpen = true;
     }
 
-    public void ShowGlobalErrorOnClose(TaskDetailViewModel detailVm)
+    private void ShowGlobalErrorOnClose()
     {
-        _failedDetailVm = detailVm;
-        GlobalErrorInfoBar.Message = "저장하지 못한 할 일이 있습니다";
+        _offerForceExit = true;
+        GlobalErrorInfoBar.Message = UnsavedFailureMessage();
         ForceExitButton.Visibility = Visibility.Visible;
         GlobalErrorInfoBar.IsOpen = true;
     }
 
-    public void HideGlobalError()
+    private void HideGlobalError()
     {
+        _offerForceExit = false;
         GlobalErrorInfoBar.IsOpen = false;
+    }
+
+    /// <summary>The user dismissed the error bar by its close button. The work is still owed (the coordinator
+    /// keeps the failures and re-surfaces the bar on the next change), but any pending close attempt is
+    /// abandoned, so the 지금 종료 escape hatch shouldn't carry over to a later, unrelated failure.</summary>
+    private void GlobalErrorInfoBar_CloseButtonClick(InfoBar sender, object args)
+    {
+        _offerForceExit = false;
     }
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _offscreenSnackbarTimer;
@@ -1396,35 +1430,28 @@ public sealed partial class MainWindow : Window
     private async void RetryButton_Click(object sender, RoutedEventArgs e)
     {
         GlobalErrorInfoBar.IsOpen = false;
-        if (_failedDetailVm is not null)
+        // Retry every page's outstanding saves together, not just the last one to fail. A retry mounted during
+        // the close flow (the 지금 종료 button is showing) closes the app once everything lands.
+        var closing = ForceExitButton.Visibility == Visibility.Visible;
+        GlobalSavingInfoBar.IsOpen = true;
+        try
         {
-            if (ForceExitButton.Visibility == Visibility.Visible)
+            await _saveFailures.RetryAllAsync();
+            GlobalSavingInfoBar.IsOpen = false;
+            if (closing)
             {
-                GlobalSavingInfoBar.IsOpen = true;
-                try
-                {
-                    await _failedDetailVm.RetrySaveAsync();
-                    GlobalSavingInfoBar.IsOpen = false;
-                    _allowClose = true;
-                    Close();
-                }
-                catch (Exception)
-                {
-                    GlobalSavingInfoBar.IsOpen = false;
-                    ShowGlobalErrorOnClose(_failedDetailVm);
-                }
+                _allowClose = true;
+                Close();
             }
-            else
-            {
-                try
-                {
-                    await _failedDetailVm.RetrySaveAsync();
-                }
-                catch (Exception)
-                {
-                    ShowGlobalErrorNormal(_failedDetailVm);
-                }
-            }
+            // Outside the close flow, the coordinator's Changed event hides the bar once the queue is empty.
+        }
+        catch (Exception)
+        {
+            GlobalSavingInfoBar.IsOpen = false;
+            // Some saves still failed — re-surface the bar with the latest count, keeping the close escape
+            // hatch if a close was pending.
+            if (closing) ShowGlobalErrorOnClose();
+            else ShowGlobalErrorNormal();
         }
     }
 

@@ -2383,6 +2383,130 @@ public sealed class ViewModelRegressionTests
         Assert.False(vm.Detail.HasUnsavedFailures);
     }
 
+    [Fact]
+    public async Task Coordinator_AggregatesFailuresAcrossPages_WithoutOverwriting()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var taskA = new TaskItem { Title = "A" };
+        var taskB = new TaskItem { Title = "B" };
+        await store.SaveAsync(taskA);
+        await store.SaveAsync(taskB);
+
+        // Two pages, each its own view model, both wired to the one app-scoped coordinator. Each page's store
+        // fails permanently so its save never lands.
+        var coordinator = new SaveFailureCoordinator();
+        var failingA = new FailingTaskStore(store, 100);
+        var failingB = new FailingTaskStore(store, 100);
+        var vmA = new TaskListViewModel(failingA, store, new KoreanDateParser(), new ReorderService(failingA), new RecurringTaskService(failingA), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), coordinator);
+        var vmB = new TaskListViewModel(failingB, store, new KoreanDateParser(), new ReorderService(failingB), new RecurringTaskService(failingB), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), coordinator);
+
+        Assert.False(coordinator.HasFailures);
+
+        // Page A's save fails, then the user navigates away (the panel closes).
+        await vmA.Detail.OpenAsync(taskA.Id);
+        vmA.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vmA.Detail.DrainPendingSaveAsync());
+        vmA.Detail.Close();
+        Assert.True(coordinator.HasFailures);
+        Assert.Equal(1, coordinator.UnsavedTaskCount);
+
+        // A second failure on another page must NOT overwrite the first (the bug this fixes): both tasks
+        // are owed to disk and both are counted.
+        await vmB.Detail.OpenAsync(taskB.Id);
+        vmB.Detail.SelectedPriority = Priority.P2;
+        await Assert.ThrowsAsync<IOException>(() => vmB.Detail.DrainPendingSaveAsync());
+        Assert.True(coordinator.HasFailures);
+        Assert.Equal(2, coordinator.UnsavedTaskCount);
+    }
+
+    [Fact]
+    public async Task Coordinator_SuccessfulSaveSupersedesAnotherPagesStaleFailure_ForSameTask()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "shared" };
+        await store.SaveAsync(task);
+
+        var coordinator = new SaveFailureCoordinator();
+        // Page A always fails; page B writes straight through the real store.
+        var failingA = new FailingTaskStore(store, 100);
+        var vmA = new TaskListViewModel(failingA, store, new KoreanDateParser(), new ReorderService(failingA), new RecurringTaskService(failingA), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), coordinator);
+        var vmB = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), coordinator);
+
+        await vmA.Detail.OpenAsync(task.Id);
+        vmA.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vmA.Detail.DrainPendingSaveAsync());
+        vmA.Detail.Close();
+        Assert.True(coordinator.HasFailures);
+        Assert.Equal(1, coordinator.UnsavedTaskCount);
+
+        // The same task is opened on another page and saved successfully there.
+        await vmB.Detail.OpenAsync(task.Id);
+        vmB.Detail.SelectedPriority = Priority.P3;
+        await vmB.Detail.DrainPendingSaveAsync();
+
+        // Page A's stale whole-slice failure for that task is superseded — replaying it would overwrite the
+        // newer write — so nothing is owed to disk any more, on either the owning view model or the aggregate.
+        Assert.False(vmA.Detail.HasUnsavedFailures);
+        Assert.False(coordinator.HasFailures);
+        Assert.Equal(0, coordinator.UnsavedTaskCount);
+        Assert.Equal(Priority.P3, (await store.GetAsync<TaskItem>(task.Id))!.Priority);
+    }
+
+    [Fact]
+    public async Task Coordinator_RetryAll_RetriesEveryPagesFailures()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var taskA = new TaskItem { Title = "A" };
+        var taskB = new TaskItem { Title = "B" };
+        await store.SaveAsync(taskA);
+        await store.SaveAsync(taskB);
+
+        var coordinator = new SaveFailureCoordinator();
+        // Each page fails its first batch of attempts (6 = original + 5 retries) then lets writes through, so a
+        // single coordinator retry lands both.
+        var failingA = new FailingTaskStore(store, 6);
+        var failingB = new FailingTaskStore(store, 6);
+        var vmA = new TaskListViewModel(failingA, store, new KoreanDateParser(), new ReorderService(failingA), new RecurringTaskService(failingA), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), coordinator);
+        var vmB = new TaskListViewModel(failingB, store, new KoreanDateParser(), new ReorderService(failingB), new RecurringTaskService(failingB), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), coordinator);
+
+        await vmA.Detail.OpenAsync(taskA.Id);
+        vmA.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vmA.Detail.DrainPendingSaveAsync());
+
+        await vmB.Detail.OpenAsync(taskB.Id);
+        vmB.Detail.SelectedPriority = Priority.P2;
+        await Assert.ThrowsAsync<IOException>(() => vmB.Detail.DrainPendingSaveAsync());
+
+        Assert.Equal(2, coordinator.UnsavedTaskCount);
+
+        // One retry over the whole registry clears both pages.
+        await coordinator.RetryAllAsync();
+
+        Assert.False(coordinator.HasFailures);
+        Assert.False(vmA.Detail.HasUnsavedFailures);
+        Assert.False(vmB.Detail.HasUnsavedFailures);
+        Assert.Equal(Priority.P1, (await store.GetAsync<TaskItem>(taskA.Id))!.Priority);
+        Assert.Equal(Priority.P2, (await store.GetAsync<TaskItem>(taskB.Id))!.Priority);
+    }
+
     private sealed class FailingTaskStore(ITaskStore inner, int failCount) : ITaskStore
     {
         private int _failedAttempts = 0;
