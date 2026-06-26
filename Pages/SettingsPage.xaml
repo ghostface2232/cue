@@ -162,13 +162,15 @@
             <Setter Property="ColumnSpacing" Value="{StaticResource CueGap24}" />
         </Style>
 
-        <!-- Trailing combo sits centered and flush to the card's inner edge, at a shared fixed width and
-             the small (4px) control radius so every section's control aligns and rounds the same.
+        <!-- Trailing combo sits flush to the card's inner edge at the small (4px) control radius. It sizes
+             to its own content above a shared minimum, rather than a fixed width, so short options (테마,
+             포커스, 요일) stay compact while a long one (시간대) grows just enough not to clip — right-aligned
+             so every section's control still lines up at the card edge.
              CRITICAL: BasedOn the stock DefaultComboBoxStyle — an explicit Style with no BasedOn replaces
              the framework default wholesale, stripping the WinUI 3 template (rounded dropdown popup,
              Fluent visual states) and leaving a flat Windows-10-looking control. -->
         <Style x:Key="SettingsControlStyle" TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
-            <Setter Property="Width" Value="{StaticResource CueSettingsControlWidth}" />
+            <Setter Property="MinWidth" Value="{StaticResource CueSettingsControlMinWidth}" />
             <Setter Property="CornerRadius" Value="{StaticResource CueRadiusSmall}" />
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Center" />

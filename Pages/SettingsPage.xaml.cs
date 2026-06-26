@@ -127,8 +127,8 @@ public sealed partial class SettingsPage : Page
     {
         if (FocusCombo.Items.Count == 0)
         {
-            AddComboItem(FocusCombo, "숨김 (기본)", CueFocusVisualMode.Hidden);
-            AddComboItem(FocusCombo, "자동 (Windows 기본)", CueFocusVisualMode.Auto);
+            AddComboItem(FocusCombo, "숨김", CueFocusVisualMode.Hidden);
+            AddComboItem(FocusCombo, "자동", CueFocusVisualMode.Auto);
         }
         SelectByTag(FocusCombo, _preferences.KeyboardFocusMode);
     }
