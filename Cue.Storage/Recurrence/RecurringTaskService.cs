@@ -43,11 +43,11 @@ public sealed class RecurringTaskService : IRecurringTaskService
         => RecordCurrentCycleAsync(taskId, OccurrenceStatus.Completed, completedAt, cancellationToken);
 
     public Task<DateOnly?> SkipAsync(Guid taskId, DateTimeOffset skippedAt, CancellationToken cancellationToken = default)
-        => RecordCurrentCycleAsync(taskId, OccurrenceStatus.Skipped, skippedAt, cancellationToken);
+        => RecordCurrentCycleAsync(taskId, OccurrenceStatus.Missed, skippedAt, cancellationToken);
 
     /// <summary>
     /// Shared body for performing (<see cref="OccurrenceStatus.Completed"/>) and skipping
-    /// (<see cref="OccurrenceStatus.Skipped"/>) the current cycle: record the cycle, then advance the
+    /// (<see cref="OccurrenceStatus.Missed"/>) the current cycle: record the cycle, then advance the
     /// series (or end it in place if the rule has no further cycle).
     /// </summary>
     private async Task<DateOnly?> RecordCurrentCycleAsync(Guid taskId, OccurrenceStatus status, DateTimeOffset at, CancellationToken cancellationToken)
@@ -94,7 +94,7 @@ public sealed class RecurringTaskService : IRecurringTaskService
             }
 
             // Record this advancing cycle as a history entry owned by the series. A completed cycle freezes
-            // the ticked checklist; a skipped/missed cycle keeps no snapshot. (Save before the advance so a
+            // the ticked checklist; a missed cycle keeps no snapshot. (Save before the advance so a
             // crash between the two leaves an overwritable orphan — see the class remarks.)
             //
             // The id is normally the cycle's deterministic id so a crash-retry overwrites the orphan rather
@@ -263,7 +263,7 @@ public sealed class RecurringTaskService : IRecurringTaskService
         Status = status,
         CompletedAt = completedAt,
         // Freeze the checklist as it was ticked, for a completed cycle only — a deep copy (new item
-        // instances), independent of the series' reset below. Skipped/missed cycles keep no snapshot.
+        // instances), independent of the series' reset below. Missed cycles keep no snapshot.
         ChecklistSnapshot = status == OccurrenceStatus.Completed
             ? series.Checklist.Select(item => new ChecklistItem { Id = item.Id, Title = item.Title, IsChecked = item.IsChecked }).ToList()
             : new List<ChecklistItem>(),

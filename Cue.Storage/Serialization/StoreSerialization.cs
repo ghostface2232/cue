@@ -31,6 +31,7 @@ public static class StoreSerialization
             },
         };
 
+        options.Converters.Add(new OccurrenceStatusJsonConverter());
         // Enums as strings (Priority -> "P1", TaskGroupView -> "List").
         options.Converters.Add(new JsonStringEnumConverter());
         // Value types that construct through factories/validating ctors need explicit converters.

@@ -479,7 +479,7 @@ public sealed partial class TaskListPage : Page
             FontSize = 12,
             Opacity = 0.6,
         });
-        // Two status choices — 완료 or 미수행 (skipped and missed aren't distinguished). Picking one
+        // Two status choices — 완료 or 미수행. Picking one
         // corrects this cycle and closes the popover; it never touches the series' next scheduled cycle
         // (see UpdateOccurrenceStatusAsync).
         var picker = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -491,10 +491,8 @@ public sealed partial class TaskListPage : Page
         {
             var captured = status;
             var button = new Button { Content = label, MinWidth = 56 };
-            // Mark the current status so the picker reads as a choice, not two equal actions. A legacy
-            // 건너뜀 record maps onto 미수행 here, since the two are no longer distinguished.
-            var effectiveStatus = occurrence.Status == OccurrenceStatus.Skipped ? OccurrenceStatus.Missed : occurrence.Status;
-            if (effectiveStatus == status
+            // Mark the current status so the picker reads as a choice, not two equal actions.
+            if (occurrence.Status == status
                 && Application.Current.Resources.TryGetValue("AccentButtonStyle", out var accentStyle)
                 && accentStyle is Style accent)
                 button.Style = accent;

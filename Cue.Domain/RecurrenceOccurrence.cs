@@ -7,7 +7,7 @@ namespace Cue.Domain;
 /// <remarks>
 /// This replaces the former "Logbook copy" model, where every completed cycle was a standalone
 /// completed <see cref="TaskItem"/>. Those copies were unrelated to one another and to the series, so
-/// a series' history was scattered and per-cycle state (skipped / missed, a frozen checklist) could
+/// a series' history was scattered and per-cycle state (missed, a frozen checklist) could
 /// not be expressed. A <see cref="RecurrenceOccurrence"/> instead belongs to one series via
 /// <see cref="SeriesId"/>, so the whole history is queryable by series and each cycle carries its own
 /// <see cref="Status"/> and <see cref="ChecklistSnapshot"/>.
@@ -39,7 +39,7 @@ public sealed class RecurrenceOccurrence : RecordBase
 
     /// <summary>
     /// When the cycle was completed (UTC instant), for a <see cref="OccurrenceStatus.Completed"/> cycle;
-    /// <c>null</c> for skipped/missed. Flattened to UTC like <see cref="TaskItem.CompletedAt"/>.
+    /// <c>null</c> for missed. Flattened to UTC like <see cref="TaskItem.CompletedAt"/>.
     /// </summary>
     private DateTimeOffset? _completedAt;
     public DateTimeOffset? CompletedAt
@@ -51,7 +51,7 @@ public sealed class RecurrenceOccurrence : RecordBase
     /// <summary>
     /// The series' checklist exactly as it was ticked when this cycle was completed — a deep copy so the
     /// record keeps an accurate account of what was done that cycle, independent of the series' later
-    /// (reset) checklist. Empty for skipped/missed cycles.
+    /// (reset) checklist. Empty for missed cycles.
     /// </summary>
     public List<ChecklistItem> ChecklistSnapshot { get; set; } = new();
 }

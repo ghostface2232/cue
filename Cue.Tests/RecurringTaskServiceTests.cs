@@ -7,7 +7,7 @@ namespace Cue.Tests;
 /// <summary>
 /// Exercises the occurrence-record recurrence model: performing a repeating task records its current
 /// cycle as a <see cref="RecurrenceOccurrence"/> owned by the series and advances the original one cycle
-/// (open, rank/zone/all-day preserved) — it does <i>not</i> complete the task. Skipping records a skipped
+/// (open, rank/zone/all-day preserved) — it does <i>not</i> complete the task. Skipping records a missed
 /// cycle; ending the series is the only path that completes a recurring task; editing a past cycle never
 /// shifts the schedule. Non-recurring and exhausted/unusable-rule tasks fall back to ordinary in-place
 /// completion with no occurrence record.
@@ -337,7 +337,7 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Skipping_RecordsSkippedOccurrence_AndAdvances_WithNoSnapshot()
+    public async Task Skipping_RecordsMissedOccurrence_AndAdvances_WithNoSnapshot()
     {
         var root = NewRoot();
         await using var store = await OpenAsync(root);
@@ -360,9 +360,9 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         Assert.Equal(Today.AddDays(1), WhenDay(original));
 
         var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
-        Assert.Equal(OccurrenceStatus.Skipped, occurrence.Status);
+        Assert.Equal(OccurrenceStatus.Missed, occurrence.Status);
         Assert.Null(occurrence.CompletedAt);
-        Assert.Empty(occurrence.ChecklistSnapshot); // a skipped cycle keeps no snapshot
+        Assert.Empty(occurrence.ChecklistSnapshot); // a missed cycle keeps no snapshot
     }
 
     [Fact]
@@ -431,10 +431,10 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
         var scheduleBefore = WhenDay((await store.GetAsync<TaskItem>(task.Id))!);
 
-        await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Skipped);
+        await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Missed);
 
         var edited = await store.GetAsync<RecurrenceOccurrence>(occurrence.Id);
-        Assert.Equal(OccurrenceStatus.Skipped, edited!.Status);
+        Assert.Equal(OccurrenceStatus.Missed, edited!.Status);
         Assert.Null(edited.CompletedAt); // cleared away from Completed
 
         // Editing history must not move the series' next scheduled cycle.

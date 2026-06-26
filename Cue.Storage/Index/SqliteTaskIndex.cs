@@ -91,7 +91,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 8;
+    private const long SchemaVersion = 9;
 
     private void EnsureSchema()
     {
@@ -166,7 +166,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE INDEX IF NOT EXISTS ix_task_groups_active ON task_groups(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_tags_active ON tags(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_occurrences_series ON recurrence_occurrences(series_id, deleted_at, occurrence_utc);
-            PRAGMA user_version = 8;
+            PRAGMA user_version = 9;
             """;
         cmd.ExecuteNonQuery();
     }

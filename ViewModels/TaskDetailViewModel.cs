@@ -955,8 +955,7 @@ public partial class TaskDetailViewModel : ObservableObject
         AppendFuturePips();
     }
 
-    /// <summary>Skipped and missed cycles are not distinguished in the strip — anything not performed reads
-    /// as 미수행.</summary>
+    /// <summary>Missed cycles read as 미수행 in the strip.</summary>
     private static OccurrencePipKind MapPipKind(OccurrenceStatus status) => status switch
     {
         OccurrenceStatus.Completed => OccurrencePipKind.Completed,

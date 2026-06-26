@@ -11,8 +11,7 @@ public enum OccurrencePipKind
     /// <summary>완료 — a recorded cycle that was carried out.</summary>
     Completed,
 
-    /// <summary>미수행 — a recorded cycle that was not carried out. Skipped and missed cycles are not
-    /// distinguished: anything not performed reads as 미수행.</summary>
+    /// <summary>미수행 — a recorded cycle that was not carried out.</summary>
     Missed,
 
     /// <summary>현재 — the live current cycle (the series' own <see cref="TaskItem.When"/>); not yet

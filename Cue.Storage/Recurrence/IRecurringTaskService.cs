@@ -37,7 +37,7 @@ public interface IRecurringTaskService
 
     /// <summary>
     /// Records the current cycle of the recurring task with <paramref name="taskId"/> as
-    /// <see cref="OccurrenceStatus.Skipped"/> (no checklist snapshot) and advances the series one cycle,
+    /// <see cref="OccurrenceStatus.Missed"/> (no checklist snapshot) and advances the series one cycle,
     /// exactly like <see cref="CompleteAsync"/> but without performing the cycle. A no-op for a
     /// non-recurring task (nothing to skip), or a missing/deleted one.
     /// </summary>
@@ -90,7 +90,7 @@ public interface IRecurringTaskService
     /// Strictly guarded to the <i>latest</i> completion: it commits only when the record is a
     /// <see cref="OccurrenceStatus.Completed"/> cycle of this series whose next scheduled cycle is exactly
     /// the series' current <see cref="TaskItem.When"/> (i.e. it is the immediate predecessor). Any other
-    /// record — an older cycle, a skipped/missed one, or one whose successor isn't the current cycle — is
+    /// record — an older cycle, a missed one, or one whose successor isn't the current cycle — is
     /// left untouched so history corrections go through <see cref="UpdateOccurrenceStatusAsync"/> instead.
     /// A no-op if the task or occurrence is missing, deleted, completed (series ended), or not recurring.
     /// </para>
