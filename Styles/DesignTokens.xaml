@@ -106,15 +106,19 @@
     <CornerRadius x:Key="CueRadiusRow">8</CornerRadius>
     <CornerRadius x:Key="CueRadiusCard">8</CornerRadius>
     <CornerRadius x:Key="CueRadiusPanel">12</CornerRadius>
-    <!-- Squircle (rounded-rectangle) radius for the group/tag/priority chips on a task row. Fixed at 8
+    <!-- Squircle (rounded-rectangle) radius for the group/tag chips on a task row. Fixed at 8
          rather than a half-height pill so short chips (icon + 2 chars) read as a clean rounded rect, not
          an oval — the pill ends would meet on a narrow chip and look like an ellipse. -->
     <CornerRadius x:Key="CueRadiusChip">8</CornerRadius>
-    <!-- Every chip/pill element on a task row (group, tag, priority) shares ONE fixed height with
-         content vertically centered, so they line up exactly regardless of glyph/font differences.
-         Horizontal-only padding keeps the height purely a function of this token. -->
-    <x:Double x:Key="CueChipHeight">22</x:Double>
+    <!-- Every group/tag chip on a task row shares ONE fixed height with content vertically centered, so
+         they line up exactly regardless of glyph/font differences. Horizontal-only padding keeps the
+         height purely a function of this token. -->
+    <x:Double x:Key="CueChipHeight">24</x:Double>
     <Thickness x:Key="CuePadChip">9,0</Thickness>
+    <!-- Priority shows as a small saturated dot to the right of the title rather than a labelled chip,
+         so the title row stays compact. -->
+    <x:Double x:Key="CuePriorityDotSize">9</x:Double>
+    <CornerRadius x:Key="CuePriorityDotRadius">4.5</CornerRadius>
 
     <!-- Type scale (page 28 → section 16 → row 15 → secondary 12) -->
     <x:Double x:Key="CueFontSection">16</x:Double>
