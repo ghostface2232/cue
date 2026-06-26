@@ -651,7 +651,7 @@
                                 Grid.Column="1"
                                 Width="8"
                                 Height="8"
-                                Margin="0,0,4,0"
+                                Margin="0,0,10,0"
                                 VerticalAlignment="Center"
                                 Fill="{x:Bind ViewModel.Detail.CurrentSaveStatus, Mode=OneWay, Converter={StaticResource SaveStatusToBrush}}"
                                 Visibility="{x:Bind ViewModel.Detail.IsSaveStatusVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}"
