@@ -116,7 +116,7 @@
                          "할 일을 완료했습니다" + an 실행 취소 (undo) button, then the View folds the row away. A
                          repeating completion does not use this bar — it stays ticked + dimmed in place. -->
                     <Grid
-                        MinHeight="80"
+                        MinHeight="84"
                         Padding="16,12"
                         ColumnSpacing="{StaticResource CueGap16}"
                         Visibility="{x:Bind IsAcknowledging, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -216,7 +216,7 @@
                     <!-- Main row. Generous padding + a MinHeight so a bare title row keeps the same presence
                          as one with a schedule or chips; all content is vertically centered. -->
                     <Grid
-                        MinHeight="80"
+                        MinHeight="84"
                         Padding="16,12"
                         ColumnSpacing="{StaticResource CueGap16}"
                         Visibility="{x:Bind ShowNormalContent, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -242,10 +242,13 @@
                                     Text="{x:Bind Title, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis" />
                                 <!-- Priority dot: a small saturated circle to the right of the title,
-                                     in place of the old labelled chip. -->
+                                     in place of the old labelled chip. The extra left margin opens a touch
+                                     more breathing room between the title and the dot (on top of the
+                                     StackPanel's own spacing). -->
                                 <Border
                                     Width="{StaticResource CuePriorityDotSize}"
                                     Height="{StaticResource CuePriorityDotSize}"
+                                    Margin="4,0,0,0"
                                     VerticalAlignment="Center"
                                     Background="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}"
                                     CornerRadius="{StaticResource CuePriorityDotRadius}"
