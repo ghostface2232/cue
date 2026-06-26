@@ -884,6 +884,80 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task QuickAddOnTodayList_WithNonTodayDate_RaisesOffscreenTaskCreated()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
+        await vm.LoadAsync();
+
+        var raised = false;
+        vm.OffscreenTaskCreated += () => raised = true;
+
+        // A task pinned to tomorrow doesn't appear on the 오늘 할 일 list, so the user is warned it landed
+        // elsewhere.
+        vm.QuickAddText = "내일 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.True(raised);
+        Assert.DoesNotContain(vm.Tasks, r => r.Title == "회의"); // genuinely off this screen
+    }
+
+    [Fact]
+    public async Task QuickAddOnTodayList_DatelessOrTodayDated_DoesNotRaiseOffscreen()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
+        await vm.LoadAsync();
+
+        var raised = false;
+        vm.OffscreenTaskCreated += () => raised = true;
+
+        // A dateless quick-add on Today pins to today and is visible — no warning.
+        vm.QuickAddText = "장보기";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.False(raised);
+        Assert.Contains(vm.Tasks, r => r.Title == "장보기");
+    }
+
+    [Fact]
+    public async Task QuickAddOnAllTasks_WithNonTodayDate_DoesNotRaiseOffscreen()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.AllTasks));
+        await vm.LoadAsync();
+
+        var raised = false;
+        vm.OffscreenTaskCreated += () => raised = true;
+
+        // 모든 할 일 shows every active task regardless of date, so a future-dated task is visible here — no
+        // warning even though it carries another day's date.
+        vm.QuickAddText = "내일 회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.False(raised);
+        Assert.Contains(vm.Tasks, r => r.Title == "회의");
+    }
+
+    [Fact]
     public async Task DetailOpensAllDay_HidesTime_AndUncheckingSavesATimedWhen()
     {
         using var temp = new TempDirectory();

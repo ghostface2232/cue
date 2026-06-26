@@ -1236,6 +1236,37 @@ public sealed partial class MainWindow : Window
         GlobalErrorInfoBar.IsOpen = false;
     }
 
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _offscreenSnackbarTimer;
+
+    /// <summary>Shows the bottom snackbar telling the user a just-created task is pinned to another day and
+    /// so isn't on the current screen, with a jump to 모든 할 일. Auto-dismisses after a few seconds; a
+    /// repeat add restarts the timer so the latest message stays up for its full duration.</summary>
+    public void ShowOffscreenTaskSnackbar()
+    {
+        OffscreenTaskInfoBar.IsOpen = true;
+
+        _offscreenSnackbarTimer ??= DispatcherQueue.CreateTimer();
+        _offscreenSnackbarTimer.Stop();
+        _offscreenSnackbarTimer.Interval = TimeSpan.FromSeconds(6);
+        _offscreenSnackbarTimer.IsRepeating = false;
+        _offscreenSnackbarTimer.Tick -= OffscreenSnackbarTimer_Tick;
+        _offscreenSnackbarTimer.Tick += OffscreenSnackbarTimer_Tick;
+        _offscreenSnackbarTimer.Start();
+    }
+
+    private void OffscreenSnackbarTimer_Tick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        sender.Stop();
+        OffscreenTaskInfoBar.IsOpen = false;
+    }
+
+    private void OffscreenGoAllTasks_Click(object sender, RoutedEventArgs e)
+    {
+        _offscreenSnackbarTimer?.Stop();
+        OffscreenTaskInfoBar.IsOpen = false;
+        NavigateHome();
+    }
+
     private async void RetryButton_Click(object sender, RoutedEventArgs e)
     {
         GlobalErrorInfoBar.IsOpen = false;

@@ -587,9 +587,21 @@
 
                 <ListView
                     behaviors:ScrollBarAutoHide.IsEnabled="True"
+                    Padding="0"
                     ItemsSource="{x:Bind ViewModel.PrioritySections, Mode=OneWay}"
                     SelectionMode="None"
                     Visibility="{x:Bind ViewModel.IsPrioritySectioned, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                    <!-- Strip the default ListViewItem inset so each section's rows line up flush with the
+                         standard list (ScrollViewer + ItemsRepeater), which has no item container: zero the
+                         container padding/margin and let it stretch to the full width. -->
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="vm:PrioritySectionViewModel">
                             <StackPanel Margin="0,0,0,16">

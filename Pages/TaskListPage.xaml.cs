@@ -94,6 +94,9 @@ public sealed partial class TaskListPage : Page
         // The view model raises this right after a task is completed from an active list; the page runs
         // the in-row moment (a terminal completion's undo bar + fold, or a repeating one's settle in place).
         ViewModel.CompletionAcknowledged += OnCompletionAcknowledged;
+        // A quick-add that lands a task off the current screen (a non-today date the list doesn't show)
+        // raises this; we point the user to 모든 할 일 via a bottom snackbar so it isn't silently lost.
+        ViewModel.OffscreenTaskCreated += OnOffscreenTaskCreated;
         ViewModel.Detail.PropertyChanged += Detail_PropertyChanged;
         // Tag chip colors are darkened for the Light theme by a converter that reads the theme once when
         // it runs; a runtime theme toggle changes no binding source, so the converter never re-runs and the
@@ -115,6 +118,7 @@ public sealed partial class TaskListPage : Page
     {
         _navNotifier.Changed -= OnNavDataChanged;
         ViewModel.CompletionAcknowledged -= OnCompletionAcknowledged;
+        ViewModel.OffscreenTaskCreated -= OnOffscreenTaskCreated;
         ViewModel.Detail.PropertyChanged -= Detail_PropertyChanged;
         ActualThemeChanged -= OnActualThemeChanged;
         if (ViewModel.Detail.IsOpen)
@@ -1342,6 +1346,9 @@ public sealed partial class TaskListPage : Page
             }
         }, TaskContinuationOptions.OnlyOnFaulted);
     }
+
+    private void OnOffscreenTaskCreated()
+        => (App.CurrentWindow as MainWindow)?.ShowOffscreenTaskSnackbar();
 
     private void Detail_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {

@@ -105,6 +105,11 @@ public partial class TaskListViewModel : ObservableObject
     /// which folds away). The View then calls <see cref="FinalizeCompletionAsync"/> to reload.</summary>
     public event Action<TaskRowViewModel, DateOnly?>? CompletionAcknowledged;
 
+    /// <summary>Raised after a quick-add creates a task that does not appear on the current list because it
+    /// is pinned to a day other than today (e.g. "내일 …" typed on the 오늘 할 일 list). The View surfaces a
+    /// snackbar pointing to 모든 할 일 so the just-created task isn't silently lost from view.</summary>
+    public event Action? OffscreenTaskCreated;
+
     public TaskDetailViewModel Detail { get; }
 
     [ObservableProperty]
@@ -216,12 +221,12 @@ public partial class TaskListViewModel : ObservableObject
             TaskListMode.NoTag => "태그 없음",
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
-        // The quick-add placeholder echoes the active view: a plain "할 일 입력하기" everywhere, the
-        // dated "오늘 할 일 입력하기" in Today, and the group/tag name (accent-colored via its own Run)
-        // ahead of the suffix in a filtered view.
+        // The quick-add placeholder echoes the active view: a plain "할 일 입력하기" everywhere, and an
+        // accent-colored prefix (its own Run) ahead of the suffix in a dated/filtered view — "오늘" on the
+        // Today list, the group/tag name in a filtered view.
         (QuickAddPlaceholderName, QuickAddPlaceholderSuffix) = _mode switch
         {
-            TaskListMode.Today => (string.Empty, "오늘 할 일 입력하기"),
+            TaskListMode.Today => ("오늘", " 할 일 입력하기"),
             TaskListMode.TaskGroup or TaskListMode.Tag => (Title, " 할 일 입력하기"),
             _ => (string.Empty, "할 일 입력하기"),
         };
@@ -289,6 +294,25 @@ public partial class TaskListViewModel : ObservableObject
         await LoadAsync();
         // A new open task bumps its group/tag (or the 없음 bucket) count in the sidebar.
         _navNotifier.NotifyCountsChanged();
+        NotifyIfCreatedOffscreen(task.Id, when);
+    }
+
+    /// <summary>After a quick-add reloads the list, warn (via <see cref="OffscreenTaskCreated"/>) when the
+    /// new task is pinned to a day other than today yet isn't shown on the current screen — the user typed
+    /// an explicit date ("내일", "3월 5일") on a list that doesn't show it, so the task they just created
+    /// would otherwise vanish without a trace. A dateless or today-dated task, or one that did land in the
+    /// current list, raises nothing.</summary>
+    private void NotifyIfCreatedOffscreen(Guid id, ScheduledWhen when)
+    {
+        if (when.Kind != WhenKind.OnDate || when.Date is not { } date)
+            return;
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone).DateTime);
+        var whenDay = DateOnly.FromDateTime(date.ToLocal().DateTime);
+        if (whenDay == today)
+            return;
+        if (AllRows().Any(row => row.Id == id))
+            return; // the new task is visible on this screen — no need to point elsewhere
+        OffscreenTaskCreated?.Invoke();
     }
 
     /// <summary>
