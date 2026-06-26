@@ -45,6 +45,11 @@ jobs:
       - name: Build installer
         run: pwsh -File build-installer.ps1
 
+      - name: Verify published assets (Smoke Test)
+        shell: pwsh
+        run: |
+          $publishDir = "bin/Release/net10.0-windows10.0.26100.0/win-x64/publish"; @("Assets/AppIcon.ico", "Assets/AppIconTitle.png", "Assets/Fonts/PretendardJP-Medium.otf", "Assets/Fonts/PretendardJP-Regular.otf", "Assets/Fonts/PretendardJP-SemiBold.otf") | ForEach-Object { if (-not (Test-Path "$publishDir/$_")) { throw "Missing asset in publish folder: $_" } }
+
       - name: Create draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
