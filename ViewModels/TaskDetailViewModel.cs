@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cue.Domain;
@@ -220,6 +221,15 @@ public partial class TaskDetailViewModel : ObservableObject
     public Guid? CurrentTaskId => _taskId;
 
     public bool IsSaving => !_saveChain.IsCompleted || !_checklistChain.IsCompleted || _activeSaveCount > 0;
+
+    /// <summary>True when at least one save has exhausted its retries and is still owed to disk. Read under
+    /// the same lock as the save counters. The window consults this on close so an unresolved failure blocks
+    /// the exit even after the detail panel that produced it was closed or the user navigated to another
+    /// screen — the failure lives here in <see cref="_pendingFailures"/>, not on whether a panel is open.</summary>
+    public bool HasUnsavedFailures
+    {
+        get { lock (this) { return _pendingFailures.Count > 0; } }
+    }
 
     [ObservableProperty]
     public partial SaveStatus CurrentSaveStatus { get; set; } = SaveStatus.Idle;
@@ -548,18 +558,26 @@ public partial class TaskDetailViewModel : ObservableObject
         var metadata = _saveChain;
         var checklist = _checklistChain;
 
-        Exception? metadataEx = null;
-        try { await metadata; } catch (Exception ex) { metadataEx = ex; }
+        // The chains always run to completion now — a failed link records its outcome in _pendingFailures
+        // and is swallowed there rather than faulting the chain (see ChainSaveAsync/ChainChecklistAsync).
+        // So awaiting them only waits for the queues to settle; whether anything is still owed to disk is
+        // read from _pendingFailures, the single source of truth. This is what lets a drain that runs after
+        // a successful retry complete normally instead of re-throwing the stale fault of the original link.
+        try { await metadata; } catch { /* defensive — the chain is not expected to fault */ }
+        try { await checklist; } catch { /* defensive — the chain is not expected to fault */ }
 
-        Exception? checklistEx = null;
-        try { await checklist; } catch (Exception ex) { checklistEx = ex; }
-
-        if (metadataEx is not null && checklistEx is not null)
+        List<PendingSave> failures;
+        lock (this)
         {
-            throw new AggregateException("저장에 실패했습니다.", metadataEx, checklistEx);
+            failures = _pendingFailures.ToList();
         }
-        if (metadataEx is not null) throw metadataEx;
-        if (checklistEx is not null) throw checklistEx;
+        if (failures.Count == 0) return;
+
+        var exceptions = failures
+            .Select(failure => failure.Error ?? new IOException("저장에 실패했습니다."))
+            .ToList();
+        if (exceptions.Count == 1) throw exceptions[0];
+        throw new AggregateException("저장에 실패했습니다.", exceptions);
     }
 
     /// <summary>Captures the panel's current edits as an immutable snapshot, or <c>null</c> when no task is
@@ -602,14 +620,21 @@ public partial class TaskDetailViewModel : ObservableObject
 
     private async Task ChainSaveAsync(Task previous, TaskEditSnapshot snapshot)
     {
-        // SaveSnapshotAsync swallows its own failures, so the predecessor never faults; the guard is pure
+        // This method swallows its own failures (below), so the predecessor never faults; the guard is pure
         // belt-and-braces so one bad link can never stall the queue behind it.
         try { await previous; }
         catch { /* logged by the failing save itself */ }
         // A metadata write persists the whole snapshot, so a later one fully supersedes an earlier failed
-        // one (see RecordOutcome): only the latest failed snapshot for this task is ever retained.
-        await RunSaveOperationWithRetryAsync(
-            new PendingSave(SaveOperationKind.Metadata, snapshot.Id, () => SaveSnapshotAsync(snapshot)));
+        // one (see RecordOutcome): only the latest failed snapshot for this task is ever retained. The
+        // failure is recorded in _pendingFailures there; swallow any throw here so the chain itself always
+        // completes successfully. A faulted chain would otherwise resurface on the next DrainPendingSaveAsync
+        // even after a retry has cleared the failure — the regression this guards against.
+        try
+        {
+            await RunSaveOperationWithRetryAsync(
+                new PendingSave(SaveOperationKind.Metadata, snapshot.Id, () => SaveSnapshotAsync(snapshot)));
+        }
+        catch { /* recorded in _pendingFailures; the chain must not fault */ }
     }
 
     /// <summary>
@@ -675,8 +700,19 @@ public partial class TaskDetailViewModel : ObservableObject
     }
 
     /// <summary>One queued save: the work to run, the task it targets, and its kind. (Kind, TaskId) drives
-    /// supersession of whole-slice writes; object identity distinguishes individual checklist mutations.</summary>
-    private sealed record PendingSave(SaveOperationKind Kind, Guid TaskId, Func<Task> Operation);
+    /// supersession of whole-slice writes; object identity distinguishes individual checklist mutations
+    /// (this is a reference type, so a pending failure is matched by the exact instance).</summary>
+    private sealed class PendingSave(SaveOperationKind kind, Guid taskId, Func<Task> operation)
+    {
+        public SaveOperationKind Kind { get; } = kind;
+        public Guid TaskId { get; } = taskId;
+        public Func<Task> Operation { get; } = operation;
+
+        /// <summary>The exception from this save's last exhausted attempt, set when it is recorded as a
+        /// pending failure. DrainPendingSaveAsync rethrows it so a caller still observes the original error
+        /// even though the save chain itself now always completes normally.</summary>
+        public Exception? Error { get; set; }
+    }
 
     private async Task RunSaveOperationWithRetryAsync(PendingSave save)
     {
@@ -715,6 +751,7 @@ public partial class TaskDetailViewModel : ObservableObject
         lock (this)
         {
             _activeSaveCount--;
+            save.Error = success ? null : lastException;
             RecordOutcome(save, success);
             if (_activeSaveCount == 0)
             {
@@ -1130,23 +1167,36 @@ public partial class TaskDetailViewModel : ObservableObject
     private void QueueChecklistSave()
     {
         if (_taskId is not { } id) return;
-        // Snapshot the rows synchronously (on the UI thread, before any await) so the values are bound
-        // to this edit and can't shift under a later save or a task switch.
-        var snapshot = Checklist.Select(row => new ChecklistItem
-        {
-            Id = row.Id,
-            Title = row.Title.Trim(),
-            IsChecked = row.IsChecked,
-        }).ToList();
+        // Snapshot the rows synchronously (on the UI thread, before any await) so the values are bound to
+        // this edit and survive a task switch — after switching, the live Checklist holds another task's
+        // rows, so this frozen copy is the only safe thing to write for this task.
+        var frozen = CaptureChecklistRows();
         // A full snapshot replaces the whole checklist, so a later one supersedes an earlier failed snapshot
         // for this task (see RecordOutcome) — only the latest is retained. Incremental add/remove mutations
         // are tracked separately, so this never drops one of those.
         _ = EnqueueChecklistOp(SaveOperationKind.ChecklistSnapshot, id, async () =>
         {
-            var saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist = snapshot; return true; });
+            // Re-capture the live rows at write time while the panel is still on this task. A snapshot that
+            // failed and is being retried (or that was queued before a later add/delete ran) would otherwise
+            // replay a stale list and clobber the newer items; re-capturing persists the current checklist —
+            // the toggle/title edit AND any item added since. After a task switch the live rows belong to a
+            // different task, so fall back to the frozen copy bound to this one.
+            var rows = _taskId == id ? CaptureChecklistRows() : frozen;
+            var saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist = rows; return true; });
             if (saved is not null) await _refreshOwner();
         });
     }
+
+    /// <summary>Captures the panel's current checklist rows as fresh <see cref="ChecklistItem"/> values
+    /// (read synchronously on the UI thread). Used both to freeze a snapshot bound to the open task and to
+    /// re-read the live list when a snapshot save runs or is retried.</summary>
+    private List<ChecklistItem> CaptureChecklistRows()
+        => Checklist.Select(row => new ChecklistItem
+        {
+            Id = row.Id,
+            Title = row.Title.Trim(),
+            IsChecked = row.IsChecked,
+        }).ToList();
 
     /// <summary>Appends one checklist operation to the serial checklist chain and returns its completion.
     /// Awaiting the previous link first keeps add/remove/tick/title writes strictly ordered; a prior
@@ -1166,7 +1216,10 @@ public partial class TaskDetailViewModel : ObservableObject
     private static async Task ChainChecklistAsync(Task previous, Func<Task> op)
     {
         try { await previous; } catch { /* logged by the failing op */ }
-        await op();
+        // The op records its outcome in _pendingFailures (RecordOutcome); swallow any throw so the chain
+        // itself always completes successfully and a stale fault can't resurface on a later drain after a
+        // retry has cleared the failure. Parallels ChainSaveAsync.
+        try { await op(); } catch { /* recorded in _pendingFailures; the chain must not fault */ }
     }
 
     private ScheduledWhen BuildWhen()
