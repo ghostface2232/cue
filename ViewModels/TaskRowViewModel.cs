@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Cue.Domain;
 using Cue.Storage.Index;
@@ -96,7 +97,16 @@ public partial class TaskRowViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRightMeta))]
     [NotifyPropertyChangedFor(nameof(ShowInlineMeta))]
+    [NotifyPropertyChangedFor(nameof(HasSingleTag))]
+    [NotifyPropertyChangedFor(nameof(HasMultipleTags))]
     public partial IReadOnlyList<TaskRowTag> Tags { get; set; } = Array.Empty<TaskRowTag>();
+
+    /// <summary>One tag: render it as a named chip (icon + name).</summary>
+    public bool HasSingleTag => Tags.Count == 1;
+
+    /// <summary>Two or more tags: render each as a name-less square icon chip laid out in a row, so the
+    /// tag line never grows the row taller no matter how many tags a task carries.</summary>
+    public bool HasMultipleTags => Tags.Count >= 2;
 
     /// <summary>
     /// True when the list is narrow enough that the right-edge group/tag chips should reflow to a line
@@ -266,10 +276,10 @@ public partial class TaskRowViewModel : ObservableObject
     {
         GroupName = item.TaskGroupName ?? string.Empty;
         GroupGlyph = string.IsNullOrEmpty(item.TaskGroupIcon) ? DefaultGroupGlyph : item.TaskGroupIcon!;
-        // A task carries at most one tag; show only the first so a legacy multi-tag row still reads as
-        // single-tag (it collapses to one on next edit).
+        // A task may carry several tags; show them all. One tag reads as a named chip, two+ collapse to
+        // name-less square icon chips in the view so the row height stays fixed (see HasMultipleTags).
         Tags = item.Tags is { Count: > 0 }
-            ? new[] { new TaskRowTag(item.Tags[0].Name, item.Tags[0].Color) }
+            ? item.Tags.Select(tag => new TaskRowTag(tag.Name, tag.Color)).ToArray()
             : Array.Empty<TaskRowTag>();
     }
 

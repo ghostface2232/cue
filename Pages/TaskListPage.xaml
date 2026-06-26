@@ -42,6 +42,27 @@
             </Border>
         </DataTemplate>
 
+        <!-- A name-less tag chip: a square squircle tinted with the tag's color, holding just the tag
+             glyph. Used when a row carries two or more tags so they line up horizontally without the
+             names growing the row — the name still surfaces on hover / to assistive tech. -->
+        <DataTemplate x:Key="TagIconChipTemplate" x:DataType="vm:TaskRowTag">
+            <Border
+                Width="{StaticResource CueChipHeight}"
+                Height="{StaticResource CueChipHeight}"
+                VerticalAlignment="Center"
+                Background="{x:Bind Color, Converter={StaticResource HexToTint}}"
+                CornerRadius="{StaticResource CueRadiusChip}"
+                ToolTipService.ToolTip="{x:Bind Name}"
+                AutomationProperties.Name="{x:Bind Name}">
+                <FontIcon
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}"
+                    Glyph="&#xE8EC;" />
+            </Border>
+        </DataTemplate>
+
         <!-- A nested checklist item under a task: a checkbox + title. It is not a task — it cannot be
              dragged or carry a date/priority/group; tapping the row (anywhere but the checkbox) opens
              its parent task's detail. -->
@@ -294,18 +315,33 @@
                                         <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontSecondary}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Border>
-                                <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TagChipTemplate}">
+                                <!-- One tag: named chip. Two+: name-less square icon chips in a row. -->
+                                <ItemsControl
+                                    ItemsSource="{x:Bind Tags, Mode=OneWay}"
+                                    ItemTemplate="{StaticResource TagChipTemplate}"
+                                    Visibility="{x:Bind HasSingleTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" />
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                 </ItemsControl>
+                                <ItemsControl
+                                    ItemsSource="{x:Bind Tags, Mode=OneWay}"
+                                    ItemTemplate="{StaticResource TagIconChipTemplate}"
+                                    Visibility="{x:Bind HasMultipleTags, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
                             </StackPanel>
                         </StackPanel>
 
-                        <!-- Right edge (wide layout): group chip + tag chip(s), stacked vertically and
-                             right-aligned so their right edges line up. -->
+                        <!-- Right edge (wide layout): group chip on top, then the tag line, both
+                             right-aligned. The tag line is one horizontal row (a single named chip, or
+                             several name-less square icon chips), so the row never grows past two lines. -->
                         <StackPanel
                             Grid.Column="2"
                             VerticalAlignment="Center"
@@ -325,10 +361,26 @@
                                     <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontSecondary}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </Border>
-                            <ItemsControl HorizontalAlignment="Right" ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TagChipTemplate}">
+                            <!-- One tag: named chip. Two+: name-less square icon chips in a row. -->
+                            <ItemsControl
+                                HorizontalAlignment="Right"
+                                ItemsSource="{x:Bind Tags, Mode=OneWay}"
+                                ItemTemplate="{StaticResource TagChipTemplate}"
+                                Visibility="{x:Bind HasSingleTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Vertical" HorizontalAlignment="Right" Spacing="{StaticResource CueGap8}" />
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="{StaticResource CueGap8}" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <ItemsControl
+                                HorizontalAlignment="Right"
+                                ItemsSource="{x:Bind Tags, Mode=OneWay}"
+                                ItemTemplate="{StaticResource TagIconChipTemplate}"
+                                Visibility="{x:Bind HasMultipleTags, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="{StaticResource CueGap4}" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                             </ItemsControl>

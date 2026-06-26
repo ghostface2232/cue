@@ -910,9 +910,9 @@ public partial class TaskDetailViewModel : ObservableObject
         };
         await _store.SaveAsync(tag);
 
-        // A task carries one tag, so a freshly created tag becomes that single selection (replacing any
-        // previously selected tag) rather than being added alongside it.
-        await LoadTagsAsync(new[] { tag.Id });
+        // A freshly created tag is added alongside whatever is already selected rather than replacing it.
+        var selectedIds = Tags.Where(t => t.IsSelected && t.Id != Guid.Empty).Select(t => t.Id).Append(tag.Id).ToList();
+        await LoadTagsAsync(selectedIds);
         IsAddingTag = false;
         NewTagName = string.Empty;
         // The new tag is selected on the spot — persist the task's tag assignment too.
@@ -1354,9 +1354,8 @@ public partial class TaskDetailViewModel : ObservableObject
 
     private async Task LoadTagsAsync(IEnumerable<Guid> selectedIds)
     {
-        // A task carries at most one tag. Take only the first of any incoming ids so a legacy task that
-        // still has several on disk loads as single-select here (it collapses to that one on next save).
-        var selected = selectedIds.Where(id => id != Guid.Empty).Take(1).ToHashSet();
+        // A task may carry several tags — keep every incoming id selected.
+        var selected = selectedIds.Where(id => id != Guid.Empty).ToHashSet();
         Tags.Clear();
         // A synthetic "태그 없음" row (Guid.Empty) makes the no-tag state explicit and is checked by
         // default; it stays mutually exclusive with the real tags via ToggleTag/SyncNoTagOption.
@@ -1365,10 +1364,9 @@ public partial class TaskDetailViewModel : ObservableObject
             Tags.Add(new TagEditorOption(tag.Id, tag.Name, selected.Contains(tag.Id), tag.Color));
     }
 
-    /// <summary>Selects a tag row. A task carries at most one tag, so this is single-select (radio-like):
-    /// choosing a real tag clears every other and selects it; choosing the already-selected tag clears it
-    /// (back to no tag); the "태그 없음" entry (Guid.Empty) clears any selection. The "태그 없음" row
-    /// re-checks on its own once no real tag remains selected.</summary>
+    /// <summary>Toggles a tag row. A task may carry several tags, so this is multi-select: tapping a real
+    /// tag flips just that one (the others keep their state); the "태그 없음" entry (Guid.Empty) clears every
+    /// real selection. The "태그 없음" row re-checks on its own once no real tag remains selected.</summary>
     public void ToggleTag(Guid id)
     {
         var target = Tags.FirstOrDefault(tag => tag.Id == id);
@@ -1380,11 +1378,7 @@ public partial class TaskDetailViewModel : ObservableObject
         }
         else
         {
-            var select = !target.IsSelected;
-            // Single-select: clear every row first, then turn the target on (unless it was the one
-            // already selected, in which case the task ends up with no tag).
-            foreach (var tag in Tags) tag.IsSelected = false;
-            target.IsSelected = select;
+            target.IsSelected = !target.IsSelected;
             SyncNoTagOption();
         }
         RequestAutoSave();
