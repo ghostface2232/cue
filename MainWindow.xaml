@@ -22,18 +22,20 @@
         <TitleBar
             x:Name="AppTitleBar"
             FontFamily="{StaticResource CueFontFamily}"
+            Title="Cue"
             BackRequested="TitleBar_BackRequested"
             IsBackButtonVisible="{x:Bind NavFrame.CanGoBack, Mode=OneWay}"
             IsPaneToggleButtonVisible="True"
             PaneToggleRequested="TitleBar_PaneToggleRequested">
-            <TitleBar.Content>
-                <TextBlock
-                    Text="Cue"
-                    FontFamily="{StaticResource CueFontFamilyMedium}"
-                    FontSize="12"
-                    VerticalAlignment="Center"
-                    Margin="8,0,0,0" />
-            </TitleBar.Content>
+            <TitleBar.Resources>
+                <Style x:Key="CaptionTextBlockStyle" TargetType="TextBlock">
+                    <Setter Property="FontFamily" Value="{StaticResource CueFontFamilyMedium}" />
+                    <Setter Property="FontSize" Value="12" />
+                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                    <Setter Property="TextWrapping" Value="NoWrap" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                </Style>
+            </TitleBar.Resources>
         </TitleBar>
 
         <NavigationView
