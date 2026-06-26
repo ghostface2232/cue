@@ -2051,6 +2051,122 @@ public sealed class ViewModelRegressionTests
         await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
     }
 
+    [Fact]
+    public async Task RetrySuccess_ThenDrain_DoesNotRethrowStaleChainFault()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        // Fails the first save permanently (6 attempts); afterwards the store stops failing, so a retry lands.
+        var failingStore = new FailingTaskStore(store, 6);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        await vm.Detail.OpenAsync(task.Id);
+
+        // The autosave exhausts its retries and faults the drain.
+        vm.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+        Assert.True(vm.Detail.HasUnsavedFailures);
+
+        // Retrying now succeeds (the store no longer fails) and clears the pending failure.
+        await vm.Detail.RetrySaveAsync();
+        Assert.False(vm.Detail.HasUnsavedFailures);
+
+        // The original failed chain link must not resurface: a fresh drain after the retry succeeded completes
+        // normally instead of re-throwing the stale IOException. Before the fix, _saveChain stayed faulted and
+        // DrainPendingSaveAsync re-threw it forever, so flush/close kept failing after a successful retry.
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(Priority.P1, saved.Priority);
+    }
+
+    [Fact]
+    public async Task StaleChecklistSnapshotRetry_AfterSuccessfulAdd_KeepsTheNewItem()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "parent" };
+        task.Checklist.Add(new ChecklistItem { Title = "기존 항목" });
+        await store.SaveAsync(task);
+
+        // The toggle's full-checklist snapshot fails permanently (6 attempts); the store then stops failing.
+        var failingStore = new FailingTaskStore(store, 6);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Tick the existing item — its checklist snapshot save fails permanently and is retained as pending.
+        vm.Detail.Checklist[0].IsChecked = true;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+        Assert.True(vm.Detail.HasUnsavedFailures);
+
+        // Add a new item — the store no longer fails, so this incremental add succeeds and appends to disk
+        // (and to the live checklist).
+        vm.Detail.NewChecklistItemTitle = "새 항목";
+        await vm.Detail.AddChecklistItemCommand.ExecuteAsync(null);
+        Assert.Equal(2, (await store.GetAsync<TaskItem>(task.Id))!.Checklist.Count);
+
+        // Retry the still-pending stale snapshot. Replaying it verbatim would write back only [기존 항목] and
+        // drop 새 항목; re-capturing the live checklist at retry persists both the toggle and the new item.
+        await vm.Detail.RetrySaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(2, saved!.Checklist.Count);
+        Assert.Contains(saved.Checklist, c => c.Title == "새 항목");
+        Assert.True(saved.Checklist.Single(c => c.Title == "기존 항목").IsChecked);
+    }
+
+    [Fact]
+    public async Task HasUnsavedFailures_SurvivesPanelClose_AndClearsOnRetrySuccess()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        var failingStore = new FailingTaskStore(store, 6);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.False(vm.Detail.HasUnsavedFailures);
+
+        // A save fails permanently → a failure is now owed to disk.
+        vm.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+        Assert.True(vm.Detail.HasUnsavedFailures);
+
+        // Closing the panel (the user dismisses it or navigates to another screen) must NOT drop the
+        // unresolved failure — the window reads HasUnsavedFailures to keep blocking the app exit even with
+        // no panel open, instead of quitting and silently losing the work.
+        vm.Detail.Close();
+        Assert.False(vm.Detail.IsOpen);
+        Assert.True(vm.Detail.HasUnsavedFailures);
+
+        // A successful retry finally clears it.
+        await vm.Detail.RetrySaveAsync();
+        Assert.False(vm.Detail.HasUnsavedFailures);
+    }
+
     private sealed class FailingTaskStore(ITaskStore inner, int failCount) : ITaskStore
     {
         private int _failedAttempts = 0;

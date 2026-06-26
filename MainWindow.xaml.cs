@@ -1105,6 +1105,12 @@ public sealed partial class MainWindow : Window
         if (_closeFlushInProgress) return;
         _closeFlushInProgress = true;
 
+        // A save failure recorded earlier must block the exit even if the detail panel that produced it has
+        // since been closed or the user has moved to another screen (e.g. Settings). It lives on the view
+        // model, not on whether a panel is open — so checking only for an open panel below would let the app
+        // quit and silently drop the unsaved work.
+        var pendingFailureVm = _failedDetailVm is { HasUnsavedFailures: true } ? _failedDetailVm : null;
+
         bool hasOpenDetail = false;
         Task flushTask = Task.CompletedTask;
         TaskDetailViewModel? detailVm = null;
@@ -1119,6 +1125,14 @@ public sealed partial class MainWindow : Window
 
         if (!hasOpenDetail)
         {
+            // No panel to flush. Exit only when nothing is still owed to disk; if there's an unresolved
+            // failure, surface the error InfoBar (다시 시도 / 저장하지 않고 종료) and keep the app open.
+            if (pendingFailureVm is not null)
+            {
+                _closeFlushInProgress = false;
+                ShowGlobalErrorOnClose(pendingFailureVm);
+                return;
+            }
             _allowClose = true;
             _closeFlushInProgress = false;
             Close();
@@ -1140,6 +1154,20 @@ public sealed partial class MainWindow : Window
 
             delayTimer.Stop();
             GlobalSavingInfoBar.IsOpen = false;
+
+            // The open panel flushed cleanly — but only exit when nothing is still owed to disk. A failure
+            // left unresolved on this panel, or carried over from one closed earlier, must still block the
+            // exit and surface the error InfoBar rather than letting the app drop the work.
+            var stillFailing = detailVm is { HasUnsavedFailures: true } ? detailVm
+                : _failedDetailVm is { HasUnsavedFailures: true } ? _failedDetailVm
+                : null;
+            if (stillFailing is not null)
+            {
+                _closeFlushInProgress = false;
+                ShowGlobalErrorOnClose(stillFailing);
+                return;
+            }
+
             _allowClose = true;
             _closeFlushInProgress = false;
             Close();
