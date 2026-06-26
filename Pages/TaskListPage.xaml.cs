@@ -281,8 +281,8 @@ public sealed partial class TaskListPage : Page
         }
         menu.Items.Add(moveGroup);
 
-        // 태그 — a single-select list; clicking a tag makes it the task's one tag (replacing any
-        // current), and clicking the checked tag clears it.
+        // 태그 — a multi-select list; each tag toggles independently (clicking a tag adds it, clicking a
+        // checked tag removes just that one), so a task can carry several at once.
         var tagGroup = new MenuFlyoutSubItem { Text = "태그" };
         if (tags.Count == 0)
         {
@@ -300,6 +300,37 @@ public sealed partial class TaskListPage : Page
                 };
                 item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ToggleTaskTagAsync(id, tagId));
                 tagGroup.Items.Add(item);
+            }
+
+            // 태그 지우기 — how it clears depends on how many tags the task carries. With one, it clears
+            // outright. With two or more, it expands into a picker so a single tag can be dropped without
+            // losing the rest (plus a 모두 지우기 escape hatch). Disabled when the task has no tags.
+            tagGroup.Items.Add(new MenuFlyoutSeparator());
+            var assigned = task?.TagIds ?? (IReadOnlyList<Guid>)Array.Empty<Guid>();
+            if (assigned.Count >= 2)
+            {
+                var clearTags = new MenuFlyoutSubItem { Text = "태그 지우기" };
+                var clearAll = new MenuFlyoutItem { Text = "모두 지우기" };
+                clearAll.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ClearTaskTagsAsync(id));
+                clearTags.Items.Add(clearAll);
+                clearTags.Items.Add(new MenuFlyoutSeparator());
+                // List only the tags the task actually carries (in the tag list's order) so the user picks
+                // exactly which one to remove.
+                foreach (var tag in tags)
+                {
+                    if (!assigned.Contains(tag.Id)) continue;
+                    var tagId = tag.Id;
+                    var remove = new MenuFlyoutItem { Text = tag.Name };
+                    remove.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.RemoveTaskTagAsync(id, tagId));
+                    clearTags.Items.Add(remove);
+                }
+                tagGroup.Items.Add(clearTags);
+            }
+            else
+            {
+                var clearTags = new MenuFlyoutItem { Text = "태그 지우기", IsEnabled = assigned.Count > 0 };
+                clearTags.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ClearTaskTagsAsync(id));
+                tagGroup.Items.Add(clearTags);
             }
         }
         menu.Items.Add(tagGroup);
