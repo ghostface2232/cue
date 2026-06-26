@@ -204,7 +204,7 @@
                                 Spacing="{StaticResource CueGap8}"
                                 VerticalAlignment="Center"
                                 Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                                <TextBlock VerticalAlignment="Center" Style="{StaticResource MetadataTextStyle}" Text="{x:Bind Schedule, Mode=OneWay}" />
+                                <TextBlock VerticalAlignment="Center" Style="{StaticResource MetadataTextStyle}" Text="{x:Bind ScheduleCaption, Mode=OneWay}" />
                                 <FontIcon
                                     VerticalAlignment="Center"
                                     FontSize="12"

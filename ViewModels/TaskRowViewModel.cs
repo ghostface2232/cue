@@ -47,9 +47,21 @@ public partial class TaskRowViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSchedule))]
     [NotifyPropertyChangedFor(nameof(HasMetadata))]
+    [NotifyPropertyChangedFor(nameof(ScheduleCaption))]
     public partial string Schedule { get; set; }
 
     public bool HasSchedule => Schedule.Length > 0;
+
+    /// <summary>
+    /// The text shown on the row's schedule line. For a recurring row performed up into the future
+    /// (<see cref="IsAheadOfSchedule"/>) it reads as the just-done cycle's completion plus the next due
+    /// date — "이번 할 일 완료됨 · 다음: …" — so the ticked, dimmed row never looks merely scheduled for that
+    /// future date (the source of the "is it already done until then?" confusion). Otherwise it is the
+    /// plain <see cref="Schedule"/> string. Re-evaluated whenever Schedule or IsAheadOfSchedule changes.
+    /// </summary>
+    public string ScheduleCaption => IsAheadOfSchedule && Schedule.Length > 0
+        ? $"이번 할 일 완료됨 · 다음: {Schedule}"
+        : Schedule;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPriority))]
@@ -133,7 +145,20 @@ public partial class TaskRowViewModel : ObservableObject
     /// series another cycle forward (which is how the runaway "complete the future forever" path is blocked).
     /// Projected by the index per <see cref="TaskListItem.IsAheadOfSchedule"/>, refreshed on every reload.
     /// </summary>
-    public bool IsAheadOfSchedule { get; private set; }
+    /// <remarks>Not an <c>[ObservableProperty]</c> (it drives no two-way control), but it does feed the
+    /// derived <see cref="ScheduleCaption"/>, so the setter raises that one notification — this is what makes
+    /// an in-place <see cref="Update"/> swap the row's caption back to the plain date the moment a day
+    /// rollover ends the "done for now" state, even when the next date string itself is unchanged.</remarks>
+    public bool IsAheadOfSchedule
+    {
+        get => _isAheadOfSchedule;
+        private set
+        {
+            if (SetProperty(ref _isAheadOfSchedule, value))
+                OnPropertyChanged(nameof(ScheduleCaption));
+        }
+    }
+    private bool _isAheadOfSchedule;
 
     /// <summary>
     /// True while this row's task is the one open in the detail panel. Drives the row's selection

@@ -291,6 +291,22 @@ public partial class TaskListViewModel : ObservableObject
         _navNotifier.NotifyCountsChanged();
     }
 
+    /// <summary>
+    /// The wall-clock delay from now until just after the next local day boundary (00:00 in the list's own
+    /// time zone, plus a one-second cushion so a timer firing on the tick lands inside the new day). The
+    /// page arms a one-shot refresh at this delay so a day rollover while the app stays open re-evaluates
+    /// every date-relative state: 오늘/overdue membership, the Logbook's 오늘/어제 headings, and — the reason
+    /// this exists — an "ahead of schedule" recurring row whose next cycle has now come due, which then
+    /// reloads unticked. Computed against the same clock + zone the index uses for "today", so the refresh
+    /// fires exactly when the index's <c>IsAheadOfSchedule</c> comparison flips.
+    /// </summary>
+    public TimeSpan DelayUntilNextDay()
+    {
+        var nowLocal = TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone);
+        var nextMidnight = nowLocal.Date.AddDays(1); // local 00:00 tomorrow
+        return (nextMidnight - nowLocal.DateTime) + TimeSpan.FromSeconds(1);
+    }
+
     /// <summary>Reloads the list from the index for the current mode. Completed work is excluded from the
     /// open list and surfaced separately: a collapsible "완료한 일" section (Today / group / tag), the
     /// priority buckets (open only), or the Logbook's date sections.</summary>

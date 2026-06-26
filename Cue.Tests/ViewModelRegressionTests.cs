@@ -191,6 +191,62 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task AheadOfScheduleRow_ReadsAsCompletedPlusNextDate_NotMerelyScheduledForThatDate()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+        // Plain open row: the caption is just the date.
+        Assert.Equal(row.Schedule, row.ScheduleCaption);
+
+        // Perform it into the future — now ahead of schedule (ticked + dimmed, dated tomorrow).
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        await vm.FinalizeCompletionAsync(row);
+        row = Assert.Single(vm.Tasks);
+        Assert.True(row.IsAheadOfSchedule);
+
+        // The caption now spells out that this cycle is done and points the date at the next one, so the
+        // ticked row never reads as merely scheduled for tomorrow.
+        Assert.StartsWith("이번 할 일 완료됨", row.ScheduleCaption);
+        Assert.Contains("다음:", row.ScheduleCaption);
+        Assert.Contains(row.Schedule, row.ScheduleCaption); // the next due date is the row's WhenDate string
+
+        // Un-ticking rolls back to today's due cycle — the caption returns to the plain date.
+        row.SetCompletedSilently(false);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+        row = Assert.Single(vm.Tasks);
+        Assert.False(row.IsAheadOfSchedule);
+        Assert.Equal(row.Schedule, row.ScheduleCaption);
+    }
+
+    [Fact]
+    public async Task DelayUntilNextDay_IsTheTimeToTheNextLocalMidnight_PlusACushion()
+    {
+        using var temp = new TempDirectory();
+        // Noon UTC with a UTC list zone → next local midnight is 12h away.
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        Assert.Equal(TimeSpan.FromHours(12) + TimeSpan.FromSeconds(1), vm.DelayUntilNextDay());
+    }
+
+    [Fact]
     public async Task RecurringList_FutureScheduledButNeverPerformed_ReadsAsOpenNotAheadOfSchedule()
     {
         using var temp = new TempDirectory();

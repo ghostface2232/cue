@@ -73,6 +73,11 @@ public sealed partial class TaskListPage : Page
     // Cleared after the first scroll so paging older cycles in doesn't snap back to the head.
     private bool _timelineScrollToEndPending;
 
+    // One-shot timer that fires just after the next local midnight to refresh the list, so a day rollover
+    // while the app stays open re-evaluates date-relative state — notably unticking an "ahead of schedule"
+    // recurring row once its next cycle has come due. Re-armed for the following midnight on each fire.
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _dayRolloverTimer;
+
     public TaskListPage()
     {
         ViewModel = App.Services.GetRequiredService<TaskListViewModel>();
@@ -100,6 +105,12 @@ public sealed partial class TaskListPage : Page
         ViewModel.CompletionAcknowledged -= OnCompletionAcknowledged;
         foreach (var timer in _ackTimers.Values) timer.Stop();
         _ackTimers.Clear();
+        if (_dayRolloverTimer is not null)
+        {
+            _dayRolloverTimer.Stop();
+            _dayRolloverTimer.Tick -= OnDayRolloverTick;
+            _dayRolloverTimer = null;
+        }
         base.OnNavigatedFrom(e);
     }
 
@@ -118,7 +129,28 @@ public sealed partial class TaskListPage : Page
             }
             ViewModel.SetNavigation(navigation);
             await ViewModel.LoadCommand.ExecuteAsync(null);
+            ScheduleDayRollover();
         });
+    }
+
+    /// <summary>Arms a one-shot refresh for just after the next local midnight. On fire it reloads the list
+    /// — re-evaluating 오늘/overdue membership, Logbook day headings, and an "ahead of schedule" recurring
+    /// row whose next cycle has now come due (it returns unticked) — then re-arms for the following day.</summary>
+    private void ScheduleDayRollover()
+    {
+        _dayRolloverTimer ??= DispatcherQueue.CreateTimer();
+        _dayRolloverTimer.IsRepeating = false;
+        _dayRolloverTimer.Interval = ViewModel.DelayUntilNextDay();
+        _dayRolloverTimer.Tick -= OnDayRolloverTick;
+        _dayRolloverTimer.Tick += OnDayRolloverTick;
+        _dayRolloverTimer.Start();
+    }
+
+    private async void OnDayRolloverTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        sender.Stop();
+        await RunSafelyAsync(ViewModel.LoadAsync);
+        ScheduleDayRollover(); // arm the next midnight
     }
 
     private async void QuickAdd_KeyDown(object sender, KeyRoutedEventArgs e)
