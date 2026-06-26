@@ -87,7 +87,7 @@ typography:
     fontFamily: Pretendard JP SemiBold
     fontSize: 17px
     fontWeight: 600
-  list-meta:             # main list row meta line (date · time) and right-edge group/tag chips
+  list-meta:             # main list row meta line (date · time)
     fontFamily: Pretendard JP
     fontSize: 13px
     fontWeight: 400
@@ -159,7 +159,7 @@ components:
     textColor: "{colors.priority-p1}"          # saturated text via PriorityToBrush
     typography: "{typography.pill}"            # 12px label
     rounded: "{rounded.chip}"                  # 8px squircle, matching the group/tag chips beside it
-    height: 26px                               # {CueChipHeight}, shared by every chip on the row
+    height: 22px                               # {CueChipHeight}, shared by every chip on the row
     padding: "9px 0"                           # {CuePadChip}, horizontal-only; height is the token, not content
   # --- Quick-add (omnibar pill) ---
   quick-add:
@@ -310,9 +310,9 @@ The typeface is **Pretendard JP** (Korean-first). The static OTFs ship one weigh
 | `{typography.row}` | Regular | 15 | Quick-add / text-input base (`{CueFontRow}`) |
 | `{typography.row-sub}` | Regular | 14 | Checklist item rows (`CueFontRowSub`) |
 | `{typography.checklist-item-title}` | Medium | 14 | Checklist item title (editable) |
-| `{typography.list-meta}` | Regular | 13 | Main list row meta (date · time) + group/tag chip names (`MetadataTextStyle`) |
+| `{typography.list-meta}` | Regular | 13 | Main list row meta (date · time) (`MetadataTextStyle`) |
 | `{typography.secondary}` | Regular | 12 | Settings captions, secondary labels (`SettingsCaptionStyle`) |
-| `{typography.pill}` | Regular | 12 | Priority pill label |
+| `{typography.pill}` | Regular | 12 | Priority / group / tag chip label |
 
 ### Color hierarchy
 Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quietest labels (group/tag headers) `{colors.text-tertiary}`.
@@ -396,8 +396,8 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 
 ### Task row
 - Layout: `[circular check] [title … priority pill] … [group / tag chips]`. Three columns (check Auto · title+meta star · trailing chips Auto), `{gap.lg}` (16) apart, with a one-line schedule row below the title. The trailing chips are **right-aligned and stacked vertically** (group on top, then each tag) in the wide layout; the schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time, while an all-day (종일) task shows the date alone.
-- **Group and tag are both rendered as squircle chips** (rounded rectangles, radius `{rounded.chip}` = 8, a 12px glyph + 13px name), so the two read as one consistent family rather than two ad-hoc layouts. A fixed squircle radius (not a half-height pill) keeps a short chip — icon + 2 chars — reading as a clean rounded rect; a pill radius would make the rounded ends meet on a narrow chip and look like an oval.
-- **All chip/pill elements on a row share one fixed height** (`CueChipHeight` = 26) with **horizontal-only padding** (`CuePadChip` = `9,0`) and content vertically centered. The group chip, every tag chip, and the priority pill therefore line up exactly and never distort, regardless of glyph vs. text or differing font sizes — height is purely the token, not a function of content. (`VerticalAlignment="Center"` on each chip keeps it from being stretched by a taller sibling.) The **group chip** is a neutral gray pill (`CueChipNeutralFillBrush`, a theme-split overlay) with the group's own glyph + name in secondary text. A **tag chip** is tinted with the tag's *own* color (`HexToTint`, ~17% — the same tint strength as the priority pill) and carries the tag glyph (`E8EC`) + name in that saturated color (`HexToBrush`). Each chunk hides itself when the task has no group / no tags.
+- **Group and tag are both rendered as squircle chips** (rounded rectangles, radius `{rounded.chip}` = 8, a 12px glyph + 12px name), so the two read as one consistent family rather than two ad-hoc layouts. A fixed squircle radius (not a half-height pill) keeps a short chip — icon + 2 chars — reading as a clean rounded rect; a pill radius would make the rounded ends meet on a narrow chip and look like an oval.
+- **All chip/pill elements on a row share one fixed height** (`CueChipHeight` = 22) with **horizontal-only padding** (`CuePadChip` = `9,0`) and content vertically centered. The group chip, every tag chip, and the priority pill therefore line up exactly and never distort, regardless of glyph vs. text or differing font sizes — height is purely the token, not a function of content. (`VerticalAlignment="Center"` on each chip keeps it from being stretched by a taller sibling.) The **group chip** is a neutral gray pill (`CueChipNeutralFillBrush`, a theme-split overlay) with the group's own glyph + name in secondary text. A **tag chip** is tinted with the tag's *own* color (`HexToTint`, ~17% — the same tint strength as the priority pill) and carries the tag glyph (`E8EC`) + name in that saturated color (`HexToBrush`). Each chunk hides itself when the task has no group / no tags.
 - A **repeating task** carries a small repeat glyph (Segoe Fluent `RepeatAll`, `E8EE`, secondary text tone) in the schedule row, after the date. It is a quiet informational mark — no accent, no fill — mirroring the recurrence flag the index derives from the task's rule (the rule itself stays in the file).
 - Selected → a **persistent row fill in the hover tone** (`{colors.hover-fill}`) spanning the row + checklist, so the open task reads as selected even when the pointer is elsewhere — the highlight area alone carries the selection, with **no separate accent bar/pill**. Background hover transitions over 83ms. Radius `{rounded.md}`.
 - Rows are **uniform height regardless of content**: a `MinHeight` of 60 with vertically-centered content means a bare title row keeps the same presence as one with a schedule and chips, and the title centers when there is no second line. Generous padding (`16,12`) and a SemiBold title (`{typography.list-title}`, 17) over a 13px meta line sharpen the hierarchy. **No row separators** — rows are divided by whitespace (the per-row margin) alone, not lines.

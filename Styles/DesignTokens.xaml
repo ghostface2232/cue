@@ -113,7 +113,7 @@
     <!-- Every chip/pill element on a task row (group, tag, priority) shares ONE fixed height with
          content vertically centered, so they line up exactly regardless of glyph/font differences.
          Horizontal-only padding keeps the height purely a function of this token. -->
-    <x:Double x:Key="CueChipHeight">26</x:Double>
+    <x:Double x:Key="CueChipHeight">22</x:Double>
     <Thickness x:Key="CuePadChip">9,0</Thickness>
 
     <!-- Type scale (page 28 → section 16 → row 15 → secondary 12) -->

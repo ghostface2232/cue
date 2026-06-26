@@ -37,7 +37,7 @@
                 CornerRadius="{StaticResource CueRadiusChip}">
                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
                     <FontIcon FontSize="12" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
-                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontSecondary}" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -228,7 +228,7 @@
                                     Background="{x:Bind Priority, Converter={StaticResource PriorityToTint}, Mode=OneWay}"
                                     CornerRadius="{StaticResource CueRadiusChip}"
                                     Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                                    <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}" />
+                                    <TextBlock VerticalAlignment="Center" FontSize="{StaticResource CueFontSecondary}" Foreground="{x:Bind Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}" Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}" />
                                 </Border>
                             </StackPanel>
                             <!-- Schedule + recurrence line; hidden when the task carries no date. -->
@@ -259,7 +259,7 @@
                                     Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                     <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
                                         <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
-                                        <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontSecondary}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Border>
                                 <ItemsControl ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TagChipTemplate}">
@@ -290,7 +290,7 @@
                                 Visibility="{x:Bind HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
                                     <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind GroupGlyph, Mode=OneWay}" />
-                                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontListMeta}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock MaxWidth="160" FontSize="{StaticResource CueFontSecondary}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </Border>
                             <ItemsControl HorizontalAlignment="Right" ItemsSource="{x:Bind Tags, Mode=OneWay}" ItemTemplate="{StaticResource TagChipTemplate}">
