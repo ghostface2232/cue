@@ -785,6 +785,18 @@ public sealed partial class TaskListPage : Page
         return (min, max);
     }
 
+    // 반복 종료 + 삭제 share one row. A recurring task gives the left column to 반복 종료 and seats 삭제
+    // in the right column; otherwise the left column collapses and 삭제 spans both columns to keep its
+    // original full-width footprint. EndSeriesButton's own visibility is bound to IsRecurring in XAML.
+    private void UpdateRecurringActionsLayout()
+    {
+        var recurring = ViewModel.Detail.IsRecurring;
+        RecurringActionsGrid.ColumnDefinitions[0].Width =
+            recurring ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        Grid.SetColumn(DeleteTaskButton, recurring ? 1 : 0);
+        Grid.SetColumnSpan(DeleteTaskButton, recurring ? 1 : 2);
+    }
+
     private void UpdateDetailResponsiveLayout()
     {
         var width = DetailPanel.ActualWidth > 0 ? DetailPanel.ActualWidth : DetailPanel.Width;
@@ -1333,6 +1345,11 @@ public sealed partial class TaskListPage : Page
 
     private void Detail_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(TaskDetailViewModel.IsRecurring) or nameof(TaskDetailViewModel.IsOpen))
+        {
+            UpdateRecurringActionsLayout();
+        }
+
         if (e.PropertyName == nameof(TaskDetailViewModel.CurrentSaveStatus))
         {
             var detail = ViewModel.Detail;

@@ -116,7 +116,7 @@
                          "할 일을 완료했습니다" + an 실행 취소 (undo) button, then the View folds the row away. A
                          repeating completion does not use this bar — it stays ticked + dimmed in place. -->
                     <Grid
-                        MinHeight="60"
+                        MinHeight="80"
                         Padding="16,12"
                         ColumnSpacing="{StaticResource CueGap16}"
                         Visibility="{x:Bind IsAcknowledging, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -216,7 +216,7 @@
                     <!-- Main row. Generous padding + a MinHeight so a bare title row keeps the same presence
                          as one with a schedule or chips; all content is vertically centered. -->
                     <Grid
-                        MinHeight="60"
+                        MinHeight="80"
                         Padding="16,12"
                         ColumnSpacing="{StaticResource CueGap16}"
                         Visibility="{x:Bind ShowNormalContent, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
@@ -251,6 +251,13 @@
                                     CornerRadius="{StaticResource CuePriorityDotRadius}"
                                     ToolTipService.ToolTip="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}"
                                     AutomationProperties.Name="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}"
+                                    Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
+                                <!-- Priority label: same size/tone as the schedule (date) caption, sitting
+                                     just right of the dot so importance reads as a word, not only a color. -->
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource MetadataTextStyle}"
+                                    Text="{x:Bind Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}"
                                     Visibility="{x:Bind HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
                             </StackPanel>
                             <!-- Schedule + recurrence line; hidden when the task carries no date. -->
@@ -326,7 +333,7 @@
                     </Grid>
 
                     <!-- Nested checklist (row 1 of the highlight grid), indented under the title. -->
-                    <Grid Grid.Row="1" Margin="52,0,16,8" Visibility="{x:Bind ShowChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                    <Grid Grid.Row="1" Margin="52,0,16,14" Visibility="{x:Bind ShowChecklist, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="1" />
                             <ColumnDefinition Width="*" />
@@ -1012,45 +1019,58 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 반복 종료 (end the series). Explicit action in place of any hidden gesture, shown
-                             only for a recurring task. "완료" is intentionally avoided here — that word means
-                             the current cycle; ending the series moves the whole task to 완료한 일. -->
-                        <Button
-                            x:Name="EndSeriesButton"
-                            Margin="4,2,8,4"
-                            Padding="10,9"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"
-                            Background="Transparent"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            Click="EndSeries_Click"
-                            CornerRadius="{StaticResource CueRadiusCard}"
-                            Visibility="{x:Bind ViewModel.Detail.IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
-                                <FontIcon FontSize="14" Glyph="&#xE7C1;" />
-                                <TextBlock Text="반복 종료" />
-                            </StackPanel>
-                        </Button>
+                        <!-- 반복 종료 + 할 일 삭제 share one row for a recurring task: 종료 on the left,
+                             삭제 on the right. For a non-recurring task 반복 종료 is gone, so the left
+                             column collapses and 삭제 spans the full width — that reflow is driven from
+                             Detail_PropertyChanged (UpdateRecurringActionsLayout); the XAML defaults to
+                             the collapsed/full-width state. -->
+                        <Grid x:Name="RecurringActionsGrid" Margin="4,2,8,4" ColumnSpacing="{StaticResource CueGap8}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="0" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                        <!-- Destructive action lives at the very bottom, set apart by its critical
-                             color (DESIGN error token). Soft-delete via DeletedAt, with confirmation. -->
-                        <Button
-                            x:Name="DeleteTaskButton"
-                            Margin="4,2,8,4"
-                            Padding="10,9"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"
-                            Background="Transparent"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            Click="DeleteTask_Click"
-                            CornerRadius="{StaticResource CueRadiusCard}">
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
-                                <FontIcon FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE74D;" />
-                                <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="할 일 삭제" />
-                            </StackPanel>
-                        </Button>
+                            <!-- 반복 종료 (end the series). Explicit action in place of any hidden gesture,
+                                 shown only for a recurring task. "완료" is intentionally avoided here — that
+                                 word means the current cycle; ending the series moves the whole task to 완료한 일. -->
+                            <Button
+                                x:Name="EndSeriesButton"
+                                Grid.Column="0"
+                                Padding="10,9"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="Transparent"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Click="EndSeries_Click"
+                                CornerRadius="{StaticResource CueRadiusCard}"
+                                Visibility="{x:Bind ViewModel.Detail.IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
+                                    <FontIcon FontSize="14" Glyph="&#xE7C1;" />
+                                    <TextBlock Text="반복 종료" />
+                                </StackPanel>
+                            </Button>
+
+                            <!-- Destructive action, set apart by its critical color (DESIGN error token).
+                                 Soft-delete via DeletedAt, with confirmation. -->
+                            <Button
+                                x:Name="DeleteTaskButton"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="2"
+                                Padding="10,9"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="Transparent"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Click="DeleteTask_Click"
+                                CornerRadius="{StaticResource CueRadiusCard}">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
+                                    <FontIcon FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE74D;" />
+                                    <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="할 일 삭제" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
