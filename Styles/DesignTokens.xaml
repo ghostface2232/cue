@@ -420,21 +420,14 @@
     </Style>
 
     <!-- Snackbar — the bottom transient notifications (autosave progress, save failure, off-screen
-         quick-add). A thin refinement over the stock InfoBar so the bars read as one calm floating WinUI
-         card rather than three ad-hoc strips: the app's 8px card radius, a comfortable max width so long
-         copy wraps instead of stretching the bar, and one fixed bottom-right placement inset by the page
-         padding. BasedOn the framework default keeps the InfoBar template (severity icon, close button,
-         and the live-region announcement screen readers rely on). Every call site stays Severity=
-         Informational so the palette is uniform; only the message and actions differ. Per DESIGN.md these
-         are true overlays, the one surface allowed elevation — the InfoBar's own border carries it over
-         the Mica backdrop. -->
-    <Style x:Key="CueSnackbarInfoBarStyle" TargetType="InfoBar" BasedOn="{StaticResource DefaultInfoBarStyle}">
-        <Setter Property="CornerRadius" Value="{StaticResource CueRadiusCard}" />
-        <Setter Property="MaxWidth" Value="440" />
-        <Setter Property="HorizontalAlignment" Value="Right" />
-        <Setter Property="VerticalAlignment" Value="Bottom" />
-        <Setter Property="Margin" Value="{StaticResource CuePadPage}" />
-    </Style>
+         quick-add). These share one calm floating-card look (the app's 8px card radius, a max width so long
+         copy wraps instead of stretching the bar, and a fixed bottom-right placement inset by the page
+         padding), applied as direct properties on each InfoBar instance rather than a shared Style: the
+         framework default InfoBar style key isn't present across all WinUI versions, and an explicit Style
+         without BasedOn would strip the InfoBar template (severity icon, close button, live-region
+         announcement) — the same trap the settings combo/toggle call out. Instance properties leave the
+         template intact. Only the shared max width needs a token; radius/margin reuse existing ones. -->
+    <x:Double x:Key="CueSnackbarMaxWidth">440</x:Double>
 
     <!-- Things-3-style circular completion check
          Outline circle (unchecked) → filled accent circle + checkmark (checked), with a satisfying

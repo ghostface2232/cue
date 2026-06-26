@@ -175,13 +175,19 @@
             <Frame x:Name="NavFrame" />
         </NavigationView>
 
-        <!-- Bottom snackbars. All three share CueSnackbarInfoBarStyle (8px card radius, max width, fixed
-             bottom-right placement) so autosave progress, save failure, and the off-screen quick-add notice
+        <!-- Bottom snackbars. All three carry the same floating-card properties (8px card radius, max
+             width, fixed bottom-right placement) — set per instance rather than via a shared Style, since
+             the default InfoBar style key isn't present on every WinUI version and a no-BasedOn Style would
+             strip the template — so autosave progress, save failure, and the off-screen quick-add notice
              read as one calm WinUI surface. -->
         <InfoBar
             x:Name="GlobalSavingInfoBar"
             Grid.Row="1"
-            Style="{StaticResource CueSnackbarInfoBarStyle}"
+            CornerRadius="{StaticResource CueRadiusCard}"
+            MaxWidth="{StaticResource CueSnackbarMaxWidth}"
+            Margin="{StaticResource CuePadPage}"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Right"
             IsOpen="False"
             Severity="Informational"
             Message="변경 사항을 저장하고 있습니다…"
@@ -191,7 +197,11 @@
         <InfoBar
             x:Name="GlobalErrorInfoBar"
             Grid.Row="1"
-            Style="{StaticResource CueSnackbarInfoBarStyle}"
+            CornerRadius="{StaticResource CueRadiusCard}"
+            MaxWidth="{StaticResource CueSnackbarMaxWidth}"
+            Margin="{StaticResource CuePadPage}"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Right"
             IsOpen="False"
             Severity="Informational"
             Title="저장 실패"
@@ -221,7 +231,11 @@
         <InfoBar
             x:Name="OffscreenTaskInfoBar"
             Grid.Row="1"
-            Style="{StaticResource CueSnackbarInfoBarStyle}"
+            CornerRadius="{StaticResource CueRadiusCard}"
+            MaxWidth="{StaticResource CueSnackbarMaxWidth}"
+            Margin="{StaticResource CuePadPage}"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Right"
             IsOpen="False"
             Severity="Informational"
             Message="오늘이 아닌 다른 날의 할 일이 만들어졌어요."
