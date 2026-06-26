@@ -267,6 +267,82 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task TurningOnRecurrenceInThePanel_FillsTheTimelineAtOnce_NoRecordNeeded()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var today = new DateOnly(2026, 6, 22);
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        // A plain, non-recurring task with a concrete date — no recurrence, so no strip on open.
+        var task = new TaskItem { Title = "운동", When = ScheduledWhen.On(anchor) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.False(vm.Detail.IsRecurring);
+        Assert.Empty(vm.Detail.Timeline);
+
+        // Pick 매일 (FREQ=DAILY) in the 반복 picker — the timeline must fill immediately, before any save or
+        // first record: a 현재 pip on today plus projected 예정 days on the rule's grid.
+        vm.Detail.SelectedRecurrence = vm.Detail.RecurrenceOptions.Single(o => o.Rule == "FREQ=DAILY");
+
+        Assert.True(vm.Detail.IsRecurring);
+        Assert.Equal(OccurrencePipKind.Current, vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Kind);
+        Assert.Equal(today, vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Date);
+        var futures = vm.Detail.Timeline.Where(p => p.Kind == OccurrencePipKind.Future).Select(p => p.Date).ToList();
+        Assert.NotEmpty(futures);
+        Assert.Equal(today.AddDays(1), futures[0]);
+
+        // Switching the cycle to 매주 (FREQ=WEEKLY) re-grids the projected dates at once — weekly, not daily.
+        vm.Detail.SelectedRecurrence = vm.Detail.RecurrenceOptions.Single(o => o.Rule == "FREQ=WEEKLY");
+        var weekly = vm.Detail.Timeline.Where(p => p.Kind == OccurrencePipKind.Future).Select(p => p.Date).ToList();
+        Assert.Equal(today.AddDays(7), weekly[0]);
+
+        // Turning 반복 off (반복 안 함) clears the strip immediately.
+        vm.Detail.SelectedRecurrence = vm.Detail.RecurrenceOptions.Single(o => o.Rule is null);
+        Assert.False(vm.Detail.IsRecurring);
+        Assert.Empty(vm.Detail.Timeline);
+
+        await vm.Detail.FlushAsync(); // drain the queued autosaves before the temp dir is torn down
+    }
+
+    [Fact]
+    public async Task ChangingTheDateOfARecurringTaskInThePanel_ReGridsTheTimelineAtOnce()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 22, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.Equal(new DateOnly(2026, 6, 22), vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Date);
+
+        // Move the task's date forward — the head (현재) and the whole projected future shift with it at once.
+        vm.Detail.WhenDate = new DateTimeOffset(2026, 6, 25, 0, 0, 0, TimeSpan.Zero);
+
+        Assert.Equal(new DateOnly(2026, 6, 25), vm.Detail.Timeline[vm.Detail.CurrentCycleIndex].Date);
+        var futures = vm.Detail.Timeline.Where(p => p.Kind == OccurrencePipKind.Future).Select(p => p.Date).ToList();
+        Assert.Equal(new DateOnly(2026, 6, 26), futures[0]);
+
+        await vm.Detail.FlushAsync(); // drain the queued autosaves before the temp dir is torn down
+    }
+
+    [Fact]
     public async Task CompletingATaskLeavesADifferentOpenDetailPanelAlone()
     {
         using var temp = new TempDirectory();

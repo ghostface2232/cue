@@ -153,6 +153,10 @@ public partial class TaskDetailViewModel : ObservableObject
     // exact original anchor instead of re-anchoring it (which would shift the series) on every save.
     private RecurrenceRule? _originalRecurrence;
     private string? _loadedRecurrenceRule;
+    // Whether the open series is already completed/ended (반복 종료 or exhausted). A live timeline preview
+    // only reshapes an active series' head + future; for a completed one the loaded strip (terminal 종료 head,
+    // no future) is left exactly as LoadTimelineAsync built it.
+    private bool _isCompleted;
     private bool _isLoading;
 
     // Coalesces a single user action that touches several properties into one save. Distinct from
@@ -321,6 +325,7 @@ public partial class TaskDetailViewModel : ObservableObject
         OnPropertyChanged(nameof(IsWhenEditorVisible));
         OnPropertyChanged(nameof(CanAddWhen));
         resume();
+        RebuildTimelinePreview();
     }
 
     partial void OnIsWhenAllDayChanged(bool value)
@@ -338,6 +343,7 @@ public partial class TaskDetailViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(ShowWhenTime));
         resume();
+        RebuildTimelinePreview();
     }
 
     partial void OnWhenDateChanged(DateTimeOffset? value)
@@ -359,9 +365,16 @@ public partial class TaskDetailViewModel : ObservableObject
             SelectedWhenOption = FindOption(WhenEditorMode.Unscheduled);
         }
         resume();
+        // Moving the task's date re-anchors the rule, so the head pip and the whole projected future shift
+        // to the new grid the moment the date changes — no save round-trip, no first record needed.
+        RebuildTimelinePreview();
     }
 
-    partial void OnWhenTimeChanged(TimeSpan? value) => RequestAutoSave();
+    partial void OnWhenTimeChanged(TimeSpan? value)
+    {
+        RequestAutoSave();
+        RebuildTimelinePreview();
+    }
     partial void OnSelectedPriorityChanged(Priority value) => RequestAutoSave();
     partial void OnSelectedTaskGroupChanged(TaskGroupEditorOption? value) => RequestAutoSave();
     partial void OnSelectedRecurrenceChanged(RecurrenceEditorOption? value)
@@ -373,6 +386,9 @@ public partial class TaskDetailViewModel : ObservableObject
         if (!_isLoading)
             IsRecurring = value?.Rule is not null;
         RequestAutoSave();
+        // Turning 반복 on (or switching its cycle) fills the 현재 및 예정 일정 timeline at once; turning it
+        // off clears the strip. Computed from the live selection + 일시, so it never waits for a first record.
+        RebuildTimelinePreview();
     }
 
     partial void OnSelectedWhenHourChanged(TimeOption? value) => SyncWhenTimeFromParts();
@@ -419,6 +435,7 @@ public partial class TaskDetailViewModel : ObservableObject
         // The recurrence timeline: a recurring task (open or already-ended) shows its cycle history; a
         // plain task shows none. The most recent page loads now; older cycles page in on demand.
         IsRecurring = task.Recurrence is not null;
+        _isCompleted = task.IsCompleted;
         _timelineWindow = TimelinePageSize;
         await LoadTimelineAsync(task);
 
@@ -774,6 +791,47 @@ public partial class TaskDetailViewModel : ObservableObject
         var count = Math.Clamp(_visibleFutureCount, 0, _upcomingDates.Count);
         for (var i = 0; i < count; i++)
             Timeline.Add(new OccurrencePipViewModel(null, _upcomingDates[i], OccurrencePipKind.Future, null));
+    }
+
+    /// <summary>
+    /// Live-reshapes 현재 및 예정 일정 from the panel's <i>current</i> 반복 + 일시 — no save round-trip and
+    /// no recorded cycle required — so the timeline fills the instant 반복 is turned on (or created
+    /// recurring) and re-grids the moment its cycle or date changes. Recorded history pips (완료/미수행,
+    /// owned by the series and unaffected by an unsaved edit) are kept in place; only the live head (현재)
+    /// and the projected future (예정) after it are recomputed. Turning 반복 off empties the strip. A no-op
+    /// while OpenAsync is filling the panel, and for an already-completed/ended series (whose loaded strip —
+    /// terminal 종료 head, no future — must stand). The projection runs through the recurrence service so
+    /// RRULE evaluation stays in the storage layer (invariant 9).
+    /// </summary>
+    private void RebuildTimelinePreview()
+    {
+        if (_isLoading || _isCompleted) return;
+
+        // Drop the live head and any projected future from the tail, preserving the recorded-history pips
+        // (the only kinds that carry an occurrence id) — those belong to the series, not this edit.
+        while (Timeline.Count > 0 && Timeline[^1].Kind is OccurrencePipKind.Current or OccurrencePipKind.Future)
+            Timeline.RemoveAt(Timeline.Count - 1);
+        _upcomingDates = Array.Empty<DateOnly>();
+
+        var when = BuildWhen();
+        var recurrence = IsRecurring ? BuildRecurrence(when) : null;
+        if (recurrence is null)
+        {
+            // 반복 안 함 — there is no live head or future. Any recorded pips also lose their meaning without
+            // a series, so the strip clears entirely (it is hidden anyway via IsRecurring).
+            Timeline.Clear();
+            CurrentCycleIndex = 0;
+            return;
+        }
+
+        var headDate = when.Date is { } date
+            ? DateOnly.FromDateTime(date.ToLocal().DateTime)
+            : DateOnly.FromDateTime(recurrence.Anchor.ToLocal().DateTime);
+        Timeline.Add(new OccurrencePipViewModel(null, headDate, OccurrencePipKind.Current, null));
+        CurrentCycleIndex = Timeline.Count - 1;
+
+        _upcomingDates = _recurrence.ProjectUpcomingOccurrences(recurrence, when, MaxFutureProjection);
+        AppendFuturePips();
     }
 
     /// <summary>Sets how many future (예정) pips trail the current cycle — the page drives this from the

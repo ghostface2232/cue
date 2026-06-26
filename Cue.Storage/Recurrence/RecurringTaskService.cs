@@ -165,14 +165,23 @@ public sealed class RecurringTaskService : IRecurringTaskService
         if (task is null || task.IsDeleted || task.IsCompleted || task.Recurrence is null)
             return Array.Empty<DateOnly>();
 
+        return ProjectUpcomingOccurrences(task.Recurrence, task.When, count);
+    }
+
+    public IReadOnlyList<DateOnly> ProjectUpcomingOccurrences(RecurrenceRule recurrence, ScheduledWhen currentWhen, int count)
+    {
+        ArgumentNullException.ThrowIfNull(recurrence);
+        if (count <= 0)
+            return Array.Empty<DateOnly>();
+
         // Walk the rule forward from the current cycle, collecting each next local date. Every step seeds
         // the search from the previous occurrence's own instant, so the dates stay on the rule's grid
         // (e.g. every Monday stays a Monday) rather than drifting off the clock.
-        var cursor = task.When.Date?.Utc ?? task.Recurrence.Anchor.Utc;
+        var cursor = currentWhen.Date?.Utc ?? recurrence.Anchor.Utc;
         var dates = new List<DateOnly>(count);
         for (var i = 0; i < count; i++)
         {
-            var next = RecurrenceCalculator.Next(task.Recurrence, cursor);
+            var next = RecurrenceCalculator.Next(recurrence, cursor);
             if (next is null)
                 break; // series exhausted (UNTIL/COUNT) — no further cycle to project
             dates.Add(DateOnly.FromDateTime(next.Value.ToLocal().DateTime));

@@ -528,6 +528,48 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ProjectUpcoming_ComputesFromTheGivenRuleAndWhen_WithoutTheStore()
+    {
+        // The detail panel's live preview: project straight from an in-memory rule + When, never reading a
+        // saved task. A weekly rule from a Monday stays on Mondays, strictly after the current cycle.
+        var service = new RecurringTaskService(new ThrowingStore());
+
+        var upcoming = service.ProjectUpcomingOccurrences(
+            new RecurrenceRule("FREQ=WEEKLY", OnDayZoned(Today)),
+            OnDay(Today),
+            3);
+
+        Assert.Equal(new[] { Today.AddDays(7), Today.AddDays(14), Today.AddDays(21) }, upcoming);
+    }
+
+    [Fact]
+    public void ProjectUpcoming_FallsBackToTheAnchor_WhenTheWhenHasNoDate()
+    {
+        // A dateless recurring task projects from the rule's own anchor instead of a missing When.
+        var service = new RecurringTaskService(new ThrowingStore());
+
+        var upcoming = service.ProjectUpcomingOccurrences(
+            Daily(Today),
+            ScheduledWhen.Unscheduled,
+            2);
+
+        Assert.Equal(new[] { Today.AddDays(1), Today.AddDays(2) }, upcoming);
+    }
+
+    [Fact]
+    public void ProjectUpcoming_StopsWhenExhausted_AndReturnsNothingForNonPositiveCount()
+    {
+        var service = new RecurringTaskService(new ThrowingStore());
+
+        // COUNT=3 from the anchor leaves only two cycles after the current one — never invents dates.
+        Assert.Equal(
+            new[] { Today.AddDays(1), Today.AddDays(2) },
+            service.ProjectUpcomingOccurrences(new RecurrenceRule("FREQ=DAILY;COUNT=3", OnDayZoned(Today)), OnDay(Today), 10));
+
+        Assert.Empty(service.ProjectUpcomingOccurrences(Daily(Today), OnDay(Today), 0));
+    }
+
+    [Fact]
     public async Task UndoCompletion_RollsTheLatestCompletionBackToTheCurrentCycle()
     {
         var root = NewRoot();
@@ -650,5 +692,17 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
 
         public Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default)
             where T : RecordBase => _inner.DeleteAsync<T>(id, cancellationToken);
+    }
+
+    /// <summary>A store that faults on any access — proves <see cref="RecurringTaskService.ProjectUpcomingOccurrences"/>
+    /// computes purely from its arguments and never reaches the store.</summary>
+    private sealed class ThrowingStore : ITaskStore
+    {
+        private static InvalidOperationException Boom() => new("ProjectUpcomingOccurrences must not touch the store.");
+
+        public Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : RecordBase => throw Boom();
+        public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase => throw Boom();
+        public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase => throw Boom();
+        public Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase => throw Boom();
     }
 }

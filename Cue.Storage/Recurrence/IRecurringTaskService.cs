@@ -71,6 +71,18 @@ public interface IRecurringTaskService
     Task<IReadOnlyList<DateOnly>> GetUpcomingOccurrencesAsync(Guid taskId, int count, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The next <paramref name="count"/> scheduled cycles strictly after <paramref name="currentWhen"/>,
+    /// projected directly from <paramref name="recurrence"/> and that When — as local dates oldest-first.
+    /// Unlike <see cref="GetUpcomingOccurrencesAsync"/> this reads nothing from the store: it lets a caller
+    /// (the detail panel) preview 현재 및 예정 일정 the moment 반복 is turned on or its cycle/date is
+    /// changed, before the edit is even saved. Falls back to the rule's anchor when <paramref name="currentWhen"/>
+    /// carries no concrete date. Fewer than <paramref name="count"/> (or none) when the rule is exhausted
+    /// (UNTIL/COUNT) or can't be evaluated; empty for a non-positive count. Keeps RRULE evaluation in the
+    /// storage layer (invariant 9) so a view model never touches Ical.Net. Pure — writes nothing.
+    /// </summary>
+    IReadOnlyList<DateOnly> ProjectUpcomingOccurrences(RecurrenceRule recurrence, ScheduledWhen currentWhen, int count);
+
+    /// <summary>
     /// Undoes the most recent completion of a recurring series: rolls the series back so the cycle the
     /// <paramref name="occurrenceId"/> record stands for becomes the live current cycle again — open and
     /// incomplete, with its frozen checklist state restored — and tombstones that occurrence record.
