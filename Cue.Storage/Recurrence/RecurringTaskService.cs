@@ -143,16 +143,15 @@ public sealed class RecurringTaskService : IRecurringTaskService
             await tx.SaveAsync(task, ct).ConfigureAwait(false);
         }, cancellationToken);
 
-    public Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, CancellationToken cancellationToken = default)
+    public Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, DateTimeOffset? completedAt = null, CancellationToken cancellationToken = default)
         => _store.MutateAsync<RecurrenceOccurrence>(occurrenceId, occurrence =>
         {
             if (occurrence.Status == status)
                 return false; // nothing to persist
             occurrence.Status = status;
             // Editing a recorded cycle never touches the series' When, so the next scheduled cycle is
-            // unaffected. Clear the completion instant when a cycle is reclassified away from Completed.
-            if (status != OccurrenceStatus.Completed)
-                occurrence.CompletedAt = null;
+            // unaffected. Stamp the completion instant when reclassifying to Completed; clear it otherwise.
+            occurrence.CompletedAt = status == OccurrenceStatus.Completed ? completedAt : null;
             return true;
         }, cancellationToken);
 

@@ -429,13 +429,23 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         await service.CompleteAsync(task.Id, Now);
 
         var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
+        Assert.NotNull(occurrence.CompletedAt); // Completed by service.CompleteAsync
         var scheduleBefore = WhenDay((await store.GetAsync<TaskItem>(task.Id))!);
 
+        // 1. Move Completed -> Missed (clears CompletedAt)
         await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Missed);
 
         var edited = await store.GetAsync<RecurrenceOccurrence>(occurrence.Id);
         Assert.Equal(OccurrenceStatus.Missed, edited!.Status);
         Assert.Null(edited.CompletedAt); // cleared away from Completed
+
+        // 2. Move Missed -> Completed (sets CompletedAt to provided timestamp)
+        var newCompletionTime = Now.AddHours(1);
+        await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Completed, completedAt: newCompletionTime);
+
+        var completedAgain = await store.GetAsync<RecurrenceOccurrence>(occurrence.Id);
+        Assert.Equal(OccurrenceStatus.Completed, completedAgain!.Status);
+        Assert.Equal(newCompletionTime, completedAgain.CompletedAt);
 
         // Editing history must not move the series' next scheduled cycle.
         Assert.Equal(scheduleBefore, WhenDay((await store.GetAsync<TaskItem>(task.Id))!));

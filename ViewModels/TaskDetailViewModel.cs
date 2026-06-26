@@ -977,12 +977,13 @@ public partial class TaskDetailViewModel : ObservableObject
     public Task<RecurrenceOccurrence?> GetOccurrenceAsync(Guid occurrenceId)
         => _store.GetAsync<RecurrenceOccurrence>(occurrenceId);
 
-    /// <summary>Re-classifies one past cycle from its flyout (완료/건너뜀/미수행) and rebuilds the timeline.
+    /// <summary>Re-classifies one past cycle from its flyout (완료/미수행) and rebuilds the timeline.
     /// Editing history never moves the series' next scheduled cycle, so only the strip refreshes — the
     /// open lists are untouched.</summary>
     public async Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status)
     {
-        await _recurrence.UpdateOccurrenceStatusAsync(occurrenceId, status);
+        var completedAt = status == OccurrenceStatus.Completed ? _clock.GetUtcNow() : (DateTimeOffset?)null;
+        await _recurrence.UpdateOccurrenceStatusAsync(occurrenceId, status, completedAt);
         if (_taskId is { } id && await _store.GetAsync<TaskItem>(id) is { } task)
             await LoadTimelineAsync(task);
     }

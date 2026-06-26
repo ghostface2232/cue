@@ -59,7 +59,11 @@ public interface IRecurringTaskService
     /// correction to history leaves the next scheduled cycle exactly where it was. A no-op if the
     /// occurrence is missing or deleted.
     /// </summary>
-    Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, CancellationToken cancellationToken = default);
+    /// <param name="completedAt">
+    /// The completion instant to record when <paramref name="status"/> is
+    /// <see cref="OccurrenceStatus.Completed"/>. Ignored (and cleared) for any other status.
+    /// </param>
+    Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, DateTimeOffset? completedAt = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The next <paramref name="count"/> scheduled cycles strictly after the recurring task's current
