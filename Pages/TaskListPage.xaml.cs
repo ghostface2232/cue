@@ -95,6 +95,17 @@ public sealed partial class TaskListPage : Page
         // the in-row moment (a terminal completion's undo bar + fold, or a repeating one's settle in place).
         ViewModel.CompletionAcknowledged += OnCompletionAcknowledged;
         ViewModel.Detail.PropertyChanged += Detail_PropertyChanged;
+        // Tag chip colors are darkened for the Light theme by a converter that reads the theme once when
+        // it runs; a runtime theme toggle changes no binding source, so the converter never re-runs and the
+        // visible rows keep the old theme's colors. Re-project the realized rows' tags on every theme flip
+        // so the chips re-resolve. Detached in OnNavigatedFrom with the page's other subscriptions.
+        ActualThemeChanged += OnActualThemeChanged;
+    }
+
+    private void OnActualThemeChanged(FrameworkElement sender, object args)
+    {
+        ViewModel.RefreshTagColorsForTheme();
+        ViewModel.Detail.RefreshTagColorsForTheme();
     }
 
     private async void OnNavDataChanged(object? sender, EventArgs e)
@@ -105,6 +116,7 @@ public sealed partial class TaskListPage : Page
         _navNotifier.Changed -= OnNavDataChanged;
         ViewModel.CompletionAcknowledged -= OnCompletionAcknowledged;
         ViewModel.Detail.PropertyChanged -= Detail_PropertyChanged;
+        ActualThemeChanged -= OnActualThemeChanged;
         if (ViewModel.Detail.IsOpen)
         {
             CommitFocusedTextBox();

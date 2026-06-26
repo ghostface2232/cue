@@ -85,6 +85,7 @@ public sealed partial class MainWindow : Window
             {
                 ApplyCaptionButtonColors();
                 AppPreferences.ApplyFocusVisuals(this, _preferences);
+                RefreshTagNavIconColors();
             };
         ApplyCaptionButtonColors();
 
@@ -638,6 +639,30 @@ public sealed partial class MainWindow : Window
         item.ContextFlyout = CreateRecordMenu(tag, isGroup: false, item);
         AddDeleteAccelerator(item, anchor => DeleteTagFlowAsync(tag, anchor));
         return item;
+    }
+
+    /// <summary>Re-resolves the sidebar tag icons' colors against the current theme. Their foreground is set
+    /// once in <see cref="CreateTagItem"/> via <see cref="HexToBrushConverter"/>, which darkens a bright tag
+    /// color for the Light theme; a runtime theme toggle rebuilds nothing here, so without this the glyphs
+    /// keep the previous theme's color until the next data-driven nav rebuild. Re-runs the same converter
+    /// per realized tag item, looking its color up from the live tag list by id.</summary>
+    private void RefreshTagNavIconColors()
+    {
+        foreach (var menuItem in TagsSection.MenuItems)
+        {
+            if (menuItem is NavigationViewItem
+                {
+                    Icon: FontIcon icon,
+                    Tag: TaskListNavigation { Mode: TaskListMode.Tag, FilterId: { } tagId },
+                }
+                && ViewModel.Tags.FirstOrDefault(t => t.Id == tagId) is { } tag
+                && new HexToBrushConverter().Convert(
+                    tag.Color ?? string.Empty, typeof(Microsoft.UI.Xaml.Media.Brush), null!, null!)
+                    is Microsoft.UI.Xaml.Media.Brush brush)
+            {
+                icon.Foreground = brush;
+            }
+        }
     }
 
     /// <summary>Open-task count badge for a nav item, using the centered-digit style (see

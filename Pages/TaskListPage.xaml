@@ -956,7 +956,7 @@
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <FontIcon VerticalAlignment="Center" FontSize="15" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
+                                                    <FontIcon VerticalAlignment="Center" FontSize="15" Foreground="{x:Bind Color, Mode=OneWay, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
                                                     <Grid Grid.Column="1" VerticalAlignment="Center">
                                                         <TextBlock x:Name="TagNameText" Loaded="FadeText_Loaded" SizeChanged="FadeText_SizeChanged" Text="{x:Bind Name}" TextTrimming="Clip" />
                                                         <Rectangle
