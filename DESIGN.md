@@ -153,13 +153,17 @@ components:
   completion-check-checked:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.on-accent}"
-  # --- Priority pill (importance label) — one of the shared chip family on a task row ---
-  priority-pill:
-    backgroundColor: "{colors.priority-p1}"   # rendered at ~17% alpha tint (PriorityToTint, alpha 0x2B)
-    textColor: "{colors.priority-p1}"          # saturated text via PriorityToBrush
+  # --- Priority dot (importance cue) — a small saturated circle beside the task title ---
+  priority-dot:
+    backgroundColor: "{colors.priority-p1}"   # solid saturated priority color via PriorityToBrush (a dot, not a tint)
+    size: 9px                                  # {CuePriorityDotSize}
+    rounded: 4.5px                             # {CuePriorityDotRadius} (a full circle)
+    label: tooltip                             # the 매우 중요/중요/보통/사소 label survives only as the dot's tooltip + AutomationProperties.Name (PriorityToLabel)
+  # --- Group / tag chips (shared chip family on a task row) ---
+  row-chip:
     typography: "{typography.pill}"            # 12px label
-    rounded: "{rounded.chip}"                  # 8px squircle, matching the group/tag chips beside it
-    height: 22px                               # {CueChipHeight}, shared by every chip on the row
+    rounded: "{rounded.chip}"                  # 8px squircle, matching the chips beside it
+    height: 24px                               # {CueChipHeight}, shared by the group chip and every tag chip
     padding: "9px 0"                           # {CuePadChip}, horizontal-only; height is the token, not content
   # --- Quick-add (omnibar pill) ---
   quick-add:
@@ -180,13 +184,14 @@ components:
     padding: 16px
   # --- Recurrence timeline (detail 기록 strip) ---
   recurrence-timeline:
-    stripHeight: 64px     # CueTimelineStripHeight — fixed, compact agenda strip (not a carousel)
+    stripHeight: 78px     # CueTimelineStripHeight — fixed, compact agenda strip (not a carousel)
     pipWidth: 52px        # CueTimelinePipWidth
     pipGlyph: 15px        # CueTimelinePipGlyph
-    completed: "{colors.accent}"          # CueTimelineCompletedBrush (완료 ●)
-    next: "{colors.accent}"               # CueTimelineNextBrush (다음 ◉)
+    completed: "{colors.accent}"          # CueTimelineCompletedBrush (완료 ●) — the only colored state, ~60% accent
+    current: "{colors.text-secondary}"    # CueTimelineCurrentBrush (현재 ○, the live pending cycle)
     ended: "{colors.text-secondary}"      # CueTimelineEndedBrush (종료 ◉)
-    muted: "{colors.text-tertiary}"       # CueTimelineMutedBrush (건너뜀 × / 미수행 ○)
+    muted: "{colors.text-tertiary}"       # CueTimelineMutedBrush (미수행 ×)
+    future: TextFillColorDisabled         # CueTimelineFutureBrush (예정 ◌, dim disabled tone)
   # --- Navigation ---
   nav-item-selected:
     textColor: "{colors.text-primary}"
@@ -283,15 +288,15 @@ Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-bas
 - **P3** (`{colors.priority-p3}` → `SystemAccentColor`) — 보통 / Normal
 - **P4** (`{colors.priority-p4}` → `TextFillColorTertiary`) — 사소 / Low
 
-The importance pill paints its background as a ~17% alpha tint of the priority color (`PriorityToTint`, alpha `0x2B`) with the saturated color as the label text (`PriorityToBrush`).
+On a task row, importance shows as a small **saturated dot** beside the title (`CuePriorityDotSize` = 9, painted in the priority color via `PriorityToBrush`) — not a labelled pill, and hidden for an unprioritized (없음) task. The 매우 중요/중요/보통/사소 label survives only as the dot's tooltip and `AutomationProperties.Name` (`PriorityToLabel`). The 중요도 view still groups by these four colors, and the detail 중요도 picker lists them by label.
 
 The 중요도 view sorts ranked tasks into these four sections in P1→P4 order. **Unprioritized tasks (없음) are intentionally not shown here** — the view is a lens on ranked work only, and those tasks stay visible in every other list. A section is shown only when it has rows. Each section header is a muted gray, slightly-smaller-than-title caption (`{typography.bucket-header}`) that reads clearly apart from the task titles beneath it, and it is **independently collapsible**: tapping the header toggles its rows. The header carries the section's **task count** and an **expand/collapse chevron** (down when open, right when closed); unlike the sidebar's group/tag sections it has **no add button**. Collapse state lives in memory (sections start expanded) and survives a list refresh because the in-place reconcile reuses section instances.
 
 ### Semantic state
-- **Success** (`{colors.success}` → `SystemFillColorSuccess`): the detail Save glyph.
-- **Error** (`{colors.error}` → `SystemFillColorCritical`): the detail Close glyph, error `InfoBar`.
+- **Error** (`{colors.error}` → `SystemFillColorCritical`): the detail Close glyph, error `InfoBar`, and the **failed** save-status dot (`CueDangerFillBrush`).
+- The detail panel **autosaves** — there is no manual Save glyph. A small status dot beside the title reports save state (see "Detail panel"): a muted **saving** tone (`CueSavingBrush`) while a write is in flight, the error red on failure, and hidden when idle. (`SystemFillColorSuccess` is no longer used.)
 
-  > Semantic glyphs keep their color through hover/press — they are **never** covered by a gray fill; pressing only drops opacity to 0.6.
+  > The semantic Close glyph keeps its color through hover/press — it is **never** covered by a gray fill; pressing only drops opacity to 0.6.
 
 ## Typography
 
@@ -312,7 +317,7 @@ The typeface is **Pretendard JP** (Korean-first). The static OTFs ship one weigh
 | `{typography.checklist-item-title}` | Medium | 14 | Checklist item title (editable) |
 | `{typography.list-meta}` | Regular | 13 | Main list row meta (date · time) (`MetadataTextStyle`) |
 | `{typography.secondary}` | Regular | 12 | Settings captions, secondary labels (`SettingsCaptionStyle`) |
-| `{typography.pill}` | Regular | 12 | Priority / group / tag chip label |
+| `{typography.pill}` | Regular | 12 | Group / tag chip label |
 
 ### Color hierarchy
 Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quietest labels (group/tag headers) `{colors.text-tertiary}`.
@@ -348,13 +353,14 @@ Primary text `{colors.text-primary}`, metadata `{colors.text-secondary}`, quiete
 
 ### Detail panel
 - Radius 12, no shadow, 1px `CardStrokeColorDefault`, `InnerBorderEdge`, slides in and slides out on close (see "Motion").
+- **Autosave, not a Save button.** Edits commit themselves — inline fields save on Enter / blur; there is no manual Save control. The panel header is `[title TextBox] [save-status dot] [close]`: an 8px `Ellipse` beside the title that is **hidden when idle**, shows the muted **saving** tone (`CueSavingBrush`) while a write is in flight, and turns the error red (`CueDangerFillBrush`) on failure (tooltip 저장 중… / 저장 실패). Failed saves **auto-retry**, and the dot's appearance is delayed slightly so a fast save doesn't flicker it. A failing save also raises the error `InfoBar` on the list page. Closing the app while a save is still pending is guarded so writes are not lost (a graceful-close flow waits on / alerts about in-flight saves).
 - A vertical stack of cards (radius 8, 1px stroke, no shadow): task info (notes · importance · group) / **일시 (the single When, + optional time / 종일)** / tags / checklist. The date card is titled **일시** (date + time); a date added with no explicit time defaults to 종일 (all-day). In the one-column (compact) layout the time dropdowns stretch to the card width instead of staying fixed-width.
 - **Resizable.** A 10px transparent grab strip on the panel's left edge drag-resizes it. Width is clamped to 320–680px (absolute min 260px) and further capped so the primary list keeps ≥340px — the panel never starves the list. On hover or while dragging, the strip reveals a slim vertical pill handle (4×58, radius 2, tertiary text brush at ~72% opacity) with the standard 83ms opacity transition.
 - **Responsive.** Below a compact width (~390px), paired side-by-side fields (importance + group, date + time) reflow to stack vertically so nothing is squeezed.
 - **Conditional text fade for clipped content** (see "Elevation & Depth"): only overflowing inline text inside padded content, such as long tag names, fades at the right edge instead of hard-clipping. The panel scroll body itself does not get a bottom fade because it clips at the panel boundary.
 
 ### Spacing
-The page rhythm is `CuePadPage` body padding (uniform `20` on all sides) and `CuePadCard` (`16`) card internal padding. Spacing is tokenized: gaps consume the `CueGap*` scale (2/4/8/12/16/20/24) and padding/margin consume the `CuePad*` Thickness tokens, both from `Styles/DesignTokens.xaml`. Off-scale literals were snapped to the nearest rung. Structural/optical exceptions stay inline — negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the priority-pill inset, the detail-card margin *rhythm* (per-axis, see Components), and sub-2px nudges; the `CueNav*` offsets are optical corrections, not part of the scale (see "Known Gaps").
+The page rhythm is `CuePadPage` body padding (uniform `20` on all sides) and `CuePadCard` (`16`) card internal padding. Spacing is tokenized: gaps consume the `CueGap*` scale (2/4/8/12/16/20/24) and padding/margin consume the `CuePad*` Thickness tokens, both from `Styles/DesignTokens.xaml`. Off-scale literals were snapped to the nearest rung. Structural/optical exceptions stay inline — negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the detail-card margin *rhythm* (per-axis, see Components), and sub-2px nudges; the `CueNav*` offsets are optical corrections, not part of the scale (see "Known Gaps").
 
 ## Elevation & Depth
 
@@ -395,9 +401,9 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 ## Components
 
 ### Task row
-- Layout: `[circular check] [title … priority pill] … [group / tag chips]`. Three columns (check Auto · title+meta star · trailing chips Auto), `{gap.lg}` (16) apart, with a one-line schedule row below the title. The trailing chips are **right-aligned and stacked vertically** (group on top, then each tag) in the wide layout; the schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time, while an all-day (종일) task shows the date alone.
+- Layout: `[circular check] [title … priority dot] … [group / tag chips]`. Three columns (check Auto · title+meta star · trailing chips Auto), `{gap.lg}` (16) apart, with a one-line schedule row below the title. The trailing chips are **right-aligned and stacked vertically** (group on top, then each tag) in the wide layout; the schedule shows the date, plus the time (e.g. `오후 3:00`) for a task with a specific time, while an all-day (종일) task shows the date alone.
 - **Group and tag are both rendered as squircle chips** (rounded rectangles, radius `{rounded.chip}` = 8, a 12px glyph + 12px name), so the two read as one consistent family rather than two ad-hoc layouts. A fixed squircle radius (not a half-height pill) keeps a short chip — icon + 2 chars — reading as a clean rounded rect; a pill radius would make the rounded ends meet on a narrow chip and look like an oval.
-- **All chip/pill elements on a row share one fixed height** (`CueChipHeight` = 22) with **horizontal-only padding** (`CuePadChip` = `9,0`) and content vertically centered. The group chip, every tag chip, and the priority pill therefore line up exactly and never distort, regardless of glyph vs. text or differing font sizes — height is purely the token, not a function of content. (`VerticalAlignment="Center"` on each chip keeps it from being stretched by a taller sibling.) The **group chip** is a neutral gray pill (`CueChipNeutralFillBrush`, a theme-split overlay) with the group's own glyph + name in secondary text. A **tag chip** is tinted with the tag's *own* color (`HexToTint`, ~17% — the same tint strength as the priority pill) and carries the tag glyph (`E8EC`) + name in that saturated color (`HexToBrush`). Each chunk hides itself when the task has no group / no tags.
+- **Both chips on a row share one fixed height** (`CueChipHeight` = 24) with **horizontal-only padding** (`CuePadChip` = `9,0`) and content vertically centered. The group chip and every tag chip therefore line up exactly and never distort, regardless of glyph vs. text or differing font sizes — height is purely the token, not a function of content. (`VerticalAlignment="Center"` on each chip keeps it from being stretched by a taller sibling.) The **group chip** is a neutral gray pill (`CueChipNeutralFillBrush`, a theme-split overlay) with the group's own glyph + name in secondary text. A **tag chip** is tinted with the tag's *own* color (`HexToTint`, ~17%) and carries the tag glyph (`E8EC`) + name in that saturated color (`HexToBrush`). Each chunk hides itself when the task has no group / no tags. (Importance is not a chip — it is the saturated dot beside the title; see "Priority dot".)
 - A **repeating task** carries a small repeat glyph (Segoe Fluent `RepeatAll`, `E8EE`, secondary text tone) in the schedule row, after the date. It is a quiet informational mark — no accent, no fill — mirroring the recurrence flag the index derives from the task's rule (the rule itself stays in the file).
 - Selected → a **persistent row fill in the hover tone** (`{colors.hover-fill}`) spanning the row + checklist, so the open task reads as selected even when the pointer is elsewhere — the highlight area alone carries the selection, with **no separate accent bar/pill**. Background hover transitions over 83ms. Radius `{rounded.md}`.
 - Rows are **uniform height regardless of content**: a `MinHeight` of 60 with vertically-centered content means a bare title row keeps the same presence as one with a schedule and chips, and the title centers when there is no second line. Generous padding (`16,12`) and a SemiBold title (`{typography.list-title}`, 17) over a 13px meta line sharpen the hierarchy. **No row separators** — rows are divided by whitespace (the per-row margin) alone, not lines.
@@ -406,7 +412,7 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 
 ### Completion state
 - **Completing a task plays a brief in-row acknowledgement; what happens next depends on whether the task is terminal or repeating.** On tick the circular check pops and the title/meta dim to the completed tone, then the row swaps its body for an acknowledgement bar.
-  - **Terminal completion** (a one-off, or a repeating series ended via **반복 종료** / an exhausted rule) shows a filled check + "할 일을 완료했습니다" + an **실행 취소** (undo) button. After ~2s (extendable by hovering/pressing the row) the row **folds away** (scale-Y collapse + fade) and the list reloads, dropping it into its 완료한 일 section / Logbook.
+  - **Terminal completion** (a one-off, or a repeating series ended via **반복 종료** / an exhausted rule) shows a filled check + "할 일을 완료했습니다" + an **실행 취소** (undo) button. **The filled check is itself an undo target** — it is wrapped in a transparent button (with its own hover/press feedback) so clicking the checkmark reverts the completion the same as the 실행 취소 button. After ~2s (extendable by hovering/pressing the row) the row **folds away** (scale-Y collapse + fade) and the list reloads, dropping it into its 완료한 일 section / Logbook.
   - **Repeating completion** (the series rolls on) is **not** a disappearing object but an object that **advances to its next cycle** — the same task (same id) lives on, just moved forward — so it must **not** reuse the fold, and it does **not** show the undo bar. The check pop simply registers and the row reconciles in place: if the advance lands the series **in the future** the row **stays ticked + dimmed**, held as "done for now" (it is now **ahead of schedule**) until that cycle comes due; if **another cycle is still due today/overdue** (catching up a backlog) the row returns **unchecked** so the next one can be worked off. It leaves the list only on the **오늘 할 일** view, where a next occurrence that has rolled past today drops out of range.
   - **A future cycle can never be performed in advance more than once.** Once a repeating row is ahead of schedule (ticked + dimmed), its checkbox is already checked, so a second press is an **undo** — it rolls the last completion back to the cycle just done — not another advance. This is what stops the checkbox from marching a series endlessly into the future. (Catching up *past* missed cycles is still allowed, since each is a real cycle that was due.)
 - **Completed work does not linger in the open list.** Where it resurfaces depends on the view: the **오늘 할 일** screen gains a collapsible **오늘 완료한 일** section at the foot (default collapsed, hidden when empty); a **그룹 / 태그** screen gains its own collapsible **완료한 일** section the same way; **모든 할 일 / 언젠가 / 앞으로 / 중요도** exclude completed entirely; the **완료한 일** (Logbook) screen lists everything completed, grouped by day (오늘 / 어제 / a "M월 d일" date), newest first. These completed sections reuse the priority/sidebar section header (title + count + chevron). Only open tasks count toward the sidebar badges.
@@ -414,9 +420,9 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 - **Checking a repeating task records the current cycle, it does not complete the task.** The checkbox means "did this cycle" — it records the cycle (with its checklist frozen) and rolls the same row to the next occurrence; the series stays open. A recurring task only ever moves to 완료한 일 by an explicit **반복 종료** (see the recurrence timeline). "완료" is reserved for the current cycle, never the series. Once the roll-forward lands the series in the future, the row reads **ticked + dimmed** ("ahead of schedule") and the next press **undoes** that cycle rather than advancing again — a future cycle is never performed more than one step ahead.
 - **Checklist items are independent of the task's completion.** Completing a one-off leaves its checklist as-is; an item's checked state is its own. A repeating task resets all its checklist items to unchecked when it rolls to the next cycle (the procedure repeats), while the cycle just finished keeps its ticked state frozen on its occurrence record (visible in that cycle's timeline flyout).
 
-### Priority pill
-- Rendered **directly beside** the row title as a text pill (not a leading dot). The title is width-capped and truncates, so the pill hugs the title's trailing edge rather than being pushed to the far right. Labels: 매우 중요 / 중요 / 보통 / 사소.
-- Background is a ~17% tint of the priority color; text is the saturated tone. Radius `{rounded.chip}` (the 8px squircle shared with the group/tag chips beside it). Color mapping per the priority tokens; text via `PriorityToLabel`, tint via `PriorityToTint`, saturated color via `PriorityToBrush`.
+### Priority dot
+- Rendered **directly beside** the row title as a small saturated circle (`CuePriorityDotSize` = 9, radius `CuePriorityDotRadius` = 4.5) — not a labelled pill. The title is width-capped and truncates, so the dot hugs the title's trailing edge. It is hidden for an unprioritized (없음) task.
+- The dot is painted in the priority color via `PriorityToBrush` — a solid, saturated color, no tint. The 매우 중요 / 중요 / 보통 / 사소 label is carried only as the dot's `ToolTipService.ToolTip` and `AutomationProperties.Name` (via `PriorityToLabel`), so the cue stays legible to screen readers without taking row width. Color mapping per the priority tokens.
 
 ### Circular completion check — `CueCircleCheckBoxStyle`
 - 20×20. Unchecked = 1.6px outline circle (`TextFillColorTertiary`, → secondary on hover). Checked = accent fill + white check glyph + overshoot pop.
@@ -434,11 +440,10 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 - **반복 (Recurrence)** lives in this card as a plain labeled field (a `반복` label like 중요도 / 그룹 — not a card header, no decorative glyph) below the date editor, and is shown **only when a concrete 일시 is set** — a recurrence with no date to anchor it doesn't read as meaningful, so removing the date (제거) hides the field and clears the rule (`ClearWhen`). The picker offers common presets (반복 안 함 / 매일 / 매주 / 평일 (월–금) / 매월 / 매년) whose RRULEs match what the parser emits; a loaded rule with no preset (e.g. a parsed 격주 / 특정 요일 rule) appears as its own summarized entry so it round-trips. Editing recurrence stays a domain concern — the view model only holds the RRULE string and builds the `RecurrenceRule` (with an anchor) on save; RRULE *evaluation* stays in the storage layer (invariant 9).
 
 ### 기록 (Recurrence timeline)
-- Shown **only for a recurring task**, as a card below the 일시 card. The cycle history is a **compact, fixed-height horizontal agenda strip** — deliberately *not* a large card carousel — so a long history never grows the panel vertically. Height `{CueTimelineStripHeight}` (64); each pip is a fixed `{CueTimelinePipWidth}` (52) wide.
-- The strip reads left→right oldest→newest, with the **live head pip on the right**: the current/next cycle (◉ 다음) while open, or a terminal (◉ 종료) pip once the series has ended. The most recent cycles + the head show **by default** (the strip auto-scrolls to the head on open); a **‹** chevron pages older cycles in **on demand** (history is never eager-loaded) and **›** scrolls back toward the head.
-- Each pip stacks **date · glyph · status word**, and carries a tooltip and an `AutomationProperties.Name` — so a cycle's status is conveyed by **glyph + label + name, never color alone** (reduced-motion and color-blind safe). Status ↔ glyph: 완료 ● · 미수행 ○ · 건너뜀 × · 다음/종료 ◉. The glyph tone comes from the `CueTimeline*Brush` tokens (accent for 완료/다음, secondary for 종료, tertiary for 건너뜀/미수행) — resolved by `OccurrencePipKindToBrushConverter` — but it is only a secondary cue.
-- **Tapping a recorded pip** opens a lightweight **flyout**: the cycle's completion time and its **frozen checklist snapshot** (read-only), plus a 완료 / 건너뜀 / 미수행 status picker to correct that cycle. Editing a past cycle changes only its record — it **never** shifts the series' next scheduled cycle. The head pip is not a record and opens nothing.
-- An **이번 회차 건너뛰기** action sits under the strip: it records the current cycle as 건너뜀 and advances, the same roll-forward a check does.
+- Shown **only for a recurring task**, as a card below the 일시 card. The cycle history is a **compact, fixed-height horizontal agenda strip** — deliberately *not* a large card carousel — so a long history never grows the panel vertically. Height `{CueTimelineStripHeight}` (78); each pip is a fixed `{CueTimelinePipWidth}` (52) wide.
+- The strip reads left→right oldest→newest, with the **live head pip on the right**: the current cycle (○ 현재, the live pending occurrence) while open, or a terminal (◉ 종료) pip once the series has ended; future cycles ahead of the current one read as dimmed 예정 (◌) pips. The most recent cycles + the head show **by default** (the strip auto-scrolls to the head on open); a **‹** chevron pages older cycles in **on demand** (history is never eager-loaded) and **›** scrolls back toward the head.
+- Each pip stacks **date · glyph · status word**, and carries a tooltip and an `AutomationProperties.Name` — so a cycle's status is conveyed by **glyph + label + name, never color alone** (reduced-motion and color-blind safe). Status ↔ glyph: 완료 ● · 현재 ○ · 미수행 × · 예정 ◌ · 종료 ◉ (the former separate 건너뜀 state is folded into 미수행). The glyph tone comes from the `CueTimeline*Brush` tokens — 완료 is the only colored state (~60% accent); 현재/종료 are secondary, 미수행 tertiary, and 예정 the dim disabled tone — resolved by `OccurrencePipKindToBrushConverter`, but color is only a secondary cue.
+- **Tapping a recorded pip** opens a lightweight **flyout**: the cycle's completion time and its **frozen checklist snapshot** (read-only), plus a 완료 / 미수행 status picker to correct that cycle. Editing a past cycle changes only its record — it **never** shifts the series' next scheduled cycle. The current/future/terminal head pips are not records and open nothing; clicking the latest 완료 pip is a quick **undo** of that completion rather than a flyout.
 
 ### 반복 종료 / 삭제 (Series end & delete)
 - The detail panel's bottom actions are **explicit**, not a hidden long-press. A recurring task shows a **반복 종료** button (neutral 1px-stroke, a flag glyph) above the destructive **할 일 삭제**. "완료" is intentionally avoided for the series — that word means the current cycle — so the series-ending action reads as 종료, and a confirm popover ("반복을 종료하고 완료한 일로 옮길까요?") guards it. 반복 종료 also appears in the row's right-click menu for a recurring task. Ending the series is the only path that completes a recurring task (it lands in the Logbook, rule kept as history). Deleting clears the date / 반복 selection ("반복 안 함") in the 일시 card instead turns a repeating task back into a plain one without completing it.
@@ -539,7 +544,7 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 
 ## Known Gaps
 
-- **Inline spacing exceptions.** Gaps and padding are tokenized (`CueGap*` / `CuePad*`), but a `Thickness` resource is a fixed 4-tuple, so values that vary per axis or are purely optical stay inline by design: negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the priority-pill inset, the detail-card margin rhythm, and sub-2px nudges. The `CueNav*` offsets also sit outside the scale — they correct for the NavigationView's nesting indent (optical tuning, not rhythm). One framework gotcha they ride on: the expand/collapse chevron is a 40px grid centering a 12px glyph, which the stock template pulls flush with a −14 right margin (`NavigationViewItemExpandChevronMargin`); any override of that margin must keep the −14 base or the chevron drifts ~14px off the edge.
+- **Inline spacing exceptions.** Gaps and padding are tokenized (`CueGap*` / `CuePad*`), but a `Thickness` resource is a fixed 4-tuple, so values that vary per axis or are purely optical stay inline by design: negative full-bleed margins, the quick-add omnibar's optical padding, empty-state centering offsets, the detail-card margin rhythm, and sub-2px nudges. The `CueNav*` offsets also sit outside the scale — they correct for the NavigationView's nesting indent (optical tuning, not rhythm). One framework gotcha they ride on: the expand/collapse chevron is a 40px grid centering a 12px glyph, which the stock template pulls flush with a −14 right margin (`NavigationViewItemExpandChevronMargin`); any override of that margin must keep the −14 base or the chevron drifts ~14px off the edge.
 - **Pretendard JP** ships as static OTFs, so weight hierarchy is family-switched (Regular / Medium / SemiBold) rather than `FontWeight`-driven. The frontmatter encodes the semantic weight (400/500/600) for non-WinUI export.
 - **Caption (window) buttons** are system-drawn and themed in code-behind (`ApplyCaptionButtonColors`), reapplied on `ActualThemeChanged` — they are not reachable as XAML tokens.
 - The literal colors in the system are intentionally theme-scoped in `ThemeDictionaries`: the Dark text-input **well** (`#18000000` / `#24000000`), and the **Dark danger red** (`#D13438`, `CueDangerFillBrush`) — the system critical color reads as a washed-out pink on dark surfaces, so the destructive delete/confirm button uses this literal red instead (with forced white label text); Light keeps the system critical red.
