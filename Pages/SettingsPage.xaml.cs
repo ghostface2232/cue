@@ -33,8 +33,11 @@ public sealed partial class SettingsPage : Page
         ["AUS Eastern Standard Time"] = "시드니, 멜버른",
     };
 
-    /// <summary>Body width below which the settings nav collapses to icon-only (compact) mode.</summary>
-    private const double CompactThreshold = 480;
+    /// <summary>Body width below which the settings nav collapses to icon-only (compact) mode.
+    /// Matched to the app-wide sidebar's hide point: the NavigationView drops to Minimal mode
+    /// (pane fully hidden) below its CompactModeThresholdWidth (640), so the settings nav goes
+    /// compact at the same width the sidebar disappears.</summary>
+    private const double CompactThreshold = 640;
     /// <summary>Hysteresis: expand back only when width exceeds the threshold by this much.</summary>
     private const double CompactHysteresis = 40;
 
