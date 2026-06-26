@@ -20,6 +20,12 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Cue ships Korean (with English as the only planned addition), so it carries resources for
+         just those languages. This drops the .NET satellite resource assemblies for every other
+         culture; the matching prune of the Windows App SDK's own per-locale MUI folders (≈80 of
+         them) happens in build-installer.ps1, which is the publish step that produces the shipped
+         payload. -->
+    <SatelliteResourceLanguages>ko;en</SatelliteResourceLanguages>
     <!--
       This app project lives at the repo root, so the SDK's default **/*.cs glob would
       otherwise sweep in the sibling project folders' sources. Exclude them from every default
@@ -89,7 +95,28 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+    <!--
+      Windows App SDK referenced by component package instead of the Microsoft.WindowsAppSDK
+      metapackage. Since 1.8 the metapackage transitively pulls the Windows AI / Windows ML
+      components (Microsoft.WindowsAppSDK.AI + .ML → onnxruntime.dll ~20 MB + DirectML.dll ~18 MB +
+      Microsoft.Windows.AI.* ≈ 44 MB total), and there is NO MSBuild flag to opt out while keeping
+      the metapackage — package selection is the only supported lever. Cue uses no AI/ML, so it
+      references just the components a WinUI app needs:
+        • .WinUI   — the WinUI 3 framework (transitively brings Base, Foundation,
+                     InteractiveExperiences, WebView2). This is the only component that carries
+                     WinUI; it does NOT depend on .AI/.ML. With WindowsAppSDKSelfContained=true +
+                     WindowsPackageType=None (set at publish in build-installer.ps1) it self-contains
+                     the runtime, so the .Runtime component — which exists for framework-dependent
+                     deployment and adds no files here — is intentionally NOT referenced.
+        • .DWrite  — DWriteCore.dll, WinUI 3 text rendering. WinUI does not declare a dependency on
+                     it, so it must be referenced explicitly or glyphs fail to render.
+      (CoreMessaging.dll is an OS-inbox component bound from the system, not bundled — unchanged
+      from the metapackage build.)
+      The GuardAgainstAIMLArtifacts target below fails the build if the AI/ML payload ever returns
+      (e.g. the metapackage or a transitive ML dependency is re-added). Versions mirror what the
+      2.2.0 metapackage resolved. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.2.1" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.1.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.3.2" />
   </ItemGroup>
   <ItemGroup>
@@ -115,4 +142,32 @@
     <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
     <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
   </PropertyGroup>
+
+  <!--
+    Fails the build if the Windows AI / Windows ML payload reappears in the dependency closure.
+    Cue references the Windows App SDK by component package to keep onnxruntime.dll, DirectML.dll,
+    and the Microsoft.Windows.AI.* / Microsoft.ML.* libraries (≈44 MB) out of the app — see the
+    package references above. Re-adding the Microsoft.WindowsAppSDK metapackage, or a NuGet package
+    that transitively drags in Microsoft.WindowsAppSDK.ML/.AI, would silently bloat the installer
+    again; this guard turns that into a loud, immediate error.
+
+    It inspects @(ReferenceCopyLocalPaths) — the files THIS build actually pulls from its resolved
+    dependencies — rather than globbing the output folder, so a stale onnxruntime.dll left in an
+    incremental output directory by an earlier metapackage build can't cause a false positive. At
+    plain build time the copied AI items are the managed projections (Microsoft.Windows.AI.*,
+    Microsoft.ML.OnnxRuntime); the big native onnxruntime.dll/DirectML.dll only materialize at
+    self-contained publish, where build-installer.ps1 re-checks the clean publish folder directly.
+  -->
+  <Target Name="GuardAgainstAIMLArtifacts" AfterTargets="Build">
+    <ItemGroup>
+      <_AIMLCopied Include="@(ReferenceCopyLocalPaths)"
+                   Condition="'%(Filename)' == 'onnxruntime'
+                              or '%(Filename)' == 'DirectML'
+                              or $([System.String]::Copy('%(Filename)').StartsWith('Microsoft.Windows.AI'))
+                              or $([System.String]::Copy('%(Filename)').StartsWith('Microsoft.ML.OnnxRuntime'))
+                              or $([System.String]::Copy('%(Filename)').StartsWith('Microsoft.Graphics.Imaging'))" />
+    </ItemGroup>
+    <Error Condition="'@(_AIMLCopied)' != ''"
+           Text="Windows AI/ML artifacts re-entered the dependency closure (@(_AIMLCopied->'%(Filename)%(Extension)', ', ')). A dependency pulled in Microsoft.WindowsAppSDK.ML/.AI — reference the Microsoft.WindowsAppSDK.WinUI component package instead of the metapackage. See the PackageReference comment in Cue.csproj." />
+  </Target>
 </Project>

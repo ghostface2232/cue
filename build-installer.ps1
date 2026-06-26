@@ -97,6 +97,41 @@ if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
     -p:PublishTrimmed=false -p:PublishReadyToRun=true --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)." }
 
+# --- 2b. Guard: the shipped publish must carry no Windows AI/ML payload ---
+# Cue references the Windows App SDK by component package (.WinUI + .DWrite in Cue.csproj) precisely
+# to keep the ~44 MB onnxruntime.dll / DirectML.dll / Microsoft.Windows.AI.* stack out of the app.
+# This is the publish-side counterpart to the GuardAgainstAIMLArtifacts MSBuild target: that one
+# checks the build's dependency closure, this one checks the actual shipped folder. If a future
+# dependency re-introduces Microsoft.WindowsAppSDK.ML/.AI, the installer build fails here rather than
+# silently regaining ~44 MB.
+$aiml = Get-ChildItem -LiteralPath $publishDir -Recurse -File | Where-Object {
+    $_.Name -match '^(onnxruntime|DirectML)\.dll$' -or
+    $_.Name -like 'Microsoft.Windows.AI.*' -or
+    $_.Name -like 'Microsoft.ML.OnnxRuntime*' -or
+    $_.Name -like 'Microsoft.Graphics.Imaging*'
+}
+if ($aiml) {
+    throw "Windows AI/ML artifacts in publish output: $(($aiml | ForEach-Object Name) -join ', '). A dependency re-introduced Microsoft.WindowsAppSDK.ML/.AI — see the PackageReference comment in Cue.csproj."
+}
+
+# --- 2c. Trim Windows App SDK per-locale resources to the languages Cue ships ---
+# The publish carries ~80 per-locale MUI folders (Microsoft.ui.xaml.dll.mui et al.), one per Windows
+# display language. Cue is Korean-only (English the one planned addition), so the rest are dead
+# weight. SatelliteResourceLanguages (Cue.csproj) prunes .NET satellite assemblies but NOT these
+# WinAppSDK MUI folders, so they're removed here on the shipped output. The allowlist keeps Korean
+# and both English variants.
+Write-Host "Trimming locale resources..." -ForegroundColor Cyan
+$keepLocales = @('ko-KR', 'en-us', 'en-GB')
+$removed = 0; $freed = 0
+Get-ChildItem -LiteralPath $publishDir -Directory |
+    Where-Object { $_.Name -match '^[a-z]{2}(-[A-Za-z0-9]+)+$' -and $keepLocales -notcontains $_.Name } |
+    ForEach-Object {
+        $freed += (Get-ChildItem $_.FullName -Recurse -File | Measure-Object Length -Sum).Sum
+        Remove-Item $_.FullName -Recurse -Force
+        $removed++
+    }
+Write-Host ("  removed {0} locale folders ({1:N1} MB)" -f $removed, ($freed / 1MB)) -ForegroundColor DarkGray
+
 # --- 3. Bundle the VC++ runtime app-local ---
 Write-Host "Bundling VC++ runtime…" -ForegroundColor Cyan
 Copy-VCRuntime -Destination $publishDir -Arch $Arch
@@ -109,4 +144,26 @@ New-Item -ItemType Directory -Force -Path $dist | Out-Null
 & $iscc "/DAppVersion=$version" "/DPublishDir=$publishDir" (Join-Path $root 'installer/Cue.iss')
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)." }
 
-Write-Host "Done → $(Join-Path $dist 'CueSetup-win-x64.exe')" -ForegroundColor Green
+# --- 5. Size regression guard ---
+# Ceilings, not exact targets: they catch a large regression (the ~44 MB AI/ML stack returning, or
+# the per-locale resources creeping back) while leaving headroom for normal growth. Measured
+# baseline as of v0.1.2 — component-package WinUI build, AI/ML excluded, locales trimmed: publish
+# ~237 MB (was ~291 MB on the metapackage). The installer (LZMA2 solid) is roughly half that; its
+# ceiling is set loosely until the first CI run pins the real number. Bump these deliberately when a
+# real, reviewed size increase lands. (The AI/ML stack returning, ~44 MB, trips $maxPublishMB and
+# the explicit guards above well before either installer ceiling.)
+$maxPublishMB = 270
+$maxInstallerMB = 110
+$installer = Join-Path $dist 'CueSetup-win-x64.exe'
+$publishMB = (Get-ChildItem -LiteralPath $publishDir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
+$installerMB = (Get-Item -LiteralPath $installer).Length / 1MB
+Write-Host ("Sizes — publish {0:N1} MB (ceiling {1}), installer {2:N1} MB (ceiling {3})" -f `
+        $publishMB, $maxPublishMB, $installerMB, $maxInstallerMB) -ForegroundColor Cyan
+$regressions = @()
+if ($publishMB -gt $maxPublishMB) { $regressions += ("publish folder {0:N1} MB exceeds {1} MB ceiling" -f $publishMB, $maxPublishMB) }
+if ($installerMB -gt $maxInstallerMB) { $regressions += ("installer {0:N1} MB exceeds {1} MB ceiling" -f $installerMB, $maxInstallerMB) }
+if ($regressions) {
+    throw "Size regression — $($regressions -join '; '). Investigate, or raise the ceiling in build-installer.ps1 if the increase is intended."
+}
+
+Write-Host "Done → $installer" -ForegroundColor Green
