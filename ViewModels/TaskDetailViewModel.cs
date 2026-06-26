@@ -9,6 +9,13 @@ using Cue.Storage.Recurrence;
 
 namespace Cue.ViewModels;
 
+public enum SaveStatus
+{
+    Idle,
+    Saving,
+    Failed
+}
+
 public enum WhenEditorMode
 {
     Unscheduled,
@@ -158,6 +165,9 @@ public partial class TaskDetailViewModel : ObservableObject
     // no future) is left exactly as LoadTimelineAsync built it.
     private bool _isCompleted;
     private bool _isLoading;
+    private int _activeSaveCount;
+    private DateTimeOffset _saveStartInstant = DateTimeOffset.MinValue;
+    private bool _hasActiveSaveFailure;
 
     // Coalesces a single user action that touches several properties into one save. Distinct from
     // <see cref="_isLoading"/>, which suppresses saves entirely while OpenAsync fills the panel.
@@ -209,6 +219,24 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<ChecklistItemViewModel> Checklist { get; } = new();
     public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
+
+    [ObservableProperty]
+    public partial SaveStatus CurrentSaveStatus { get; set; } = SaveStatus.Idle;
+
+    public bool IsSaveStatusVisible => CurrentSaveStatus != SaveStatus.Idle;
+
+    public string SaveStatusToolTip => CurrentSaveStatus switch
+    {
+        SaveStatus.Saving => "저장 중...",
+        SaveStatus.Failed => "저장 실패",
+        _ => string.Empty
+    };
+
+    partial void OnCurrentSaveStatusChanged(SaveStatus value)
+    {
+        OnPropertyChanged(nameof(IsSaveStatusVisible));
+        OnPropertyChanged(nameof(SaveStatusToolTip));
+    }
 
     /// <summary>The recurrence timeline pips for a recurring task: recorded cycles oldest-first, then the
     /// live current cycle (or terminal 종료 head), then any projected future cycles. Empty for a
@@ -396,6 +424,12 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public async Task OpenAsync(Guid taskId)
     {
+        lock (this)
+        {
+            _activeSaveCount = 0;
+            _hasActiveSaveFailure = false;
+            CurrentSaveStatus = SaveStatus.Idle;
+        }
         var task = await _store.GetAsync<TaskItem>(taskId);
         if (task is null || task.IsDeleted)
         {
@@ -447,6 +481,12 @@ public partial class TaskDetailViewModel : ObservableObject
     {
         _taskId = null;
         IsOpen = false;
+        lock (this)
+        {
+            _activeSaveCount = 0;
+            _hasActiveSaveFailure = false;
+            CurrentSaveStatus = SaveStatus.Idle;
+        }
     }
 
     public void SetWhenTime(TimeSpan time)
@@ -552,7 +592,7 @@ public partial class TaskDetailViewModel : ObservableObject
         // belt-and-braces so one bad link can never stall the queue behind it.
         try { await previous; }
         catch { /* logged by the failing save itself */ }
-        await SaveSnapshotAsync(snapshot);
+        await RunSaveOperationWithRetryAsync(() => SaveSnapshotAsync(snapshot));
     }
 
     /// <summary>
@@ -582,34 +622,100 @@ public partial class TaskDetailViewModel : ObservableObject
     /// </summary>
     private async Task SaveSnapshotAsync(TaskEditSnapshot snapshot)
     {
-        try
+        // Read-modify-write the metadata fields atomically: MutateAsync re-reads the live record
+        // under the store's write lock and the closure replaces only the snapshot's fields. The
+        // embedded checklist is left untouched, so a checklist save that committed in between is
+        // preserved rather than overwritten with the copy this save happened to load.
+        var saved = await _store.MutateAsync<TaskItem>(snapshot.Id, task =>
         {
-            // Read-modify-write the metadata fields atomically: MutateAsync re-reads the live record
-            // under the store's write lock and the closure replaces only the snapshot's fields. The
-            // embedded checklist is left untouched, so a checklist save that committed in between is
-            // preserved rather than overwritten with the copy this save happened to load.
-            var saved = await _store.MutateAsync<TaskItem>(snapshot.Id, task =>
+            task.Title = snapshot.Title;
+            task.Notes = snapshot.Notes;
+            task.Priority = snapshot.Priority;
+            task.When = snapshot.When;
+            task.Recurrence = snapshot.Recurrence;
+            task.TaskGroupId = snapshot.TaskGroupId;
+            task.TagIds = snapshot.TagIds.ToList();
+            return true;
+        });
+        if (saved is not null)
+        {
+            await _refreshOwner();
+            // The save may have moved the task between groups or changed its tags, shifting the
+            // sidebar counts. Counts-only signal (cheap to recompute) — the group/tag set is unchanged.
+            _navNotifier.NotifyCountsChanged();
+        }
+    }
+
+    private async Task RunSaveOperationWithRetryAsync(Func<Task> saveAction)
+    {
+        lock (this)
+        {
+            if (_activeSaveCount == 0)
             {
-                task.Title = snapshot.Title;
-                task.Notes = snapshot.Notes;
-                task.Priority = snapshot.Priority;
-                task.When = snapshot.When;
-                task.Recurrence = snapshot.Recurrence;
-                task.TaskGroupId = snapshot.TaskGroupId;
-                task.TagIds = snapshot.TagIds.ToList();
-                return true;
-            });
-            if (saved is not null)
+                CurrentSaveStatus = SaveStatus.Saving;
+                _saveStartInstant = _clock.GetUtcNow();
+                _hasActiveSaveFailure = false;
+            }
+            _activeSaveCount++;
+        }
+
+        bool success = false;
+        Exception? lastException = null;
+        int[] delays = { 100, 100, 100, 200, 200 };
+
+        for (int attempt = 0; attempt <= 5; attempt++)
+        {
+            try
             {
-                await _refreshOwner();
-                // The save may have moved the task between groups or changed its tags, shifting the
-                // sidebar counts. Counts-only signal (cheap to recompute) — the group/tag set is unchanged.
-                _navNotifier.NotifyCountsChanged();
+                await saveAction();
+                success = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                if (attempt < 5)
+                {
+                    await Task.Delay(delays[attempt]);
+                }
             }
         }
-        catch (Exception ex)
+
+        lock (this)
         {
-            System.Diagnostics.Debug.WriteLine($"[Cue] Detail autosave failed: {ex.Message}");
+            _activeSaveCount--;
+            if (!success)
+            {
+                _hasActiveSaveFailure = true;
+            }
+
+            if (_activeSaveCount == 0)
+            {
+                _ = CompleteSaveStateAsync();
+            }
+        }
+
+        if (!success && lastException is not null)
+        {
+            throw lastException;
+        }
+    }
+
+    private async Task CompleteSaveStateAsync()
+    {
+        var elapsed = _clock.GetUtcNow() - _saveStartInstant;
+        var remaining = 300 - (int)elapsed.TotalMilliseconds;
+        if (remaining > 0)
+        {
+            await Task.Delay(remaining);
+        }
+
+        lock (this)
+        {
+            if (_activeSaveCount == 0)
+            {
+                CurrentSaveStatus = _hasActiveSaveFailure ? SaveStatus.Failed : SaveStatus.Idle;
+            }
         }
     }
 
@@ -959,7 +1065,7 @@ public partial class TaskDetailViewModel : ObservableObject
     /// Called on the UI thread, so the op's store write and owner refresh resume on the UI context.</summary>
     private Task EnqueueChecklistOp(Func<Task> op)
     {
-        var next = ChainChecklistAsync(_checklistChain, op);
+        var next = ChainChecklistAsync(_checklistChain, () => RunSaveOperationWithRetryAsync(op));
         _checklistChain = next;
         return next;
     }

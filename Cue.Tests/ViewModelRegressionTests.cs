@@ -1848,4 +1848,101 @@ public sealed class ViewModelRegressionTests
         public TempDirectory() => Directory.CreateDirectory(Path);
         public void Dispose() => Directory.Delete(Path, recursive: true);
     }
+
+    [Fact]
+    public async Task DetailSaveAutoRetriesAndUpdatesStatusToSuccess()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        var failingStore = new FailingTaskStore(store, 3); // fails 3 times, succeeds on 4th (3rd retry)
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.Equal(SaveStatus.Idle, vm.Detail.CurrentSaveStatus);
+
+        vm.Detail.SelectedPriority = Priority.P1; // triggers autosave
+        
+        Assert.Equal(SaveStatus.Saving, vm.Detail.CurrentSaveStatus);
+        
+        await vm.Detail.DrainPendingSaveAsync();
+        
+        // Wait for the 300ms minimum display duration of the Saving state to elapse
+        await Task.Delay(400);
+        
+        Assert.Equal(3, failingStore.AttemptCount);
+        Assert.Equal(SaveStatus.Idle, vm.Detail.CurrentSaveStatus);
+        Assert.False(vm.Detail.IsSaveStatusVisible);
+        
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(Priority.P1, saved.Priority);
+    }
+
+    [Fact]
+    public async Task DetailSaveAutoRetriesAndFailsPermanently()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        
+        var task = new TaskItem { Title = "original" };
+        await store.SaveAsync(task);
+
+        var failingStore = new FailingTaskStore(store, 10); // fails permanently (needs 6 tries to fail)
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        
+        await vm.Detail.OpenAsync(task.Id);
+        Assert.Equal(SaveStatus.Idle, vm.Detail.CurrentSaveStatus);
+
+        vm.Detail.SelectedPriority = Priority.P1; // triggers autosave
+        
+        Assert.Equal(SaveStatus.Saving, vm.Detail.CurrentSaveStatus);
+        
+        await vm.Detail.DrainPendingSaveAsync();
+
+        // Wait for the 300ms minimum display duration of the Saving state to elapse
+        await Task.Delay(400);
+        
+        Assert.Equal(6, failingStore.AttemptCount); // original + 5 retries = 6 attempts
+        Assert.Equal(SaveStatus.Failed, vm.Detail.CurrentSaveStatus);
+        Assert.True(vm.Detail.IsSaveStatusVisible);
+        Assert.Equal("저장 실패", vm.Detail.SaveStatusToolTip);
+    }
+
+    private sealed class FailingTaskStore(ITaskStore inner, int failCount) : ITaskStore
+    {
+        private int _failedAttempts = 0;
+
+        public int AttemptCount => _failedAttempts;
+
+        public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
+            => inner.GetAsync<T>(id, cancellationToken);
+        public Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : RecordBase
+            => inner.GetAllAsync<T>(cancellationToken);
+        public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
+            => inner.SaveAsync(record, cancellationToken);
+        public Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
+            => inner.DeleteAsync<T>(id, cancellationToken);
+
+        public async Task<T?> MutateAsync<T>(Guid id, Func<T, bool> mutate, CancellationToken cancellationToken = default) where T : RecordBase
+        {
+            if (_failedAttempts < failCount)
+            {
+                _failedAttempts++;
+                throw new IOException("Simulated disk error");
+            }
+            return await inner.MutateAsync(id, mutate, cancellationToken);
+        }
+    }
 }

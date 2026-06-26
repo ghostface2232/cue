@@ -27,6 +27,7 @@
                • Selection is shown by a left accent bar (same language as the sidebar/main list). -->
         <Style x:Key="SettingsNavItemStyle" TargetType="ListViewItem">
             <Setter Property="MinHeight" Value="38" />
+            <Setter Property="MinWidth" Value="0" />
             <Setter Property="Margin" Value="4,2" />
             <Setter Property="Padding" Value="12,0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />

@@ -339,8 +339,33 @@ public sealed partial class SettingsPage : Page
         NavLabelNotifications.Visibility = labelVisibility;
         NavLabelAbout.Visibility = labelVisibility;
 
-        // In compact mode the nav sizes to its icon content (~50px); expanded mode uses the design token.
-        SectionNav.Width = compact ? double.NaN : (double)Resources["CueSettingsNavWidth"];
+        // In compact mode, shrink item padding and column spacing to fit nicely in 40px width.
+        // Keep Margin consistent (4, 2) so the hover highlight pill remains inset from the edge in both states.
+        var itemMargin = new Thickness(4, 2, 4, 2);
+        var itemPadding = compact ? new Thickness(7, 0, 7, 0) : new Thickness(12, 0, 12, 0);
+        var columnSpacing = compact ? 0 : 8; // Default column spacing is CueGap8 = 8
+
+        foreach (var item in SectionNav.Items.OfType<ListViewItem>())
+        {
+            item.Margin = itemMargin;
+            item.Padding = itemPadding;
+
+            if (item.Content is Grid grid)
+            {
+                grid.ColumnSpacing = columnSpacing;
+            }
+        }
+
+        double expandedWidth = 200;
+        try
+        {
+            if (Application.Current.Resources["CueSettingsNavWidth"] is double w)
+                expandedWidth = w;
+        }
+        catch { }
+
+        // In compact mode the nav width is fixed to 40px; expanded mode uses the design token.
+        SectionNav.Width = compact ? 40 : expandedWidth;
     }
 }
 

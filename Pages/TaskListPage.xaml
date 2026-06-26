@@ -626,6 +626,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBox
                                 Padding="2,2,4,3"
@@ -645,8 +646,18 @@
                                     <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
                                 </TextBox.Resources>
                             </TextBox>
-                            <HyperlinkButton
+                            <!-- Save status indicator dot -->
+                            <Ellipse
                                 Grid.Column="1"
+                                Width="8"
+                                Height="8"
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Fill="{x:Bind ViewModel.Detail.CurrentSaveStatus, Mode=OneWay, Converter={StaticResource SaveStatusToBrush}}"
+                                Visibility="{x:Bind ViewModel.Detail.IsSaveStatusVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}"
+                                ToolTipService.ToolTip="{x:Bind ViewModel.Detail.SaveStatusToolTip, Mode=OneWay}" />
+                            <HyperlinkButton
+                                Grid.Column="2"
                                 Style="{StaticResource CueIconButtonStyle}"
                                 Click="CloseDetail_Click"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
