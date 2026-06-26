@@ -1,6 +1,7 @@
 using Cue.Domain;
 using Cue.Parsing;
 using Cue.Storage;
+using Cue.Storage.Index;
 using Cue.Storage.Ranking;
 using Cue.Storage.Recurrence;
 using Cue.ViewModels;
