@@ -236,7 +236,13 @@
                     StrokeStartLineCap="Round"
                     StrokeEndLineCap="Round"
                     StrokeLineJoin="Round"
-                    Data="M 10,4 L 4,11 L 10,18 M 4,11 L 22,11" />
+                    Data="M 10,4 L 4,11 L 10,18 M 4,11 L 22,11">
+                    <!-- Optical up-nudge via RenderTransform (visual only): a top Margin would be halved by
+                         VerticalAlignment="Center", so the correction is applied directly to the visual element. -->
+                    <Path.RenderTransform>
+                        <TranslateTransform Y="-2" />
+                    </Path.RenderTransform>
+                </Path>
             </HyperlinkButton>
             <TextBlock
                 VerticalAlignment="Center"
