@@ -363,7 +363,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="한 주의 시작 요일" />
-                                        <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="타임라인 및 달력 선택 화면에서 앞에 오는 요일" />
+                                        <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="타임라인 및 달력 선택 화면에서 앞에 오는 요일" />
                                     </StackPanel>
                                     <ComboBox
                                         x:Name="FirstDayCombo"
@@ -381,7 +381,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
                                         <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="시간대 설정" />
-                                        <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="모든 시간 및 날짜의 시간대 기준" />
+                                        <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="모든 시간 및 날짜의 시간대 기준" />
                                     </StackPanel>
                                     <ComboBox
                                         x:Name="TimeZoneCombo"
@@ -411,7 +411,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="1–6시를 오후로 해석" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="오전/오후 정보 없는 1-6시 입력을 오후로 인식" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="오전/오후 정보 없는 1-6시 입력을 오후로 인식" />
                                 </StackPanel>
                                 <ToggleSwitch
                                     x:Name="AutoAfternoonSwitch"
@@ -425,7 +425,7 @@
                             <StackPanel Spacing="{StaticResource CueGap16}">
                                 <StackPanel Spacing="{StaticResource CueGap4}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="나만의 날짜 인식" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="입력하기 쉽게 인식할 나만의 날짜 설정 추가" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="입력하기 쉽게 인식할 나만의 날짜 설정 추가" />
                                 </StackPanel>
 
                                 <Border Style="{StaticResource SettingsDividerStyle}" />
@@ -459,7 +459,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel VerticalAlignment="Center" Spacing="{StaticResource CueGap2}">
                                                     <TextBlock FontSize="{StaticResource CueFontRowSub}" Text="{x:Bind Name}" />
-                                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="{x:Bind DayCaption}" />
+                                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="{x:Bind DayCaption}" />
                                                 </StackPanel>
                                                 <Button
                                                     Grid.Column="1"
@@ -520,7 +520,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="화면 모드" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="시스템, 라이트, 다크 중 선택" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="시스템, 라이트, 다크 중 선택" />
                                 </StackPanel>
                                 <ComboBox
                                     x:Name="ThemeCombo"
@@ -538,7 +538,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="키보드 포커스" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="키보드를 통해 이동/선택 가능한 포커스 외곽선 표시" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="키보드를 통해 이동/선택 가능한 포커스 외곽선 표시" />
                                 </StackPanel>
                                 <ComboBox
                                     x:Name="FocusCombo"
@@ -567,7 +567,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="리마인더" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="리마인더 구현 단계에서 활성화" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="리마인더 구현 단계에서 활성화" />
                                 </StackPanel>
                                 <ToggleSwitch
                                     Grid.Column="1"
@@ -608,7 +608,7 @@
                                     VerticalAlignment="Center"
                                     Spacing="{StaticResource CueGap2}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="Cue" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" Text="자연스럽게 할 일을 입력하면 자동으로 정리된 목록으로 바꿔주는, 가장 쉬운 To-Do 앱" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="자연스럽게 할 일을 입력하면 자동으로 정리된 목록으로 바꿔주는, 가장 쉬운 To-Do 앱" />
                                 </StackPanel>
                                 <TextBlock
                                     x:Name="VersionText"
