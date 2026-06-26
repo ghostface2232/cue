@@ -33,10 +33,16 @@ public sealed partial class SettingsPage : Page
         ["AUS Eastern Standard Time"] = "시드니, 멜버른",
     };
 
+    /// <summary>Body width below which the settings nav collapses to icon-only (compact) mode.</summary>
+    private const double CompactThreshold = 540;
+    /// <summary>Hysteresis: expand back only when width exceeds the threshold by this much.</summary>
+    private const double CompactHysteresis = 40;
+
     private readonly AppPreferences _preferences;
     private readonly ObservableCollection<CustomDateMeaningRow> _customDateRows = new();
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private bool _loading;
+    private bool _isNavCompact;
 
     public SettingsPage()
     {
@@ -307,6 +313,34 @@ public sealed partial class SettingsPage : Page
             .Where(meaning => !string.Equals(meaning.Name, name, StringComparison.Ordinal))
             .ToList();
         ReloadCustomDateRows();
+    }
+
+    /// <summary>
+    /// Collapses the settings nav to icon-only when the body is too narrow for the full labels,
+    /// and expands it back once there is enough room (with hysteresis to avoid flicker).
+    /// </summary>
+    private void BodyGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var width = e.NewSize.Width;
+        if (!_isNavCompact && width < CompactThreshold)
+            SetNavCompact(true);
+        else if (_isNavCompact && width > CompactThreshold + CompactHysteresis)
+            SetNavCompact(false);
+    }
+
+    private void SetNavCompact(bool compact)
+    {
+        _isNavCompact = compact;
+        var labelVisibility = compact ? Visibility.Collapsed : Visibility.Visible;
+
+        NavLabelTime.Visibility = labelVisibility;
+        NavLabelParsing.Visibility = labelVisibility;
+        NavLabelAppearance.Visibility = labelVisibility;
+        NavLabelNotifications.Visibility = labelVisibility;
+        NavLabelAbout.Visibility = labelVisibility;
+
+        // In compact mode the nav sizes to its icon content (~50px); expanded mode uses the design token.
+        SectionNav.Width = compact ? double.NaN : (double)Resources["CueSettingsNavWidth"];
     }
 }
 
