@@ -1930,6 +1930,92 @@ public sealed class ViewModelRegressionTests
         Assert.Equal("#F1C40F", option.Color);
     }
 
+    [Fact]
+    public async Task ToggleTaskTagPreservesOtherTags()
+    {
+        // Regression: the row context menu used to treat tags as single-select, clearing every tag
+        // before re-adding the clicked one. On a multi-tag task that wiped the others. Toggling one tag
+        // must now leave the rest untouched — add when absent, remove when present.
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var a = new Tag { Name = "a" };
+        var b = new Tag { Name = "b" };
+        var c = new Tag { Name = "c" };
+        await store.SaveAsync(a);
+        await store.SaveAsync(b);
+        await store.SaveAsync(c);
+        var task = new TaskItem { Title = "tagged", TagIds = { a.Id, b.Id, c.Id } };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // Toggling off the middle tag leaves the other two.
+        await vm.ToggleTaskTagAsync(task.Id, b.Id);
+        var afterRemove = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(afterRemove);
+        Assert.Equal(new[] { a.Id, c.Id }, afterRemove.TagIds);
+
+        // Toggling it again adds it back without disturbing the others.
+        await vm.ToggleTaskTagAsync(task.Id, b.Id);
+        var afterAdd = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(afterAdd);
+        Assert.Equal(new[] { a.Id, c.Id, b.Id }, afterAdd.TagIds);
+    }
+
+    [Fact]
+    public async Task RemoveTaskTagDropsOnlyThatTag()
+    {
+        // The 태그 지우기 picker (shown for multi-tag tasks) removes exactly the chosen tag.
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var a = new Tag { Name = "a" };
+        var b = new Tag { Name = "b" };
+        await store.SaveAsync(a);
+        await store.SaveAsync(b);
+        var task = new TaskItem { Title = "tagged", TagIds = { a.Id, b.Id } };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.RemoveTaskTagAsync(task.Id, a.Id);
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(new[] { b.Id }, saved.TagIds);
+    }
+
+    [Fact]
+    public async Task ClearTaskTagsRemovesEveryTag()
+    {
+        // 모두 지우기 wipes the whole set in one go.
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var a = new Tag { Name = "a" };
+        var b = new Tag { Name = "b" };
+        await store.SaveAsync(a);
+        await store.SaveAsync(b);
+        var task = new TaskItem { Title = "tagged", TagIds = { a.Id, b.Id } };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.ClearTaskTagsAsync(task.Id);
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        Assert.Empty(saved.TagIds);
+    }
+
     /// <summary>Wraps a real store and blocks the first <c>GetAsync&lt;TaskItem&gt;</c> for an armed id until
     /// released, so a test can hold an autosave in flight and mutate the panel underneath it.</summary>
     private sealed class GatedTaskStore(ITaskStore inner) : ITaskStore

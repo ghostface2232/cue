@@ -823,24 +823,53 @@ public partial class TaskListViewModel : ObservableObject
         }
     }
 
-    /// <summary>Sets the task's single tag to <paramref name="tagId"/>, replacing any current tag; or
-    /// clears it if that tag is already the one set. Then refreshes.</summary>
+    /// <summary>Toggles <paramref name="tagId"/> on the task: adds it when absent, removes it when
+    /// present. The task's other tags are left in place (a task may carry any number of tags). Then
+    /// refreshes.</summary>
     public async Task ToggleTaskTagAsync(Guid taskId, Guid tagId)
     {
-        // Atomic read-modify-write so the tag change touches only TagIds on the latest record. A task
-        // carries at most one tag, so picking a tag replaces whatever was there; picking the current tag
-        // again clears it.
+        // Atomic read-modify-write so the tag change touches only TagIds on the latest record. Tags are
+        // a multi-select set: flipping this one must not disturb the others, so we add or remove just it.
         var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
         {
-            var alreadyOnlyThis = task.TagIds.Count == 1 && task.TagIds[0] == tagId;
-            task.TagIds.Clear();
-            if (!alreadyOnlyThis) task.TagIds.Add(tagId);
+            if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
             return true;
         });
         if (changed is not null)
         {
             await LoadAsync();
             // The tag gained or lost this task, shifting its sidebar count (and the 태그 없음 bucket).
+            _navNotifier.NotifyCountsChanged();
+        }
+    }
+
+    /// <summary>Removes <paramref name="tagId"/> from the task, leaving its other tags in place, then
+    /// refreshes. A no-op (no reload) if the task didn't carry that tag. Used by the context menu's
+    /// 태그 지우기 picker, where the user selects a single tag to drop from a multi-tag task.</summary>
+    public async Task RemoveTaskTagAsync(Guid taskId, Guid tagId)
+    {
+        // Unlike a toggle, this only ever removes: if a concurrent edit already dropped the tag we leave
+        // it gone rather than re-adding it.
+        var changed = await _store.MutateAsync<TaskItem>(taskId, task => task.TagIds.Remove(tagId));
+        if (changed is not null)
+        {
+            await LoadAsync();
+            _navNotifier.NotifyCountsChanged();
+        }
+    }
+
+    /// <summary>Removes every tag from the task, then refreshes. A no-op (no reload) if it had none.</summary>
+    public async Task ClearTaskTagsAsync(Guid taskId)
+    {
+        var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
+        {
+            if (task.TagIds.Count == 0) return false;
+            task.TagIds.Clear();
+            return true;
+        });
+        if (changed is not null)
+        {
+            await LoadAsync();
             _navNotifier.NotifyCountsChanged();
         }
     }
