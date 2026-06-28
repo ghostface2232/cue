@@ -5,16 +5,26 @@
 // assumptions the rest of the plan rests on:
 //   (1) Do TextCompositionStarted/Changed/Ended actually fire for the Korean IME, and can we hold a
 //       clean "is composing now?" window from them?
-//   (2) When we re-tint the whole range on a commit/space/idle trigger, does the caret jump, and does
-//       the native Ctrl+Z (undo) stack break?
+//   (2) When we re-tint on a commit/space/idle trigger, does the caret jump, and does the native
+//       Ctrl+Z (undo) stack break?
 //   (3) Does character formatting leak onto a mid-composition syllable (ㄱ→가→갈)?
 //
-// Everything is self-contained: no DI, no view model, no parser. Tinting uses a deliberately dumb
-// throwaway regex just so there is *something* positional to color — it is NOT the real Step 1 token
-// contract. All output is on-screen so no debugger is needed. Delete after Step 0 is decided.
+// v2 changes (after first observation run):
+//   - DIFF-ONLY re-tint: never reformat the whole document. Compute the desired accent spans, diff
+//     against what is already painted, and only recolor what changed. An empty diff creates NO undo
+//     unit at all. This directly tests whether the Ctrl+Z freeze was caused by full-document reformat
+//     churn piling up in the native undo stack.
+//   - COMPOSITION-PREFIX tinting: instead of suppressing all tinting while composing, we tint the
+//     already-committed prefix and never touch the active composition span. This lets earlier tokens
+//     light up live (no space required) while still never formatting a half-formed syllable.
+//
+// Self-contained: no DI, no view model, no parser. Tinting uses a deliberately dumb throwaway regex
+// just so there is *something* positional to color — it is NOT the real Step 1 token contract. All
+// output is on-screen so no debugger is needed. Delete after Step 0 is decided.
 // ============================================================================================
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -36,8 +46,13 @@ public sealed partial class ImeSpikePage : Page
 
     private readonly DispatcherTimer _idle = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly List<string> _log = new();
+
+    // The spans currently painted accent, so we can diff and only touch what changed.
+    private readonly HashSet<(int Start, int Len)> _painted = new();
+
     private bool _isComposing;
-    private bool _tinting; // re-entrancy guard: ignore TextChanged raised by our own formatting ops
+    private bool _tinting;          // re-entrancy guard: ignore TextChanged raised by our own ops
+    private int _compStart;         // document offset where the active composition begins
     private int _compositionCount;
 
     public ImeSpikePage()
@@ -55,7 +70,7 @@ public sealed partial class ImeSpikePage : Page
             Tint("idle-500ms");
         };
 
-        Log("ready. type Korean into the box above.");
+        Log("ready (v2: diff-only re-tint, composition-prefix tinting). type Korean above.");
         UpdateState("-");
     }
 
@@ -65,21 +80,22 @@ public sealed partial class ImeSpikePage : Page
     {
         _isComposing = true;
         _compositionCount++;
-        Log($"CompositionStarted  #{_compositionCount}");
+        _compStart = Box.Document.Selection.StartPosition;
+        Log($"CompositionStarted  #{_compositionCount}  at={_compStart}");
         UpdateState("composition-start");
     }
 
     private void OnCompositionChanged(RichEditBox sender, TextCompositionChangedEventArgs args)
     {
-        // args carries the in-progress span; log it so we can see whether the signal is usable.
-        var span = Safe(() => $"start={args.StartIndex} len={args.Length}");
-        Log($"CompositionChanged  {span}");
+        // args carries the in-progress span; remember its start so we never paint over the active tail.
+        try { _compStart = args.StartIndex; } catch { /* keep last */ }
+        Log($"CompositionChanged  start={Safe(() => args.StartIndex.ToString())} len={Safe(() => args.Length.ToString())}");
         UpdateState("composition-change");
 
-        // Leak probe: when the gate is OFF we deliberately tint mid-composition so the observer can
-        // see whether the accent bleeds onto the half-formed syllable.
-        if (GateOnNonComposing.IsChecked != true)
-            Tint("DURING-composition (gate off)");
+        if (GateOnNonComposing.IsChecked == true)
+            Tint("during-composition (committed prefix only)"); // paints [0, _compStart) — never the tail
+        else
+            Tint("DURING-composition (gate off — leak probe)"); // paints everything, including the tail
     }
 
     private void OnCompositionEnded(RichEditBox sender, TextCompositionEndedEventArgs args)
@@ -100,8 +116,8 @@ public sealed partial class ImeSpikePage : Page
         var text = GetPlainText();
         UpdateState("text-changed");
 
-        // Space-triggered tint, gated on non-composing.
-        if (text.EndsWith(" ", StringComparison.Ordinal) && CanTintNow())
+        // Space is a hard delimiter (and not a composing key): tint immediately.
+        if (text.EndsWith(" ", StringComparison.Ordinal))
         {
             _idle.Stop();
             Tint("space");
@@ -113,57 +129,69 @@ public sealed partial class ImeSpikePage : Page
         _idle.Start();
     }
 
-    private bool CanTintNow() => GateOnNonComposing.IsChecked != true || !_isComposing;
+    // The document offset up to which we are allowed to paint: everything when not composing, or just
+    // the committed prefix (excluding the active composition tail) while composing under the gate.
+    private int PaintLimit(string text)
+    {
+        if (_isComposing && GateOnNonComposing.IsChecked == true)
+            return Math.Clamp(_compStart, 0, text.Length);
+        return text.Length;
+    }
 
-    // ---- Re-tint: full reset + re-color matched spans (assumptions 2 & 3) ----------------------
+    // ---- Re-tint: DIFF ONLY (assumptions 2 & 3) ------------------------------------------------
 
     private void Tint(string reason)
     {
-        if (!CanTintNow())
-        {
-            Log($"  (skip tint [{reason}] — composing)");
-            return;
-        }
-
         try
         {
             var doc = Box.Document;
             var text = GetPlainText();
+            int limit = PaintLimit(text);
 
-            // Save caret BEFORE so we can observe whether re-tint moved it.
+            // Desired accent spans within the paintable range.
+            var desired = new HashSet<(int Start, int Len)>();
+            foreach (Match m in DateIsh.Matches(text))
+                if (m.Index + m.Length <= limit)
+                    desired.Add((m.Index, m.Length));
+
+            var toAdd = desired.Where(s => !_painted.Contains(s)).ToList();
+            var toClear = _painted.Where(s => !desired.Contains(s)).ToList();
+
+            if (toAdd.Count == 0 && toClear.Count == 0)
+            {
+                // Nothing changed — do NOT create an (empty) undo unit. This is the key anti-churn move.
+                return;
+            }
+
             int caretStart = doc.Selection.StartPosition;
             int caretEnd = doc.Selection.EndPosition;
+            bool group = IsolateUndoGroup.IsChecked == true;
 
             _tinting = true;
             doc.BatchDisplayUpdates();
-            if (IsolateUndoGroup.IsChecked == true)
-                doc.BeginUndoGroup();
-
-            // 1) reset whole range to the theme default colour
-            var all = doc.GetRange(0, TextRangeEnd);
-            all.CharacterFormat.ForegroundColor = DefaultColor();
-
-            // 2) re-color every date-ish match (BMP Korean => plain offset == document offset)
-            int painted = 0;
-            foreach (Match m in DateIsh.Matches(text))
+            try
             {
-                var r = doc.GetRange(m.Index, m.Index + m.Length);
-                r.CharacterFormat.ForegroundColor = Accent;
-                painted++;
+                if (group) doc.BeginUndoGroup();
+                foreach (var s in toClear)
+                    doc.GetRange(s.Start, s.Start + s.Len).CharacterFormat.ForegroundColor = DefaultColor();
+                foreach (var s in toAdd)
+                    doc.GetRange(s.Start, s.Start + s.Len).CharacterFormat.ForegroundColor = Accent;
+            }
+            finally
+            {
+                if (group) doc.EndUndoGroup();   // always paired, even if a format op throws
+                doc.Selection.SetRange(caretStart, caretEnd);
+                doc.ApplyDisplayUpdates();
+                _tinting = false;
             }
 
-            if (IsolateUndoGroup.IsChecked == true)
-                doc.EndUndoGroup();
-
-            // restore caret AFTER
-            doc.Selection.SetRange(caretStart, caretEnd);
-            doc.ApplyDisplayUpdates();
-            _tinting = false;
+            _painted.Clear();
+            foreach (var s in desired) _painted.Add(s);
 
             int afterStart = doc.Selection.StartPosition;
             int afterEnd = doc.Selection.EndPosition;
             var jumped = (afterStart != caretStart || afterEnd != caretEnd) ? "  <<< CARET MOVED" : "";
-            Log($"  tint [{reason}] painted={painted}  caret {caretStart},{caretEnd} -> {afterStart},{afterEnd}{jumped}");
+            Log($"  tint [{reason}] +{toAdd.Count}/-{toClear.Count} (painted={_painted.Count})  caret {caretStart},{caretEnd} -> {afterStart},{afterEnd}{jumped}");
             UpdateState(reason);
         }
         catch (Exception ex)
@@ -172,9 +200,6 @@ public sealed partial class ImeSpikePage : Page
             Log($"  tint [{reason}] THREW: {ex.GetType().Name}: {ex.Message}");
         }
     }
-
-    // A large sentinel end position; ITextRange clamps to the document end.
-    private const int TextRangeEnd = int.MaxValue;
 
     private Color DefaultColor()
         => ActualTheme == ElementTheme.Dark
@@ -203,8 +228,8 @@ public sealed partial class ImeSpikePage : Page
         {
             var doc = Box.Document;
             StateLine.Text =
-                $"IsComposing={_isComposing}  caret=({doc.Selection.StartPosition},{doc.Selection.EndPosition})  " +
-                $"len={GetPlainText().Length}  compositions={_compositionCount}  lastTrigger={lastTrigger}";
+                $"IsComposing={_isComposing}  compStart={_compStart}  caret=({doc.Selection.StartPosition},{doc.Selection.EndPosition})  " +
+                $"len={GetPlainText().Length}  painted={_painted.Count}  compositions={_compositionCount}  lastTrigger={lastTrigger}";
         }
         catch { /* never let telemetry throw */ }
     }
@@ -228,5 +253,6 @@ public sealed partial class ImeSpikePage : Page
     {
         _log.Clear();
         LogText.Text = string.Empty;
+        _painted.Clear();
     }
 }
