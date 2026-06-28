@@ -18,13 +18,14 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Spacing="2">
             <TextBlock Text="IME 조합 신호 스파이크 (Step 0 — 버리는 코드)" FontSize="18" FontWeight="SemiBold" />
             <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       Text="아래 RichEditBox에 한글 IME로 타이핑하면서 우측 하단 로그를 관찰하세요. 토글로 게이트 동작을 비교합니다. 입력 예: '내일 오후 3시 회의', '금요일' 뒤에 '마다' 추가, 'ㄱ→가→갈' 조합." />
+                       Text="한글 IME로 타이핑하며 아래 대시보드를 본다. 입력 예: '금요일 회의 내일 오후 3시' 후 Ctrl+Z 여러 번 / 'ㄱ→가→갈' 조합." />
         </StackPanel>
 
         <!-- The control under test. Metrics roughly mirror the real quick-add box. -->
@@ -39,25 +40,47 @@
 
         <!-- Experiment toggles. -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="20">
-            <CheckBox x:Name="GateOnNonComposing" Content="비조합일 때만 재틴트 (끄면 조합 중에도 칠해 leak 관찰)" IsChecked="True" />
+            <CheckBox x:Name="GateOnNonComposing" Content="비조합일 때만 재틴트 (끄면 leak 관찰)" IsChecked="True" />
             <CheckBox x:Name="IsolateUndoGroup" Content="틴트를 undo 그룹으로 격리" IsChecked="True" />
-            <Button x:Name="ClearLog" Content="로그 지우기" Click="ClearLog_Click" />
+            <Button x:Name="ClearLog" Content="카운터/로그 리셋" Click="ClearLog_Click" />
         </StackPanel>
 
-        <!-- Live state readout. -->
-        <Border Grid.Row="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                CornerRadius="8" Padding="12,8">
-            <TextBlock x:Name="StateLine" FontFamily="Consolas" FontSize="13"
-                       Text="IsComposing=false  caret=(0,0)  len=0  lastTrigger=-" />
-        </Border>
+        <!-- VERDICT row: color-coded "is this working?" at a glance. -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10">
+            <Border x:Name="VComposition" CornerRadius="6" Padding="10,6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <TextBlock x:Name="VCompositionText" FontSize="13" Text="조합 신호 …" />
+            </Border>
+            <Border x:Name="VCaret" CornerRadius="6" Padding="10,6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <TextBlock x:Name="VCaretText" FontSize="13" Text="caret …" />
+            </Border>
+            <Border x:Name="VUndo" CornerRadius="6" Padding="10,6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <TextBlock x:Name="VUndoText" FontSize="13" Text="undo 단위 …" />
+            </Border>
+            <Border x:Name="VThrow" CornerRadius="6" Padding="10,6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <TextBlock x:Name="VThrowText" FontSize="13" Text="예외 0" />
+            </Border>
+        </StackPanel>
 
-        <!-- Scrolling event log. -->
+        <!-- Live state + counters (cheap to update, no scrolling). -->
         <Border Grid.Row="4" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 CornerRadius="8" Padding="12,8">
-            <ScrollViewer x:Name="LogScroll" VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Auto">
-                <TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="12" IsTextSelectionEnabled="True"
-                           TextWrapping="Wrap" Text="" />
-            </ScrollViewer>
+            <StackPanel Spacing="4">
+                <TextBlock x:Name="StateNow" FontFamily="Consolas" FontSize="13"
+                           Text="IsComposing=false  caret=(0,0)  len=0  painted=0" />
+                <TextBlock x:Name="StateCounters" FontFamily="Consolas" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="comp: start 0 / change 0 / end 0    tint: applied 0 / skipped 0    undo units 0    caret jumps 0" />
+            </StackPanel>
+        </Border>
+
+        <!-- Recent NOTABLE events only (newest first, capped, no firehose). -->
+        <Border Grid.Row="5" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                CornerRadius="8" Padding="12,8">
+            <StackPanel>
+                <TextBlock Text="최근 이벤트 (최신순, 조합 중간변화는 카운터로만 집계)" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" Margin="0,0,0,4" />
+                <TextBlock x:Name="FeedText" FontFamily="Consolas" FontSize="12" IsTextSelectionEnabled="True"
+                           TextWrapping="NoWrap" Text="" />
+            </StackPanel>
         </Border>
     </Grid>
 </Page>
