@@ -118,24 +118,27 @@ public sealed partial class ImeSpikePage : Page
         if (text == _lastText) return;
         _lastText = text;
 
-        // Never tint mid-composition (gate ON): wait for the commit boundary. This is what makes the
-        // active syllable safe and avoids the commit-reset desync.
-        if (_isComposing && GateOnNonComposing.IsChecked == true) return;
-
-        if (text.EndsWith(" ", StringComparison.Ordinal))
+        // Space (only meaningful when not composing) is a hard delimiter → tint now.
+        if (!_isComposing && text.EndsWith(" ", StringComparison.Ordinal))
         {
             _idle.Stop();
             Tint("space");
             return;
         }
+        // Otherwise debounce. The idle tick is allowed to fire DURING composition so the final token
+        // (e.g. a trailing "3시" whose 시 the IME still holds in composition) lights up after a brief
+        // pause without needing a space. By then the syllable is fully formed; the tick paints the
+        // whole text including that settled-but-uncommitted tail, and the eventual commit re-tints
+        // (full reset) to stay consistent. Per-keystroke tinting stays off, so half-formed syllables
+        // mid-typing are never touched.
         _idle.Stop();
         _idle.Start();
     }
 
-    private int PaintLimit(string text)
-        => (_isComposing && GateOnNonComposing.IsChecked == true)
-            ? Math.Clamp(_compStart, 0, text.Length)
-            : text.Length;
+    // Paint the whole visible text, including the settled composing tail, so a trailing time token
+    // tints on idle. Active-typing safety comes from WHEN we tint (commit boundaries + idle pause,
+    // never per-keystroke under the gate), not from clamping the range here.
+    private int PaintLimit(string text) => text.Length;
 
     // ---- Re-tint: FULL RESET then paint matches (assumptions 2 & 3) ----------------------------
 
