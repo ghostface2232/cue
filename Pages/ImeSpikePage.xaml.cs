@@ -21,7 +21,6 @@
 // ============================================================================================
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -86,7 +85,12 @@ public sealed partial class ImeSpikePage : Page
         // Aggregated only — NOT printed per event (this is the firehose we removed).
         _cChange++;
         try { _compStart = args.StartIndex; } catch { /* keep last */ }
-        Tint(GateOnNonComposing.IsChecked == true ? "compose" : "compose-leak");
+        // Default (gate ON): never tint mid-composition — wait for the commit. The IME rewrites the
+        // committed syllable on finalize (resetting its format), and touching the active tail risks a
+        // leak, so tinting at commit boundaries only is the safe design. The leak-probe (gate OFF)
+        // deliberately tints the live composition so the observer can see the bleed.
+        if (GateOnNonComposing.IsChecked != true)
+            Tint("compose-leak");
         Refresh();
     }
 
@@ -94,6 +98,7 @@ public sealed partial class ImeSpikePage : Page
     {
         _isComposing = false;
         _cEnd++;
+        _idle.Stop(); // the commit is our tint trigger; don't also let a queued idle tick double it
         Feed("■ composition end → commit");
         Tint("commit");
         _lastText = GetPlainText(); // keep the baseline in sync after a commit
@@ -113,6 +118,10 @@ public sealed partial class ImeSpikePage : Page
         if (text == _lastText) return;
         _lastText = text;
 
+        // Never tint mid-composition (gate ON): wait for the commit boundary. This is what makes the
+        // active syllable safe and avoids the commit-reset desync.
+        if (_isComposing && GateOnNonComposing.IsChecked == true) return;
+
         if (text.EndsWith(" ", StringComparison.Ordinal))
         {
             _idle.Stop();
@@ -128,7 +137,7 @@ public sealed partial class ImeSpikePage : Page
             ? Math.Clamp(_compStart, 0, text.Length)
             : text.Length;
 
-    // ---- Re-tint: DIFF ONLY (assumptions 2 & 3) ------------------------------------------------
+    // ---- Re-tint: FULL RESET then paint matches (assumptions 2 & 3) ----------------------------
 
     private void Tint(string reason)
     {
@@ -138,19 +147,10 @@ public sealed partial class ImeSpikePage : Page
             var text = GetPlainText();
             int limit = PaintLimit(text);
 
-            var desired = new HashSet<(int Start, int Len)>();
+            var desired = new List<(int Start, int Len)>();
             foreach (Match m in DateIsh.Matches(text))
                 if (m.Index + m.Length <= limit)
                     desired.Add((m.Index, m.Length));
-
-            var toAdd = desired.Where(s => !_painted.Contains(s)).ToList();
-            var toClear = _painted.Where(s => !desired.Contains(s)).ToList();
-
-            if (toAdd.Count == 0 && toClear.Count == 0)
-            {
-                _tintSkipped++; // empty diff: no undo unit created — the key anti-churn move
-                return;
-            }
 
             int caretStart = doc.Selection.StartPosition;
             int caretEnd = doc.Selection.EndPosition;
@@ -161,9 +161,11 @@ public sealed partial class ImeSpikePage : Page
             try
             {
                 if (group) doc.BeginUndoGroup();
-                foreach (var s in toClear)
-                    doc.GetRange(s.Start, s.Start + s.Len).CharacterFormat.ForegroundColor = DefaultColor();
-                foreach (var s in toAdd)
+                // FULL RESET to default first. This is what diff-only could not do: it clears accent
+                // that bled into newly typed text (format inheritance), and accent the IME wiped when it
+                // recommitted a syllable. Then paint only the current matches. One grouped undo unit.
+                doc.GetRange(0, int.MaxValue).CharacterFormat.ForegroundColor = DefaultColor();
+                foreach (var s in desired)
                     doc.GetRange(s.Start, s.Start + s.Len).CharacterFormat.ForegroundColor = Accent;
             }
             finally
@@ -178,13 +180,14 @@ public sealed partial class ImeSpikePage : Page
             foreach (var s in desired) _painted.Add(s);
 
             _tintApplied++;
-            // Real undo-stack growth: one unit if grouped, else one per format op. This is the freeze signal.
-            _undoUnits += group ? 1 : (toAdd.Count + toClear.Count);
+            // Undo-stack growth per tint: one unit if grouped, else the reset + one per accent span.
+            // This is the freeze signal — should grow ~1 per edit now, not unbounded.
+            _undoUnits += group ? 1 : (1 + desired.Count);
 
             bool jumped = doc.Selection.StartPosition != caretStart || doc.Selection.EndPosition != caretEnd;
             if (jumped) _caretJumps++;
 
-            Feed($"tint [{reason}] +{toAdd.Count}/-{toClear.Count}{(jumped ? "  CARET MOVED" : "")}");
+            Feed($"tint [{reason}] ={desired.Count}{(jumped ? "  CARET MOVED" : "")}");
         }
         catch (Exception ex)
         {
