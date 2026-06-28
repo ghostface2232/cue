@@ -49,6 +49,7 @@ public sealed partial class ImeSpikePage : Page
     private bool _isComposing;
     private bool _tinting;
     private int _compStart;
+    private string _lastText = "";  // last *visible text* we reacted to; ignores format-only re-raises
 
     // cumulative counters (the freeze/caret signals live here, not in a scrolling log)
     private int _cStart, _cChange, _cEnd;
@@ -95,6 +96,7 @@ public sealed partial class ImeSpikePage : Page
         _cEnd++;
         Feed("■ composition end → commit");
         Tint("commit");
+        _lastText = GetPlainText(); // keep the baseline in sync after a commit
         Refresh();
     }
 
@@ -102,8 +104,16 @@ public sealed partial class ImeSpikePage : Page
 
     private void OnTextChanged(object sender, RoutedEventArgs e)
     {
-        if (_tinting) return; // our own re-tint
-        if (GetPlainText().EndsWith(" ", StringComparison.Ordinal))
+        if (_tinting) return; // our own re-tint (synchronous case)
+
+        var text = GetPlainText();
+        // Applying CharacterFormat can re-raise TextChanged asynchronously, AFTER the _tinting guard
+        // has cleared. The visible text is unchanged in that case, so ignore it — this is what kept the
+        // dashboard "writing" with no input (idle timer re-armed in a loop). Only react to real edits.
+        if (text == _lastText) return;
+        _lastText = text;
+
+        if (text.EndsWith(" ", StringComparison.Ordinal))
         {
             _idle.Stop();
             Tint("space");
