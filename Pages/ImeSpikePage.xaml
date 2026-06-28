@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ============================================================================================
+     SPIKE — THROWAWAY CODE (Inline-highlight plan, Step 0: IME composition signal gate).
+     Delete this file, ImeSpikePage.xaml.cs, the "imespike" NavigationViewItem in MainWindow.xaml,
+     and the "imespike" branch in MainWindow.xaml.cs once Step 0 is decided. Do NOT build on this.
+     ============================================================================================ -->
+<Page
+    x:Class="Cue.Pages.ImeSpikePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="24" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Spacing="2">
+            <TextBlock Text="IME 조합 신호 스파이크 (Step 0 — 버리는 코드)" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="아래 RichEditBox에 한글 IME로 타이핑하면서 우측 하단 로그를 관찰하세요. 토글로 게이트 동작을 비교합니다. 입력 예: '내일 오후 3시 회의', '금요일' 뒤에 '마다' 추가, 'ㄱ→가→갈' 조합." />
+        </StackPanel>
+
+        <!-- The control under test. Metrics roughly mirror the real quick-add box. -->
+        <RichEditBox
+            Grid.Row="1"
+            x:Name="Box"
+            MinHeight="48"
+            Padding="14,12,14,10"
+            CornerRadius="12"
+            IsSpellCheckEnabled="False"
+            FontSize="16" />
+
+        <!-- Experiment toggles. -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="20">
+            <CheckBox x:Name="GateOnNonComposing" Content="비조합일 때만 재틴트 (끄면 조합 중에도 칠해 leak 관찰)" IsChecked="True" />
+            <CheckBox x:Name="IsolateUndoGroup" Content="틴트를 undo 그룹으로 격리" IsChecked="True" />
+            <Button x:Name="ClearLog" Content="로그 지우기" Click="ClearLog_Click" />
+        </StackPanel>
+
+        <!-- Live state readout. -->
+        <Border Grid.Row="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                CornerRadius="8" Padding="12,8">
+            <TextBlock x:Name="StateLine" FontFamily="Consolas" FontSize="13"
+                       Text="IsComposing=false  caret=(0,0)  len=0  lastTrigger=-" />
+        </Border>
+
+        <!-- Scrolling event log. -->
+        <Border Grid.Row="4" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                CornerRadius="8" Padding="12,8">
+            <ScrollViewer x:Name="LogScroll" VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="12" IsTextSelectionEnabled="True"
+                           TextWrapping="Wrap" Text="" />
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</Page>

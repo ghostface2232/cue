@@ -279,6 +279,15 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // SPIKE (Step 0, throwaway): remove with ImeSpikePage and the "imespike" nav item.
+        if (item.Tag is string spike && spike == "imespike")
+        {
+            _currentNavigation = null;
+            NavFrame.Navigate(typeof(ImeSpikePage));
+            NavFrame.BackStack.Clear();
+            return;
+        }
+
         if (item.Tag is not (string or TaskListNavigation)) return;
         _currentNavigation = item.Tag as TaskListNavigation;
         NavFrame.Navigate(typeof(TaskListPage), item.Tag);
