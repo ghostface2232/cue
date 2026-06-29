@@ -466,7 +466,7 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public async Task TodayCompletion_WithKeepCompletedForToday_LeavesTheRowDimmedInPlace_AndSkipsTheSection()
+    public async Task TodayCompletion_WithKeepCompletedForToday_LeavesTheRowDimmedInPlace_AndOutOfTheSection()
     {
         using var temp = new TempDirectory();
         var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));

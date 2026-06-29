@@ -377,30 +377,28 @@ public partial class TaskListViewModel : ObservableObject
                 break;
 
             case TaskListMode.Today:
-                // With keep on, every task completed today is already shown in place, so the
-                // "오늘 완료한 일" section would only duplicate it — skip it entirely (count 0, empty pager).
-                Func<int, Task<IReadOnlyList<TaskListItem>>>? todayCompletedPager =
-                    keep ? null : limit => _index.GetTodayCompletedAsync(limit);
+                // With keep on, non-recurring work completed today is shown in place, so the section drops
+                // exactly that set (excludeKeptInPlace) — an ended recurring series still surfaces here.
                 await LoadFlatWithCompletedAsync(
                     await _index.GetTodayAsync(keep),
-                    keep ? 0 : await _index.GetTodayCompletedCountAsync(),
-                    todayCompletedPager);
+                    await _index.GetTodayCompletedCountAsync(excludeKeptInPlace: keep),
+                    limit => _index.GetTodayCompletedAsync(limit, excludeKeptInPlace: keep));
                 break;
 
             case TaskListMode.TaskGroup:
                 var groupId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
                     await _index.GetByTaskGroupAsync(groupId, keep),
-                    await _index.GetCompletedCountByTaskGroupAsync(groupId, excludeCompletedToday: keep),
-                    limit => _index.GetCompletedByTaskGroupAsync(groupId, limit, excludeCompletedToday: keep));
+                    await _index.GetCompletedCountByTaskGroupAsync(groupId, excludeKeptInPlace: keep),
+                    limit => _index.GetCompletedByTaskGroupAsync(groupId, limit, excludeKeptInPlace: keep));
                 break;
 
             case TaskListMode.Tag:
                 var tagId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
                     await _index.GetByTagAsync(tagId, keep),
-                    await _index.GetCompletedCountByTagAsync(tagId, excludeCompletedToday: keep),
-                    limit => _index.GetCompletedByTagAsync(tagId, limit, excludeCompletedToday: keep));
+                    await _index.GetCompletedCountByTagAsync(tagId, excludeKeptInPlace: keep),
+                    limit => _index.GetCompletedByTagAsync(tagId, limit, excludeKeptInPlace: keep));
                 break;
 
             default:
@@ -433,7 +431,7 @@ public partial class TaskListViewModel : ObservableObject
     private async Task LoadFlatWithCompletedAsync(
         IReadOnlyList<TaskListItem> open,
         int completedTotal,
-        Func<int, Task<IReadOnlyList<TaskListItem>>>? completedPage)
+        Func<int, Task<IReadOnlyList<TaskListItem>>> completedPage)
     {
         SyncPrioritySections([]);
         SyncLogbookSections([]);
@@ -443,10 +441,9 @@ public partial class TaskListViewModel : ObservableObject
         CompletedSection.TotalCount = completedTotal;
 
         // Realize only the rows within the current window (0 while collapsed and never opened), capped at
-        // the live total so a just-shrunk list can't ask for more than exists. A null pager pairs with a
-        // zero total (the Today view when completed work is kept in place), so the window is 0 and unused.
+        // the live total so a just-shrunk list can't ask for more than exists.
         var window = Math.Min(_completedWindow, completedTotal);
-        SyncCompletedSection(window > 0 && completedPage is not null ? await completedPage(window) : []);
+        SyncCompletedSection(window > 0 ? await completedPage(window) : []);
 
         IsEmpty = Tasks.Count == 0 && CompletedSection.TotalCount == 0;
     }
@@ -975,11 +972,13 @@ public partial class TaskListViewModel : ObservableObject
                 var nextOccurrence = await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
                 _navNotifier.NotifyCountsChanged();
 
-                if (KeepCompletedToday && nextOccurrence is null)
+                if (KeepCompletedToday && nextOccurrence is null && !row.IsRecurring)
                 {
-                    // "완료한 일 당일 표시" on, terminal completion: the finished one-off stays dimmed right
+                    // "완료한 일 당일 표시" on, terminal completion of a non-recurring task: it stays dimmed right
                     // where it sat for the rest of the day, so there is nothing to whisk away and no undo bar
-                    // to offer (re-tick the dimmed row to reopen it). Just reconcile in place.
+                    // to offer (re-tick the dimmed row to reopen it). Just reconcile in place. A recurring
+                    // record is never kept in place (an ended/exhausted series goes to the Logbook), so it
+                    // keeps the normal acknowledgement-then-fold path below.
                     await FinalizeCompletionAsync(row);
                 }
                 else

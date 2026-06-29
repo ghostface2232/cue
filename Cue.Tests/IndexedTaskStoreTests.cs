@@ -586,12 +586,12 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
             new[] { open.Id, doneToday.Id }.OrderBy(g => g.ToString()),
             (await store.GetAllActiveAsync(keepCompletedToday: true)).Select(t => t.Id).OrderBy(g => g.ToString()));
 
-        // The paired completed sections drop today's row when excludeCompletedToday is set, so a kept-in-place
+        // The paired completed sections drop today's row when excludeKeptInPlace is set, so a kept-in-place
         // task is never listed twice; yesterday's completion remains and the counts agree.
-        Assert.Equal(new[] { doneYesterday.Id }, (await store.GetCompletedByTaskGroupAsync(project.Id, excludeCompletedToday: true)).Select(t => t.Id));
-        Assert.Equal(1, await store.GetCompletedCountByTaskGroupAsync(project.Id, excludeCompletedToday: true));
-        Assert.Equal(new[] { doneYesterday.Id }, (await store.GetCompletedByTagAsync(label.Id, excludeCompletedToday: true)).Select(t => t.Id));
-        Assert.Equal(1, await store.GetCompletedCountByTagAsync(label.Id, excludeCompletedToday: true));
+        Assert.Equal(new[] { doneYesterday.Id }, (await store.GetCompletedByTaskGroupAsync(project.Id, excludeKeptInPlace: true)).Select(t => t.Id));
+        Assert.Equal(1, await store.GetCompletedCountByTaskGroupAsync(project.Id, excludeKeptInPlace: true));
+        Assert.Equal(new[] { doneYesterday.Id }, (await store.GetCompletedByTagAsync(label.Id, excludeKeptInPlace: true)).Select(t => t.Id));
+        Assert.Equal(1, await store.GetCompletedCountByTagAsync(label.Id, excludeKeptInPlace: true));
 
         // Without the exclude flag the sections still show every completion (the open-only behavior).
         Assert.Equal(new[] { doneToday.Id, doneYesterday.Id }, (await store.GetCompletedByTaskGroupAsync(project.Id)).Select(t => t.Id));
@@ -603,7 +603,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.DoesNotContain(await store.GetTodayAsync(keepCompletedToday: true), t => t.Id == doneToday.Id);
         Assert.DoesNotContain(await store.GetByTaskGroupAsync(project.Id, keepCompletedToday: true), t => t.Id == doneToday.Id);
         // It now belongs to the completed section even when today's rows are excluded (it is no longer today's).
-        Assert.Contains(await store.GetCompletedByTaskGroupAsync(project.Id, excludeCompletedToday: true), t => t.Id == doneToday.Id);
+        Assert.Contains(await store.GetCompletedByTaskGroupAsync(project.Id, excludeKeptInPlace: true), t => t.Id == doneToday.Id);
     }
 
     [Fact]
@@ -629,6 +629,47 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         // Open-only, none of the completed ones appear and only the due-today open task is there.
         Assert.Equal(new[] { dueOpen.Id }, (await store.GetTodayAsync()).Select(t => t.Id));
+    }
+
+    [Fact]
+    public async Task KeepCompletedToday_NeverKeepsAnEndedRecurringSeries_ItGoesToTheCompletedSection()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        var project = new TaskGroup { Name = "프로젝트" };
+        await store.SaveAsync(project);
+
+        // A non-recurring task completed today (kept in place) vs. an ended recurring series completed today
+        // (a recurring record — CompletedAt set, rule kept — which must NOT linger as a dimmed active row).
+        var oneOff = new TaskItem { Title = "단발 완료", When = OnDay(Today), TaskGroupId = project.Id, CompletedAt = Now };
+        var endedSeries = new TaskItem
+        {
+            Title = "반복 종료",
+            When = OnDay(Today),
+            TaskGroupId = project.Id,
+            CompletedAt = Now,
+            Recurrence = new RecurrenceRule("FREQ=DAILY", OnDayZoned(Today)),
+        };
+        await store.SaveAsync(oneOff);
+        await store.SaveAsync(endedSeries);
+
+        // Kept-in-place admits the one-off but never the ended series.
+        Assert.Equal(new[] { oneOff.Id }, (await store.GetTodayAsync(keepCompletedToday: true)).Select(t => t.Id));
+        Assert.Equal(new[] { oneOff.Id }, (await store.GetByTaskGroupAsync(project.Id, keepCompletedToday: true)).Select(t => t.Id));
+
+        // The completed section, excluding the kept-in-place set, then surfaces the ended series (and not the
+        // one-off, which is being shown in place) — so 반복 종료 still appears, just not as an active row.
+        Assert.Equal(new[] { endedSeries.Id }, (await store.GetTodayCompletedAsync(excludeKeptInPlace: true)).Select(t => t.Id));
+        Assert.Equal(1, await store.GetTodayCompletedCountAsync(excludeKeptInPlace: true));
+        Assert.Equal(new[] { endedSeries.Id }, (await store.GetCompletedByTaskGroupAsync(project.Id, excludeKeptInPlace: true)).Select(t => t.Id));
+        Assert.Equal(1, await store.GetCompletedCountByTaskGroupAsync(project.Id, excludeKeptInPlace: true));
+
+        // Both remain in the Logbook regardless.
+        var logbook = (await store.GetLogbookAsync()).Select(t => t.Id).ToHashSet();
+        Assert.Contains(oneOff.Id, logbook);
+        Assert.Contains(endedSeries.Id, logbook);
     }
 
     [Fact]

@@ -318,17 +318,17 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => _index.GetByTagAsync(tagId, keepCompletedToday, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
-        => _index.GetCompletedByTaskGroupAsync(taskGroupId, limit, offset, excludeCompletedToday, cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+        => _index.GetCompletedByTaskGroupAsync(taskGroupId, limit, offset, excludeKeptInPlace, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
-        => _index.GetCompletedByTagAsync(tagId, limit, offset, excludeCompletedToday, cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+        => _index.GetCompletedByTagAsync(tagId, limit, offset, excludeKeptInPlace, cancellationToken);
 
-    public Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
-        => _index.GetCompletedCountByTaskGroupAsync(taskGroupId, excludeCompletedToday, cancellationToken);
+    public Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+        => _index.GetCompletedCountByTaskGroupAsync(taskGroupId, excludeKeptInPlace, cancellationToken);
 
-    public Task<int> GetCompletedCountByTagAsync(Guid tagId, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
-        => _index.GetCompletedCountByTagAsync(tagId, excludeCompletedToday, cancellationToken);
+    public Task<int> GetCompletedCountByTagAsync(Guid tagId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+        => _index.GetCompletedCountByTagAsync(tagId, excludeKeptInPlace, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => _index.GetWithoutTaskGroupAsync(keepCompletedToday, cancellationToken);
@@ -339,11 +339,11 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => _index.GetTodayAsync(keepCompletedToday, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
-        => _index.GetTodayCompletedAsync(limit, offset, cancellationToken);
+    public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+        => _index.GetTodayCompletedAsync(limit, offset, excludeKeptInPlace, cancellationToken);
 
-    public Task<int> GetTodayCompletedCountAsync(CancellationToken cancellationToken = default)
-        => _index.GetTodayCompletedCountAsync(cancellationToken);
+    public Task<int> GetTodayCompletedCountAsync(bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+        => _index.GetTodayCompletedCountAsync(excludeKeptInPlace, cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => _index.GetUpcomingAsync(keepCompletedToday, cancellationToken);

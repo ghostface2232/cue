@@ -16,7 +16,7 @@ namespace Cue.Storage.Index;
 /// "completed" section, or the Logbook). The one opt-in exception is the <c>keepCompletedToday</c>
 /// flag the active queries accept: when set, work completed within the current local day is returned
 /// in place (the view dims it) until the day rolls over, and the matching "completed" section drops
-/// today's rows (its <c>excludeCompletedToday</c> flag) so nothing is listed twice. Badge counts stay
+/// today's rows (its <c>excludeKeptInPlace</c> flag) so nothing is listed twice. Badge counts stay
 /// open-only either way.</item>
 /// <item><b>Time</b> — Today / Upcoming / Anytime / Logbook, all computed from the single When date.
 /// These are <i>never stored</i>: each is computed by comparing the task's When date against the
@@ -75,25 +75,25 @@ public interface ITaskIndex
     /// of the rows of the group's collapsible "완료한 일" section. The section pages its rows in (it starts
     /// showing only its count), so callers ask for a <paramref name="limit"/> window from
     /// <paramref name="offset"/>; the defaults return the whole list. When
-    /// <paramref name="excludeCompletedToday"/> is set, work completed today is left out — it is being kept
+    /// <paramref name="excludeKeptInPlace"/> is set, work completed today is left out — it is being kept
     /// in place on the active list instead, so listing it here too would double it.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, bool excludeCompletedToday = false, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default);
 
     /// <summary>Completed tasks carrying the given tag, most-recently-completed first — a page of the rows
     /// of the tag's collapsible "완료한 일" section. Paged like
-    /// <see cref="GetCompletedByTaskGroupAsync"/>; <paramref name="excludeCompletedToday"/> behaves the same.</summary>
-    Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, bool excludeCompletedToday = false, CancellationToken cancellationToken = default);
+    /// <see cref="GetCompletedByTaskGroupAsync"/>; <paramref name="excludeKeptInPlace"/> behaves the same.</summary>
+    Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default);
 
     /// <summary>Count of completed tasks belonging to the given task group — the header number for the
     /// group's collapsible "완료한 일" section, so it can show its total without realizing a single row. When
-    /// <paramref name="excludeCompletedToday"/> is set, work completed today is left out to match the
+    /// <paramref name="excludeKeptInPlace"/> is set, work completed today is left out to match the
     /// section's kept-in-place rows.</summary>
-    Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, bool excludeCompletedToday = false, CancellationToken cancellationToken = default);
+    Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default);
 
     /// <summary>Count of completed tasks carrying the given tag — the header number for the tag's
-    /// collapsible "완료한 일" section. <paramref name="excludeCompletedToday"/> behaves as on
+    /// collapsible "완료한 일" section. <paramref name="excludeKeptInPlace"/> behaves as on
     /// <see cref="GetCompletedCountByTaskGroupAsync"/>.</summary>
-    Task<int> GetCompletedCountByTagAsync(Guid tagId, bool excludeCompletedToday = false, CancellationToken cancellationToken = default);
+    Task<int> GetCompletedCountByTagAsync(Guid tagId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default);
 
     /// <summary>Non-deleted, open tasks in no group at all — the 그룹 없음 list that re-gathers unfiled
     /// captures. Completed tasks are excluded unless <paramref name="keepCompletedToday"/> is set, when work
@@ -111,24 +111,28 @@ public interface ITaskIndex
     /// Non-deleted, open tasks actionable today: a When date on today <i>or earlier</i>. Past dates roll
     /// forward into Today rather than being missed. Completed tasks are excluded — those completed today
     /// surface in the Today view's collapsible "오늘 완료한 일" section via
-    /// <see cref="GetTodayCompletedAsync"/> — unless <paramref name="keepCompletedToday"/> is set, when
-    /// everything completed today (whatever its When, matching that section's set) is instead returned here so
-    /// it lingers dimmed in place until the day rolls over.
+    /// <see cref="GetTodayCompletedAsync"/> — unless <paramref name="keepCompletedToday"/> is set, when the
+    /// kept-in-place set (anything completed today that is <i>not</i> a recurring record, whatever its When)
+    /// is instead returned here so it lingers dimmed in place until the day rolls over. An ended recurring
+    /// series is never kept in place: it goes straight to the completed section / Logbook.
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetTodayAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Tasks completed today (their <see cref="RecordBase"/> completion instant falls on the current
     /// local day), most-recently-completed first — a page of the rows of the Today view's collapsible
-    /// "오늘 완료한 일" section. A repeating task's completed copy lands here on the day it was finished. The
-    /// section pages its rows in, so callers ask for a <paramref name="limit"/> window from
-    /// <paramref name="offset"/>; the defaults return the whole list.
+    /// "오늘 완료한 일" section. The section pages its rows in, so callers ask for a <paramref name="limit"/>
+    /// window from <paramref name="offset"/>; the defaults return the whole list. When
+    /// <paramref name="excludeKeptInPlace"/> is set, the rows kept on the active list (non-recurring work
+    /// completed today) are left out so they are not doubled — what remains is the completed-today work that
+    /// is not kept in place, i.e. an ended recurring series.
     /// </summary>
-    Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default);
 
     /// <summary>Count of tasks completed today — the header number for the Today view's collapsible
-    /// "오늘 완료한 일" section, so it can show its total without realizing a single row.</summary>
-    Task<int> GetTodayCompletedCountAsync(CancellationToken cancellationToken = default);
+    /// "오늘 완료한 일" section. <paramref name="excludeKeptInPlace"/> behaves as on
+    /// <see cref="GetTodayCompletedAsync"/>.</summary>
+    Task<int> GetTodayCompletedCountAsync(bool excludeKeptInPlace = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Non-deleted, open tasks with a When date on a future day. Excludes anything already due (those are
