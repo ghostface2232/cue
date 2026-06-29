@@ -340,7 +340,7 @@ public sealed partial class OmniInputBox : UserControl
 
         // The always-present seat: undo the recognition. Registers a suppression so the parser stops
         // recognizing this span — it stays in the title and won't be re-sucked into a date (plan §5).
-        var revert = new MenuFlyoutItem { Text = "원문으로 되돌리기" };
+        var revert = new MenuFlyoutItem { Text = "일반 텍스트로 입력" };
         revert.Click += (_, _) => RevertToken(token);
         flyout.Items.Add(revert);
 
