@@ -152,6 +152,46 @@ Windows(개발자 모드)에서 저장소 루트에서:
 
 ---
 
+## 최종 결정 (Step 0 종결)
+
+**경로: RichEditBox + 문서 CharacterFormat 틴트 (글자색).** 오버레이(배경칩)는 시각적으로
+"따로 노는" 느낌 + 복합 표현에서 칩 과다로 어수선해 기각. Ctrl+Z가 색을 글자보다 먼저
+되돌리는 한계는 남지만, 실사용에서 삭제는 대부분 Backspace/Delete이므로 **수용 가능한 트레이드오프**로 판단.
+
+### 검증된 레시피 (실제 `OmniInputBox`가 그대로 구현할 것 — 스파이크에서 입증됨)
+
+- **컨트롤**: 빠른입력 `TextBox` → `RichEditBox`. 배경 투명, placeholder 오버레이 유지,
+  `IsSpellCheckEnabled=False`, plain-text 붙여넣기 강제, Enter→commit. VM `QuickAddText` 수동 브리지.
+- **IME 게이트**: `TextCompositionStarted/Changed/Ended`로 `_isComposing` 추적. **조합 중 매
+  키에는 절대 틴트하지 않는다.**
+- **발화 트리거**: `(비조합 + 공백)` OR `(idle ~500ms — 조합 중에도 허용, 안정된 꼬리까지 포함해
+  전체 칠)` OR `(조합 종료/commit)`. **재파싱·재틴트는 "보이는 텍스트가 실제로 바뀌었을 때만"**
+  (`_lastText` 게이트) — 서식 적용이 비동기로 `TextChanged`를 재발생시켜 생기는 무한 루프 차단.
+- **재틴트 = 전체 리셋**: 매번 전체 구간을 default 색으로 리셋 후 매치 span만 액센트. (diff-only는
+  IME commit-reset + 서식 상속 때문에 불가.)
+- **상속 깜빡임 차단**: 재틴트 후 caret이 zero-length면 `Selection.CharacterFormat`을 default로
+  리셋 → 다음 타이핑 글자가 앞 액센트를 상속하지 않음.
+- **재진입 가드**(`_tinting`)로 우리 서식 연산이 일으킨 `TextChanged` 무시.
+- **깜빡임 억제**: `BatchDisplayUpdates`/`ApplyDisplayUpdates`. 틴트를 한 undo 단위로 묶으려면
+  `BeginUndoGroup`/`EndUndoGroup`. **주의**: WinUI `ITextDocument`엔 `Undo(count)`가 없어
+  서식을 undo 스택에서 빼는 TOM suspend는 불가 → Ctrl+Z 2단계는 구조적으로 잔존(수용).
+- **테마**: `CharacterFormat`은 자동 반전 안 됨 → `ActualThemeChanged`에서 색 재적용.
+- **토큰 출처**: 멍청한 정규식이 아니라 **단계 1의 실제 파서 토큰 계약**.
+
+### 단계 1로 넘기는 설계 노트
+
+- **과분할 금지(어수선함 방지)**: 인접한 같은 종류 토큰은 한 구간으로 합치고, 조사·기능어
+  (`다음`, `주` 단독 등)는 강조에서 제외. 복합 표현(`다음 주 금요일 오후 3시`)이 칩/색 폭주로
+  보이지 않게, 날짜구는 한 덩어리·반복만 시각 구분하는 방향을 단계 1 `QuickAddTokenKind`
+  설계에 반영.
+
+### 정리
+
+스파이크 코드(`Pages/ImeSpikePage.*`, `MainWindow`의 `imespike` 네비 항목·분기)는 임무를
+다해 제거한다(git 히스토리에 남음). 이 문서가 단계 2 입력 박스 구현의 스펙이 된다.
+
+---
+
 ## 환경 메모
 
 이 스파이크는 Windows에서만 빌드·실행된다(WinUI 3 / Windows App SDK, `net10.0-windows10.0.26100`,

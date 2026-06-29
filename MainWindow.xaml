@@ -169,12 +169,6 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
-                <!-- SPIKE (Step 0, throwaway): remove this item with ImeSpikePage and the "imespike" nav branch. -->
-                <NavigationViewItem x:Name="ImeSpikeItem" Content="IME 스파이크" Tag="imespike">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE90F;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
                 <NavigationViewItem x:Name="SettingsItem" Content="설정" Tag="settings">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;" />
