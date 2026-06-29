@@ -26,6 +26,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace Cue.Pages;
@@ -64,6 +65,8 @@ public sealed partial class ImeSpikePage : Page
         Box.TextCompositionEnded += OnCompositionEnded;
 
         _idle.Tick += (_, _) => { _idle.Stop(); Tint("idle"); };
+        // Chips are positioned in client coordinates, so re-place them when the box resizes.
+        Box.SizeChanged += (_, _) => { if (OverlayMode.IsChecked == true) Tint("resize"); };
 
         Feed("ready (v3 dashboard). type Korean above.");
         Refresh();
@@ -155,6 +158,20 @@ public sealed partial class ImeSpikePage : Page
                 if (m.Index + m.Length <= limit)
                     desired.Add((m.Index, m.Length));
 
+            // OVERLAY MODE: draw accent chips on a layer behind the text. The document text is never
+            // formatted, so the undo stack stays pure (Ctrl+Z only sees real edits), there is no format
+            // inheritance, and the IME never resets our accent. All glitch classes vanish by construction.
+            if (OverlayMode.IsChecked == true)
+            {
+                DrawChips(desired);
+                _painted.Clear();
+                foreach (var s in desired) _painted.Add(s);
+                _tintApplied++; // overlay adds ZERO undo units; caret is never moved here
+                Feed($"chips [{reason}] ={desired.Count}");
+                Refresh();
+                return;
+            }
+
             int caretStart = doc.Selection.StartPosition;
             int caretEnd = doc.Selection.EndPosition;
             // NOTE: WinUI's ITextDocument has no Undo(count) overload, so the TOM tomSuspend/tomResume
@@ -210,6 +227,58 @@ public sealed partial class ImeSpikePage : Page
         => ActualTheme == ElementTheme.Dark
             ? new Color { A = 255, R = 0xF2, G = 0xF2, B = 0xF2 }
             : new Color { A = 255, R = 0x1A, G = 0x1A, B = 0x1A };
+
+    // ---- overlay chips (the structurally-clean approach) ---------------------------------------
+
+    // Draw one accent chip behind each token, positioned from the editor's own glyph metrics. This is
+    // the same range->rect mapping the control uses for selection/IME, so the data is exact; the only
+    // thing to calibrate is the coordinate base (client coords here) vs the chip Canvas.
+    private void DrawChips(IReadOnlyList<(int Start, int Len)> spans)
+    {
+        ChipLayer.Children.Clear();
+        var doc = Box.Document;
+        foreach (var s in spans)
+        {
+            try
+            {
+                var range = doc.GetRange(s.Start, s.Start + s.Len);
+                range.GetRect(PointOptions.ClientCoordinates, out Rect rect, out _);
+                var chip = new Border
+                {
+                    Width = Math.Max(0, rect.Width),
+                    Height = Math.Max(0, rect.Height),
+                    CornerRadius = new CornerRadius(4),
+                    Background = new SolidColorBrush(new Color { A = 64, R = 0xE0, G = 0x6C, B = 0x00 })
+                };
+                Canvas.SetLeft(chip, rect.X);
+                Canvas.SetTop(chip, rect.Y);
+                ChipLayer.Children.Add(chip);
+            }
+            catch { /* a range we can't measure just gets no chip */ }
+        }
+    }
+
+    private void OverlayMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (Box is null) return; // can fire during initial parse before fields are ready
+        try
+        {
+            if (OverlayMode.IsChecked == true)
+            {
+                // Entering overlay mode: strip any document accent ONCE so the buffer is pure plain text
+                // from here on (overlay never touches formatting again → undo stays clean).
+                _tinting = true;
+                try { Box.Document.GetRange(0, int.MaxValue).CharacterFormat.ForegroundColor = DefaultColor(); }
+                finally { _tinting = false; }
+            }
+            else
+            {
+                ChipLayer.Children.Clear(); // leaving overlay mode: drop chips, document path repaints
+            }
+            Tint("mode-switch");
+        }
+        catch { /* never throw from a toggle */ }
+    }
 
     // ---- dashboard (cheap) ---------------------------------------------------------------------
 

@@ -29,17 +29,22 @@
         </StackPanel>
 
         <!-- The control under test. Metrics roughly mirror the real quick-add box. -->
-        <RichEditBox
-            Grid.Row="1"
-            x:Name="Box"
-            MinHeight="48"
-            Padding="14,12,14,10"
-            CornerRadius="12"
-            IsSpellCheckEnabled="False"
-            FontSize="16" />
+        <Grid Grid.Row="1">
+            <!-- Chip layer sits BEHIND the (transparent-background) editor, so chips show behind text. -->
+            <Canvas x:Name="ChipLayer" IsHitTestVisible="False" />
+            <RichEditBox
+                x:Name="Box"
+                MinHeight="48"
+                Padding="14,12,14,10"
+                CornerRadius="12"
+                IsSpellCheckEnabled="False"
+                FontSize="16"
+                Background="Transparent" />
+        </Grid>
 
         <!-- Experiment toggles. -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="20">
+            <CheckBox x:Name="OverlayMode" Content="오버레이 칩 모드 (서식 대신 배경칩 · undo 무오염)" IsChecked="False" Checked="OverlayMode_Changed" Unchecked="OverlayMode_Changed" />
             <CheckBox x:Name="GateOnNonComposing" Content="비조합일 때만 재틴트 (끄면 leak 관찰)" IsChecked="True" />
             <CheckBox x:Name="IsolateUndoGroup" Content="틴트를 undo 그룹으로 묶기" IsChecked="True" />
             <Button x:Name="ClearLog" Content="카운터/로그 리셋" Click="ClearLog_Click" />
