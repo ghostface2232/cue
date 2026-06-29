@@ -261,6 +261,32 @@ public sealed class FileTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task GetAsync_ReturnsNullForMalformedRecord()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        var path = Path.Combine(store.RootPath, "tasks", id + ".json");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, "{ this is not valid json");
+
+        Assert.Null(await store.GetAsync<TaskItem>(id));
+    }
+
+    [Fact]
+    public async Task GetAsync_ReturnsNullForRecordLevelIoFailure()
+    {
+        var store = NewStore();
+        var task = new TaskItem { Title = "잠긴 레코드" };
+        await store.SaveAsync(task);
+        var path = Path.Combine(store.RootPath, "tasks", task.Id + ".json");
+
+        await using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            Assert.Null(await store.GetAsync<TaskItem>(task.Id));
+
+        Assert.Equal(task.Id, (await store.GetAsync<TaskItem>(task.Id))!.Id);
+    }
+
+    [Fact]
     public async Task CompletedAt_IsNormalizedToUtcInstant()
     {
         var store = NewStore();

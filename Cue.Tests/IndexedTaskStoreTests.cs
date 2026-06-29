@@ -67,12 +67,13 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         var root = NewRoot();
         var clock = new MutableTimeProvider(Now);
 
-        var project = Guid.NewGuid();
-        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), TaskGroupId = project };
+        var project = new TaskGroup { Name = "프로젝트" };
+        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), TaskGroupId = project.Id };
         var doneTask = new TaskItem { Title = "끝낸 일", CompletedAt = Now.AddDays(-1) };
 
         await using (var store = await OpenAsync(root, clock))
         {
+            await store.SaveAsync(project);
             await store.SaveAsync(todayTask);
             await store.SaveAsync(doneTask);
         }
@@ -90,7 +91,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
             var today = await reopened.GetTodayAsync();
             Assert.Equal(todayTask.Id, Assert.Single(today).Id);
 
-            var inGroup = await reopened.GetByTaskGroupAsync(project);
+            var inGroup = await reopened.GetByTaskGroupAsync(project.Id);
             Assert.Equal(todayTask.Id, Assert.Single(inGroup).Id);
 
             var logbook = await reopened.GetLogbookAsync();
@@ -363,28 +364,30 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         var clock = new MutableTimeProvider(Now);
         await using var store = await OpenAsync(root, clock);
 
-        var project = Guid.NewGuid();
-        var label = Guid.NewGuid();
+        var project = new TaskGroup { Name = "프로젝트" };
+        var label = new Tag { Name = "태그" };
         var task = new TaskItem
         {
             Title = "삭제 대상",
             When = OnDay(Today),
-            TaskGroupId = project,
-            TagIds = { label },
+            TaskGroupId = project.Id,
+            TagIds = { label.Id },
         };
+        await store.SaveAsync(project);
+        await store.SaveAsync(label);
         await store.SaveAsync(task);
 
         // Present everywhere it should be before deletion.
         Assert.Contains(await store.GetTodayAsync(), t => t.Id == task.Id);
-        Assert.Contains(await store.GetByTaskGroupAsync(project), t => t.Id == task.Id);
-        Assert.Contains(await store.GetByTagAsync(label), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(project.Id), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTagAsync(label.Id), t => t.Id == task.Id);
 
         await store.DeleteAsync<TaskItem>(task.Id);
 
         // Gone from every active view (tombstones are excluded by default).
         Assert.DoesNotContain(await store.GetTodayAsync(), t => t.Id == task.Id);
-        Assert.DoesNotContain(await store.GetByTaskGroupAsync(project), t => t.Id == task.Id);
-        Assert.DoesNotContain(await store.GetByTagAsync(label), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTaskGroupAsync(project.Id), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTagAsync(label.Id), t => t.Id == task.Id);
         Assert.Empty(await store.GetLogbookAsync()); // a tombstone is not "completed"
 
         // But the file remains as a tombstone — soft delete, not removal.
@@ -401,25 +404,27 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         var clock = new MutableTimeProvider(Now);
         await using var store = await OpenAsync(root, clock);
 
-        var first = Guid.NewGuid();
-        var second = Guid.NewGuid();
-        var task = new TaskItem { Title = "이동하는 일", When = OnDay(Today), TaskGroupId = first };
+        var first = new TaskGroup { Name = "첫 그룹" };
+        var second = new TaskGroup { Name = "둘째 그룹" };
+        var task = new TaskItem { Title = "이동하는 일", When = OnDay(Today), TaskGroupId = first.Id };
 
         // Save writes both: the file exists and the index query returns it.
+        await store.SaveAsync(first);
+        await store.SaveAsync(second);
         await store.SaveAsync(task);
         Assert.True(File.Exists(Path.Combine(root, "tasks", task.Id + ".json")));
-        Assert.Contains(await store.GetByTaskGroupAsync(first), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(first.Id), t => t.Id == task.Id);
 
         // Re-saving an edit reflects into the index immediately — no stale row, no rebuild needed.
-        task.TaskGroupId = second;
+        task.TaskGroupId = second.Id;
         await store.SaveAsync(task);
-        Assert.DoesNotContain(await store.GetByTaskGroupAsync(first), t => t.Id == task.Id);
-        Assert.Contains(await store.GetByTaskGroupAsync(second), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTaskGroupAsync(first.Id), t => t.Id == task.Id);
+        Assert.Contains(await store.GetByTaskGroupAsync(second.Id), t => t.Id == task.Id);
 
         // Delete updates both: file becomes a tombstone, index drops it from active views.
         await store.DeleteAsync<TaskItem>(task.Id);
         Assert.True(File.Exists(Path.Combine(root, "tasks", task.Id + ".json")));
-        Assert.DoesNotContain(await store.GetByTaskGroupAsync(second), t => t.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTaskGroupAsync(second.Id), t => t.Id == task.Id);
     }
 
     [Fact]
@@ -457,13 +462,14 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
 
         // Everything except `inbox`/`anytime` is filed under a project, so the classification axis
         // (Inbox = project-less) and the time axis stay cleanly separable in the assertions below.
-        var filed = Guid.NewGuid();
+        var filed = new TaskGroup { Name = "분류된 그룹" };
         var inbox = new TaskItem { Title = "미분류", When = ScheduledWhen.Unscheduled };                            // Inbox + Anytime
-        var anytimeFiled = new TaskItem { Title = "언젠가", When = ScheduledWhen.Unscheduled, TaskGroupId = filed };  // Anytime (filed)
-        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), TaskGroupId = filed };              // Today
-        var future = new TaskItem { Title = "다가오는 일", When = OnDay(Today.AddDays(2)), TaskGroupId = filed };      // Upcoming
-        var done = new TaskItem { Title = "완료", When = OnDay(Today), CompletedAt = Now, TaskGroupId = filed };      // Logbook only
+        var anytimeFiled = new TaskItem { Title = "언젠가", When = ScheduledWhen.Unscheduled, TaskGroupId = filed.Id };  // Anytime (filed)
+        var todayTask = new TaskItem { Title = "오늘 할 일", When = OnDay(Today), TaskGroupId = filed.Id };              // Today
+        var future = new TaskItem { Title = "다가오는 일", When = OnDay(Today.AddDays(2)), TaskGroupId = filed.Id };      // Upcoming
+        var done = new TaskItem { Title = "완료", When = OnDay(Today), CompletedAt = Now, TaskGroupId = filed.Id };      // Logbook only
 
+        await store.SaveAsync(filed);
         foreach (var t in new[] { inbox, anytimeFiled, todayTask, future, done })
             await store.SaveAsync(t);
 
@@ -697,34 +703,48 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DanglingReferences_AreToleratedByIndexAndViews()
+    public async Task Save_NormalizesMissingDeletedAndDuplicateReferences()
     {
         var root = NewRoot();
         var clock = new MutableTimeProvider(Now);
         await using var store = await OpenAsync(root, clock);
 
-        // The store enforces no referential integrity, so the index and views must tolerate floating
-        // references: a project/label that no record exists for.
+        var deletedGroup = new TaskGroup { Name = "삭제된 그룹" };
+        var keptTag = new Tag { Name = "유지할 태그" };
+        var deletedTag = new Tag { Name = "삭제된 태그" };
+        await store.SaveAsync(deletedGroup);
+        await store.SaveAsync(keptTag);
+        await store.SaveAsync(deletedTag);
+        await store.DeleteAsync<TaskGroup>(deletedGroup.Id);
+        await store.DeleteAsync<Tag>(deletedTag.Id);
+
         var missingGroup = Guid.NewGuid();
         var missingTag = Guid.NewGuid();
-        var orphan = new TaskItem
+        var task = new TaskItem
         {
-            Title = "떠 있는 참조",
+            Title = "참조 정규화",
             When = OnDay(Today),
-            TaskGroupId = missingGroup,
-            TagIds = { missingTag },
+            TaskGroupId = deletedGroup.Id,
+            TagIds = { keptTag.Id, missingTag, deletedTag.Id, keptTag.Id },
         };
-        await store.SaveAsync(orphan);
+        await store.SaveAsync(task);
 
-        // Time views never resolve references, so the orphan surfaces normally.
-        Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
-        // Classification queries by the dangling ids just return it — nothing joins or throws.
-        Assert.Contains(await store.GetByTaskGroupAsync(missingGroup), t => t.Id == orphan.Id);
-        Assert.Contains(await store.GetByTagAsync(missingTag), t => t.Id == orphan.Id);
+        var persisted = (await store.GetAsync<TaskItem>(task.Id))!;
+        Assert.Null(persisted.TaskGroupId);
+        Assert.Equal(new[] { keptTag.Id }, persisted.TagIds);
 
-        // A full rebuild from the files tolerates the same floating references.
+        task.TaskGroupId = missingGroup;
+        await store.SaveAsync(task);
+        persisted = (await store.GetAsync<TaskItem>(task.Id))!;
+        Assert.Null(persisted.TaskGroupId);
+        Assert.DoesNotContain(await store.GetByTaskGroupAsync(missingGroup), item => item.Id == task.Id);
+        Assert.DoesNotContain(await store.GetByTagAsync(missingTag), item => item.Id == task.Id);
+        Assert.Equal(task.Id, Assert.Single(await store.GetByTagAsync(keptTag.Id)).Id);
+
+        // The normalized file is the source of truth, so a rebuild preserves the repaired state.
         await store.InitializeAsync();
-        Assert.Contains(await store.GetTodayAsync(), t => t.Id == orphan.Id);
+        Assert.Equal(task.Id, Assert.Single(await store.GetWithoutTaskGroupAsync()).Id);
+        Assert.Equal(task.Id, Assert.Single(await store.GetByTagAsync(keptTag.Id)).Id);
     }
 
     [Fact]

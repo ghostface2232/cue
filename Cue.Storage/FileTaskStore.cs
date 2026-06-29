@@ -43,21 +43,7 @@ public sealed class FileTaskStore : ITaskStore
                 continue;
 
             cancellationToken.ThrowIfCancellationRequested();
-            var bytes = await File.ReadAllBytesAsync(file, cancellationToken).ConfigureAwait(false);
-
-            // Isolate corruption per file: one unreadable record (e.g. a half-written file left by a
-            // crash, or a partially-synced cloud file) must not take down the whole listing or the
-            // index rebuild that runs on it. Skip it and keep going.
-            T? record;
-            try
-            {
-                record = JsonSerializer.Deserialize<T>(bytes, _json);
-            }
-            catch (JsonException ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[Cue] Skipping unreadable record file '{file}': {ex.Message}");
-                continue;
-            }
+            var record = await ReadRecordAsync<T>(file, cancellationToken).ConfigureAwait(false);
 
             if (record is not null)
                 results.Add(record);
@@ -73,8 +59,7 @@ public sealed class FileTaskStore : ITaskStore
         if (!File.Exists(path))
             return null;
 
-        var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<T>(bytes, _json);
+        return await ReadRecordAsync<T>(path, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default)
@@ -130,6 +115,25 @@ public sealed class FileTaskStore : ITaskStore
 
     private string PathFor(Type recordType, Guid id)
         => Path.Combine(DirectoryFor(recordType), id + ".json");
+
+    private async Task<T?> ReadRecordAsync<T>(string path, CancellationToken cancellationToken)
+        where T : RecordBase
+    {
+        try
+        {
+            var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+            return JsonSerializer.Deserialize<T>(bytes, _json);
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            // A record can be temporarily unreadable while a cloud provider hydrates/replaces it, or
+            // permanently malformed after a partial sync. Isolate that one record for both full and
+            // by-id reads; cancellation remains observable because OperationCanceledException is not
+            // included in this filter.
+            System.Diagnostics.Debug.WriteLine($"[Cue] Skipping unreadable record file '{path}': {ex.Message}");
+            return null;
+        }
+    }
 
     private static string FolderName(Type recordType) => recordType switch
     {
