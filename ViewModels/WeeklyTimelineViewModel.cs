@@ -26,6 +26,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
 
     private readonly ITaskStore _store;
     private readonly ITaskIndex _index;
+    private readonly IReorderService _reorder;
     private readonly IRecurringTaskService _recurrence;
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly TimeProvider _clock;
@@ -53,11 +54,10 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     public double TodayLineOffset { get; private set; }
     public bool HasTodayInRange { get; private set; }
 
+    /// <summary>The page heading — the visible month, e.g. "7월 타임라인", so which month a step landed on
+    /// is obvious from the title alone (there is no separate month caption beneath it).</summary>
     [ObservableProperty]
     public partial string Title { get; set; } = "주간 타임라인";
-
-    [ObservableProperty]
-    public partial string RangeCaption { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
@@ -74,6 +74,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     {
         _store = store;
         _index = index;
+        _reorder = reorder;
         _recurrence = recurrence;
         _navNotifier = navNotifier;
         _clock = clock;
@@ -127,6 +128,33 @@ public partial class WeeklyTimelineViewModel : ObservableObject
         }
 
         await Detail.OpenAsync(id);
+    }
+
+    /// <summary>
+    /// Creates a blank all-day task anchored to the start (Monday) of the given week column and opens it in
+    /// the detail panel right away — the double-click-empty-space affordance. The task lands on the week the
+    /// click fell in; the user fills in the title/exact day in the panel. No-op for an out-of-range index.
+    /// </summary>
+    [RelayCommand]
+    private async Task CreateTaskInWeekAsync(int weekIndex)
+    {
+        if (weekIndex < 0 || weekIndex >= Weeks.Count)
+            return;
+
+        var weekStart = Weeks[weekIndex].WeekStart;
+        var when = ScheduledWhen.AllDay(ZonedDateTime.FromLocal(weekStart.ToDateTime(TimeOnly.MinValue), _zone.Id));
+        var task = new TaskItem
+        {
+            When = when,
+            // New tasks append after the rows currently shown.
+            SortOrder = _reorder.AppendRank(Rows.Select(row => row.Row.SortOrder)),
+        };
+
+        await _store.SaveAsync(task);
+        _navNotifier.NotifyCountsChanged();
+        await ReloadRowsAsync();
+        // Route through the same flush/close/open path as a card tap so the panel opens cleanly on the new task.
+        await SelectTaskAsync(task.Id);
     }
 
     /// <summary>
@@ -221,7 +249,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
         for (var week = _rangeStart; week <= _rangeEnd; week = week.AddDays(7))
             Weeks.Add(new TimelineWeekViewModel(week, today, _weekWidth));
 
-        RangeCaption = _visibleMonth.ToString("yyyy년 M월", Korean);
+        Title = $"{_visibleMonth.Month}월 타임라인";
         RecomputeTodayLine(now, today, weekCount);
 
         OnPropertyChanged(nameof(WeekWidth));

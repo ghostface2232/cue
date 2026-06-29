@@ -118,6 +118,7 @@
                     PointerEntered="TimelineBar_PointerEntered"
                     PointerExited="TimelineBar_PointerExited"
                     Tapped="TimelineBar_Tapped"
+                    DoubleTapped="TimelineBar_DoubleTapped"
                     Tag="{x:Bind Row.Id}">
                         <Grid ColumnSpacing="{StaticResource CueGap12}">
                             <Grid.ColumnDefinitions>
@@ -231,12 +232,8 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <StackPanel>
+            <StackPanel VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource CuePageTitleTextStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
-                <TextBlock
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Text="{x:Bind ViewModel.RangeCaption, Mode=OneWay}" />
             </StackPanel>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="{StaticResource CueGap4}">
                 <Button
@@ -307,7 +304,14 @@
                         VerticalScrollBarVisibility="Auto"
                         VerticalScrollMode="Enabled"
                         ZoomMode="Disabled">
-                        <Grid Width="{x:Bind ViewModel.TrackWidth, Mode=OneWay}" MinHeight="420">
+                        <!-- Transparent background so empty space catches the double-tap that creates a task in
+                             that week (a card consumes its own double-tap so only empty space creates). -->
+                        <Grid
+                            x:Name="TimelineTrack"
+                            Width="{x:Bind ViewModel.TrackWidth, Mode=OneWay}"
+                            MinHeight="420"
+                            Background="Transparent"
+                            DoubleTapped="TimelineSurface_DoubleTapped">
                             <StackPanel>
                                 <ItemsRepeater ItemTemplate="{StaticResource TimelineWeekTemplate}" ItemsSource="{x:Bind ViewModel.Weeks, Mode=OneWay}">
                                     <ItemsRepeater.Layout>

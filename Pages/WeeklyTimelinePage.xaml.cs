@@ -337,6 +337,27 @@ public sealed partial class WeeklyTimelinePage : Page
         await SelectTaskAndCenterTimelineAsync(id);
     }
 
+    // Double-clicking empty space creates a task in the week column under the pointer and opens it. A card
+    // consumes its own double-tap (TimelineBar_DoubleTapped) so only genuinely empty space reaches here.
+    private async void TimelineSurface_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement track)
+            return;
+        var weekWidth = ViewModel.WeekWidth;
+        if (weekWidth <= 0)
+            return;
+
+        var x = e.GetPosition(track).X;
+        var weekIndex = (int)(x / weekWidth);
+        e.Handled = true;
+        await RunSafelyAsync(() => ViewModel.CreateTaskInWeekCommand.ExecuteAsync(weekIndex));
+    }
+
+    // A double-tap on a card is consumed so it doesn't bubble to the surface and create a task; the card's
+    // single tap already opens it.
+    private void TimelineBar_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+        => e.Handled = true;
+
     /// <summary>Selects a task and, when this swaps the content of an already-open panel, re-centers the
     /// recurrence strip on the current cycle once the new content lays out. For a fresh open the panel's
     /// Visibility callback already arms the same scroll.</summary>
