@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using Cue.Parsing;
+using Cue.ViewModels;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Foundation;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.ViewManagement;
@@ -32,6 +35,17 @@ public sealed partial class OmniInputBox : UserControl
     private long _documentVersion;
     private long _lastTintedVersion = -1;
 
+    // Editor-held revert (suppression) state (plan §4/§5). The parser is stateless, so reverted spans live
+    // here: they're excluded from recognition (no token, no re-tint) yet kept in the title at commit. We
+    // reproject them across each edit (single contiguous delta) so they track the word they pin.
+    private readonly List<TextSpan> _suppressed = new();
+    // The last visible text we observed — the "old" coordinate space for reprojecting _suppressed.
+    private string _lastText = string.Empty;
+
+    // The tokens painted by the last re-tint, in original-text coordinates — what a tap hit-tests against
+    // to open the correct/revert popover. Stays aligned with the document because re-tint repaints it.
+    private IReadOnlyList<QuickAddToken> _tokens = Array.Empty<QuickAddToken>();
+
     // Re-tint after a typing pause for edits that don't go through composition (paste, delete, arrows,
     // digits/latin). Composition input is covered by TextCompositionEnded instead.
     private readonly DispatcherTimer _idle = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -48,6 +62,9 @@ public sealed partial class OmniInputBox : UserControl
         // bubbling KeyDown handler is too late; we must intercept Enter on the way down.
         Box.PreviewKeyDown += OnBoxKeyDown;
         Box.Paste += OnBoxPaste;
+        // RichEditBox handles pointer input internally and marks Tapped handled, so a plain `Box.Tapped +=`
+        // never fires — register with handledEventsToo so the token correct/revert popover still gets the tap.
+        Box.AddHandler(UIElement.TappedEvent, new TappedEventHandler(OnBoxTapped), handledEventsToo: true);
 
         _idle.Tick += (_, _) => { _idle.Stop(); if (!_isComposing) ReTint(); };
         // CharacterFormat does not auto-flip with the theme — re-apply the accent/default on theme change.
@@ -61,12 +78,13 @@ public sealed partial class OmniInputBox : UserControl
         };
     }
 
-    /// <summary>Raised when the user commits the line (Enter while not composing).</summary>
-    public event EventHandler? Submit;
+    /// <summary>Raised when the user commits the line (Enter while not composing). Carries the raw text and
+    /// the editor-held reverts so the VM re-parses at the current clock honouring them (plan §5.2).</summary>
+    public event EventHandler<QuickAddSubmission>? Submit;
 
-    /// <summary>Supplies the recognized tokens for the raw line (the VM parses at the current clock/zone).
-    /// Positional only; null means "no tinting".</summary>
-    public Func<string, IReadOnlyList<QuickAddToken>>? Tokenizer { get; set; }
+    /// <summary>Supplies the recognized tokens for the raw line, given the spans the user has reverted (so a
+    /// reverted word emits no token). The VM parses at the current clock/zone. Null means "no tinting".</summary>
+    public Func<string, IReadOnlyList<TextSpan>, IReadOnlyList<QuickAddToken>>? Tokenizer { get; set; }
 
     /// <summary>Current monotonically-increasing version of the visible text (re-parse dedup).</summary>
     public long DocumentVersion => _documentVersion;
@@ -130,6 +148,7 @@ public sealed partial class OmniInputBox : UserControl
             return; // formatting-only re-raise or no real change (also breaks any echo loop)
         }
 
+        ReprojectSuppressions(text); // move the editor-held reverts across this edit before bumping version
         _documentVersion++;
         _updatingTextFromDocument = true;
         Text = text;                 // propagates to the bound VM property
@@ -149,19 +168,37 @@ public sealed partial class OmniInputBox : UserControl
 
     private void PushTextToDocument(string text)
     {
-        if (GetPlainText() == (text ?? string.Empty))
+        var value = text ?? string.Empty;
+        if (GetPlainText() == value)
             return; // already in sync; avoid a needless caret reset
 
         try
         {
             _syncingDocument = true;
-            Box.Document.SetText(TextSetOptions.None, text ?? string.Empty);
+            Box.Document.SetText(TextSetOptions.None, value);
         }
         finally
         {
             _syncingDocument = false;
         }
+        // The IME gate / TextChanged path is bypassed for our own SetText, so reproject here. A commit
+        // clears the line (value == "") → the edit covers the whole text → every revert is dropped.
+        ReprojectSuppressions(value);
         _documentVersion++; // external (VM) set changed the visible text too
+    }
+
+    /// <summary>Moves the editor-held reverts from the previous text to <paramref name="newText"/> and
+    /// records it as the new "old" coordinate space. A revert whose own word the edit touched is dropped by
+    /// the tracker (the user edited that word). Pure; never throws.</summary>
+    private void ReprojectSuppressions(string newText)
+    {
+        if (_suppressed.Count > 0 && !string.Equals(_lastText, newText, StringComparison.Ordinal))
+        {
+            var moved = SuppressionTracker.Reproject(_suppressed, _lastText, newText);
+            _suppressed.Clear();
+            _suppressed.AddRange(moved);
+        }
+        _lastText = newText;
     }
 
     private string GetPlainText()
@@ -195,8 +232,12 @@ public sealed partial class OmniInputBox : UserControl
             return;
 
         e.Handled = true; // also prevents a newline being inserted into the single-line box
-        Submit?.Invoke(this, EventArgs.Empty);
+        Submit?.Invoke(this, BuildSubmission());
     }
+
+    /// <summary>Snapshots the raw line + editor-held reverts for the VM to re-parse at the current clock.</summary>
+    private QuickAddSubmission BuildSubmission()
+        => new(GetPlainText(), _suppressed.ToArray(), _documentVersion);
 
     private async void OnBoxPaste(object sender, TextControlPasteEventArgs e)
     {
@@ -225,6 +266,97 @@ public sealed partial class OmniInputBox : UserControl
         ReTint();       // a syllable just finalized — paint the now-committed text
     }
 
+    // ---- Click-to-correct popover (Step 5): tap a token → alternatives / revert -------------------
+
+    private void OnBoxTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (_isComposing)
+            return; // don't interrupt an in-flight syllable
+
+        // The tap has already moved the caret to the clicked character; read it instead of doing our own
+        // point→index hit-test (no GetRangeFromPoint coordinate-space guessing). Map the caret to a token.
+        int caret;
+        try { caret = Box.Document.Selection.StartPosition; }
+        catch { return; }
+
+        var token = HitToken(caret);
+        if (token is not null)
+            ShowTokenFlyout(token, e.GetPosition(Box));
+    }
+
+    /// <summary>The painted token under <paramref name="caret"/>, or null. Prefers a strictly-interior hit;
+    /// falls back to the caret resting just after a token (clicking its trailing edge).</summary>
+    private QuickAddToken? HitToken(int caret)
+    {
+        foreach (var t in _tokens)
+            if (t.Length > 0 && caret >= t.Start && caret < t.Start + t.Length)
+                return t;
+        foreach (var t in _tokens)
+            if (t.Length > 0 && caret == t.Start + t.Length)
+                return t;
+        return null;
+    }
+
+    private void ShowTokenFlyout(QuickAddToken token, Point at)
+    {
+        var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.Bottom };
+
+        foreach (var (label, replacement) in AlternativesFor(token.Kind))
+        {
+            var item = new MenuFlyoutItem { Text = label };
+            var rep = replacement; // capture per iteration
+            item.Click += (_, _) => ReplaceToken(token, rep);
+            flyout.Items.Add(item);
+        }
+        if (flyout.Items.Count > 0)
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+        // The always-present seat: undo the recognition. Registers a suppression so the parser stops
+        // recognizing this span — it stays in the title and won't be re-sucked into a date (plan §5).
+        var revert = new MenuFlyoutItem { Text = "원문으로 되돌리기" };
+        revert.Click += (_, _) => RevertToken(token);
+        flyout.Items.Add(revert);
+
+        flyout.ShowAt(Box, new FlyoutShowOptions { Position = at });
+    }
+
+    /// <summary>The quick alternatives offered for a token, as (menu label, replacement text). Date/time get
+    /// clean whole-token swaps; recurrence (a combined phrase) and someday offer revert only for now.</summary>
+    private static IReadOnlyList<(string Label, string Text)> AlternativesFor(QuickAddTokenKind kind) => kind switch
+    {
+        QuickAddTokenKind.Date => new[] { ("오늘", "오늘"), ("내일", "내일"), ("모레", "모레"), ("다음 주 월요일", "다음 주 월요일") },
+        QuickAddTokenKind.Time => new[] { ("오전 9시", "오전 9시"), ("오후 12시", "오후 12시"), ("오후 3시", "오후 3시"), ("오후 6시", "오후 6시") },
+        _ => Array.Empty<(string, string)>(),
+    };
+
+    /// <summary>Replaces the token's span with <paramref name="replacement"/>. A real edit: it flows through
+    /// the text bridge (VM update + suppression reprojection), then we force an immediate re-tint.</summary>
+    private void ReplaceToken(QuickAddToken token, string replacement)
+    {
+        try
+        {
+            var doc = Box.Document;
+            doc.GetRange(token.Start, token.Start + token.Length).SetText(TextSetOptions.None, replacement);
+            var caret = token.Start + replacement.Length;
+            doc.Selection.SetRange(caret, caret);
+            ReTint(force: true);
+            Box.Focus(FocusState.Programmatic);
+        }
+        catch
+        {
+            // A position/format failure must not crash the box — leave the text as-is.
+        }
+    }
+
+    /// <summary>Reverts the token: register its span as suppressed (excluded from recognition, kept in the
+    /// title) and repaint so its accent drops. The span rides subsequent edits via reprojection.</summary>
+    private void RevertToken(QuickAddToken token)
+    {
+        _suppressed.Add(new TextSpan(token.Start, token.Length));
+        ReTint(force: true);
+        Box.Focus(FocusState.Programmatic);
+    }
+
     // ---- Inline accent (Step 3): full reset, then paint token spans one accent colour --------------
 
     private void ReTint(bool force = false) => ReTint(GetPlainText(), force);
@@ -238,8 +370,9 @@ public sealed partial class OmniInputBox : UserControl
         _lastTintedVersion = _documentVersion;
 
         IReadOnlyList<QuickAddToken> tokens;
-        try { tokens = Tokenizer?.Invoke(raw) ?? Array.Empty<QuickAddToken>(); }
+        try { tokens = Tokenizer?.Invoke(raw, _suppressed) ?? Array.Empty<QuickAddToken>(); }
         catch { tokens = Array.Empty<QuickAddToken>(); }
+        _tokens = tokens; // keep the tap hit-test aligned with what we paint
 
         try
         {

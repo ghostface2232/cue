@@ -133,12 +133,14 @@ public partial class TaskListViewModel : ObservableObject
 
     partial void OnQuickAddTextChanged(string value) => OnPropertyChanged(nameof(QuickAddIsEmpty));
 
-    /// <summary>Tokenizes a raw quick-add line at the current clock/zone for the inline accent. This is
-    /// positional metadata only — scheduling still resolves at commit (<see cref="AddAsync"/> re-parses
-    /// with the clock at that moment), so this never becomes the source of truth. Never throws.</summary>
-    public IReadOnlyList<QuickAddToken> TokenizeQuickAdd(string raw)
+    /// <summary>Tokenizes a raw quick-add line at the current clock/zone for the inline accent, honouring
+    /// the editor's <paramref name="suppressedSpans"/> (reverted words emit no token, so they aren't
+    /// re-tinted). This is positional metadata only — scheduling still resolves at commit
+    /// (<see cref="SubmitQuickAddAsync"/> re-parses with the clock at that moment), so this never becomes
+    /// the source of truth. Never throws.</summary>
+    public IReadOnlyList<QuickAddToken> TokenizeQuickAdd(string raw, IReadOnlyList<TextSpan> suppressedSpans)
     {
-        try { return _parser.Parse(raw ?? string.Empty, _clock.GetUtcNow(), _timeZoneId).Tokens; }
+        try { return _parser.Parse(raw ?? string.Empty, _clock.GetUtcNow(), _timeZoneId, suppressedSpans).Tokens; }
         catch { return Array.Empty<QuickAddToken>(); }
     }
 
@@ -257,16 +259,26 @@ public partial class TaskListViewModel : ObservableObject
         OnPropertyChanged(nameof(CanQuickAdd));
     }
 
-    /// <summary>Quick-add: parse the line, create + save a task, then refresh from the index.</summary>
+    /// <summary>Quick-add via the Enter command path: commit the current <see cref="QuickAddText"/> with no
+    /// suppression. The control's richer commit (carrying reverted spans) goes through
+    /// <see cref="SubmitQuickAddAsync"/>; both share the same parse-and-save core.</summary>
     [RelayCommand]
-    private async Task AddAsync()
+    private Task AddAsync() => SubmitQuickAddAsync(QuickAddSubmission.Plain(QuickAddText ?? string.Empty));
+
+    /// <summary>The quick-add commit core. Re-parses the raw line at the current clock — honouring the
+    /// editor's reverted (<paramref name="submission"/>.SuppressedSpans) words — then creates and saves the
+    /// task and refreshes from the index. The live inline parse is a display cache only; this re-parse is the
+    /// source of truth, so a midnight/bare-time/timezone boundary can't stale the saved result (plan §5.2).</summary>
+    public async Task SubmitQuickAddAsync(QuickAddSubmission submission)
     {
         if (!CanQuickAdd) return;
-        var text = QuickAddText?.Trim();
-        if (string.IsNullOrEmpty(text))
+        // Pass the raw line (untrimmed): suppression offsets index into it and the parser trims the title
+        // itself. Only the whitespace-only emptiness check happens here.
+        var text = submission.RawText ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
             return;
 
-        var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId);
+        var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId, submission.SuppressedSpans);
 
         // The parser's When is used as-is when it recognized any placement, including explicit
         // Unscheduled markers ("언젠가") and recurrence anchors. Only a genuinely dateless line gets

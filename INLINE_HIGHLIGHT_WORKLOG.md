@@ -32,8 +32,26 @@
 - **4.3 (에디터, 순수):** `SuppressionTracker.Reproject` — 단일 연속 편집 델타로 억제 span 이동(앞 이동 / 뒤 유지 / 내부 수정 시 폐기). 경계 삽입은 before/after 처리(`금요일`→`금요일마다` 유지). UI 미연결.
 - **왜:** 파서는 stateless → false positive를 커밋 전에 잡으려면 에디터가 억제 상태를 들어야 함. 핵심 가치(되돌린 단어가 다시 날짜로 안 빨려감)의 토대.
 
+## 단계 5 — 클릭 수정 인터랙션 + 커밋 결합 ✅(코드)
+- **5.1 억제 plumbing + 커밋 재파싱:**
+  - `QuickAddSubmission(RawText, SuppressedSpans, DocumentVersion)` 신설(`Corrections`는 비텍스트 교정 도입 시까지 보류 — MVP 무근거).
+  - `OmniInputBox`가 억제 상태(`_suppressed`)를 보유. 매 편집/외부 set마다 `SuppressionTracker.Reproject(_lastText→new)`로 reproject(4.3 소비자). Tokenizer에 억제 span을 넘겨 **되돌린 단어는 토큰 미방출 → 재틴트 안 됨**.
+  - `Submit` 이벤트가 `QuickAddSubmission` 운반. VM `AddAsync`(Enter/테스트 경로)·`SubmitQuickAddAsync`(컨트롤 경로)가 **단일 parse-and-save 코어** 공유. 코어는 저장 직전 **현재 clock/tz로 `suppressedSpans` 적용 재파싱**(라이브 파스는 표시용 캐시) → 자정/타임존 staleness 방지.
+  - raw 무trim 전달(§2.2.1): 억제 offset 정합 + 파서가 title 자체 trim. VM 회귀 테스트 2건 추가(억제 커밋 → 단어 제목 잔류·미스케줄 / 무억제 → 스케줄).
+- **5.2 토큰 클릭 팝오버(생산자):**
+  - 탭 → caret 위치(`Selection.StartPosition`)로 토큰 역매핑(GetRangeFromPoint 좌표계 추측 회피). RichEditBox가 Tapped를 handled 처리하므로 `AddHandler(..., handledEventsToo:true)`로 수신.
+  - `MenuFlyout`: kind별 대안(날짜/시각은 안전한 통짜 치환, 반복/언젠가는 되돌리기만) + **고정석 "원문으로 되돌리기"**. 되돌리기 = 억제 span 등록 후 재틴트(생산자). 대안 = 텍스트 치환 → 브리지 경유 재파싱 → caret 재배치.
+- **왜:** 4.3의 생산자(팝오버 되돌리기)·소비자(reproject)가 여기서 붙어 false positive를 커밋 전에 교정. 커밋 신선도는 저장 직전 재파싱이 보장.
+
+### 단계 5 — 남은 수동 검증(GUI/IME 필요)
+- [ ] 토큰 탭 시 팝오버가 토큰 근처에 뜨고 caret이 토큰 안으로 들어가는지(Tapped 수신 확인).
+- [ ] 되돌리기 → 액센트 즉시 사라지고, 이어 타이핑/커밋해도 그 단어가 **다시 날짜로 안 빨려가고 제목에 남는지**.
+- [ ] 대안 선택 시 텍스트 치환·재파싱·caret·재틴트가 일관된지.
+- [ ] 한글 조합 중 탭/팝오버가 조합을 깨지 않는지.
+- [ ] **알려진 갭:** 토큰은 아직 단색뿐(밑줄/굵기 등 색 외 신호 미적용, 계획 목표 2 — 후속).
+
 ---
 
 ## 진행 상태
-- **완료:** 단계 0~4 (전부 테스트/빌드 그린, 383 테스트 통과).
-- **다음(단계 5):** 토큰 클릭 팝오버(대안/원문 되돌리기) + `suppressedSpans`를 라이브 재틴트·커밋에 연결 + 저장 직전 재파싱(라이브 파스는 표시용 캐시). 4.3의 생산자·소비자가 여기서 붙음.
+- **완료(코드+CI):** 단계 0~4, 단계 5(5.1 plumbing/커밋, 5.2 팝오버). 빌드 그린, 385 테스트 통과.
+- **다음:** 단계 5 수동 GUI/IME 검증(위 체크리스트). 색 외 접근성 신호(밑줄/굵기) 및 반복 토큰 대안은 후속.

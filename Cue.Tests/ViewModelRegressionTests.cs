@@ -855,6 +855,49 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task SubmitQuickAdd_WithSuppressedDate_KeepsTheWordInTitle_AndLeavesItUnscheduled()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // The commit re-parses the raw line honouring the editor's reverts (plan §5.2). Reverting "내일"
+        // (chars [0,2)) excludes it from recognition yet keeps it in the title — the false positive the
+        // user caught before committing does not get sucked into a date.
+        await vm.SubmitQuickAddAsync(new QuickAddSubmission("내일 장보기", new[] { new TextSpan(0, 2) }, 1));
+
+        var task = Assert.Single(await store.GetAllActiveAsync());
+        Assert.Equal("내일 장보기", task.Title);
+        Assert.Equal(WhenKind.Unscheduled, task.WhenKind);
+        Assert.Null(task.WhenDate);
+    }
+
+    [Fact]
+    public async Task SubmitQuickAdd_WithoutSuppression_SchedulesTheSameLine()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // Same line, no revert: "내일" is recognized and lifted out of the title (the contrast to the
+        // suppressed case above — the two share one parse-and-save core).
+        await vm.SubmitQuickAddAsync(QuickAddSubmission.Plain("내일 장보기"));
+
+        var task = Assert.Single(await store.GetAllActiveAsync());
+        Assert.Equal("장보기", task.Title);
+        Assert.Equal(WhenKind.OnDate, task.WhenKind);
+        Assert.NotNull(task.WhenDate);
+    }
+
+    [Fact]
     public async Task QuickAddWithBareDate_IsMarkedAllDay_AndRowShowsTheDayAlone()
     {
         using var temp = new TempDirectory();

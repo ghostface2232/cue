@@ -180,13 +180,11 @@ public sealed partial class TaskListPage : Page
         ScheduleDayRollover(); // arm the next midnight
     }
 
-    // Raised by OmniInputBox on Enter (only when not mid-IME-composition); the box owns the keystroke
-    // and the composition gate, so the page just runs the add command.
-    private async void QuickAdd_Submit(object sender, System.EventArgs e)
-    {
-        if (ViewModel.AddCommand.CanExecute(null))
-            await RunSafelyAsync(() => ViewModel.AddCommand.ExecuteAsync(null));
-    }
+    // Raised by OmniInputBox on Enter (only when not mid-IME-composition); the box owns the keystroke and
+    // the composition gate. It hands over the raw line + the editor-held reverts; the VM re-parses at the
+    // current clock honouring them (the live inline parse is a display cache only).
+    private async void QuickAdd_Submit(object sender, Cue.ViewModels.QuickAddSubmission submission)
+        => await RunSafelyAsync(() => ViewModel.SubmitQuickAddAsync(submission));
 
     private async void TaskSurface_Tapped(object sender, TappedRoutedEventArgs e)
     {
