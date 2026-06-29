@@ -162,11 +162,20 @@ Windows(개발자 모드)에서 저장소 루트에서:
 
 - **컨트롤**: 빠른입력 `TextBox` → `RichEditBox`. 배경 투명, placeholder 오버레이 유지,
   `IsSpellCheckEnabled=False`, plain-text 붙여넣기 강제, Enter→commit. VM `QuickAddText` 수동 브리지.
-- **IME 게이트**: `TextCompositionStarted/Changed/Ended`로 `_isComposing` 추적. **조합 중 매
-  키에는 절대 틴트하지 않는다.**
-- **발화 트리거**: `(비조합 + 공백)` OR `(idle ~500ms — 조합 중에도 허용, 안정된 꼬리까지 포함해
-  전체 칠)` OR `(조합 종료/commit)`. **재파싱·재틴트는 "보이는 텍스트가 실제로 바뀌었을 때만"**
-  (`_lastText` 게이트) — 서식 적용이 비동기로 `TextChanged`를 재발생시켜 생기는 무한 루프 차단.
+- **IME 게이트 (불변식 #3 우선)**: `TextCompositionStarted/Changed/Ended`로 `_isComposing` 추적.
+  **`_isComposing`이면 재틴트하지 않는다.** 500ms 정지는 조합 확정이 아니므로(자모를 더 붙이거나
+  재조합 가능) 조합 중 음절은 절대 칠하지 않는다 — Acceptance "미완성 조합 문자에 서식 금지".
+- **발화 트리거**: `공백(비조합)` | `idle(비조합)` | `TextCompositionEnded`. 조합 중 idle이 떠도
+  **취소**하고 `TextCompositionEnded` 후 다시 실행한다. 조합 경로는 CompositionEnded가, 조합을
+  안 거치는 편집(붙여넣기·삭제·화살표·숫자/영문)은 공백·idle이 덮는다 — 두 경로가 깔끔히 분리됨.
+  한글은 **음절마다 CompositionEnded**가 나므로 앞 토큰은 그 음절 확정 시 켜지고, **맨 끝 미확정
+  음절만** 확정(공백/Enter/포커스) 때까지 대기 — 그게 곧 건드리면 안 되는 음절이다("띄어쓰기
+  해야 켜진다"가 아니라 "확정되는 순간 켜진다").
+- **재파싱 1회/버전**: 같은 document version엔 한 번만 재파싱한다. `_docVersion`을 실제 텍스트
+  변경 때만 올리고, 재틴트가 `_lastParsedVersion == _docVersion`이면 skip(공백·CompositionEnded·
+  idle이 같은 최종 텍스트에 몰려도 1회). 이 가드가 기존 `_lastText` 루프 차단을 대체·포함한다.
+- **조합 중 Enter**: IME 확정만 하고 task commit으로 처리하지 않는다(`QuickAdd_KeyDown`에서
+  `_isComposing`이면 return — 대개 플랫폼이 이미 그 Enter를 IME가 소비). 확정 후 다음 Enter가 commit.
 - **재틴트 = 전체 리셋**: 매번 전체 구간을 default 색으로 리셋 후 매치 span만 액센트. (diff-only는
   IME commit-reset + 서식 상속 때문에 불가.)
 - **상속 깜빡임 차단**: 재틴트 후 caret이 zero-length면 `Selection.CharacterFormat`을 default로
@@ -180,10 +189,11 @@ Windows(개발자 모드)에서 저장소 루트에서:
 
 ### 단계 1로 넘기는 설계 노트
 
-- **과분할 금지(어수선함 방지)**: 인접한 같은 종류 토큰은 한 구간으로 합치고, 조사·기능어
-  (`다음`, `주` 단독 등)는 강조에서 제외. 복합 표현(`다음 주 금요일 오후 3시`)이 칩/색 폭주로
-  보이지 않게, 날짜구는 한 덩어리·반복만 시각 구분하는 방향을 단계 1 `QuickAddTokenKind`
-  설계에 반영.
+- **종류별 분리·구 단위 묶음(과분할 금지)**: 한 날짜 구는 **한 토큰**으로 잡되(`다음 주 금요일`
+  을 `다음`/`주`/`금요일`로 쪼개지 않음), 날짜·시각·반복은 **서로 다른 토큰으로 분리**해 각각
+  클릭 교정 대상이 되게 한다(사용자 결정: 단위 분리). 조사·기능어는 강조에서 제외.
+  색은 **단일 액센트 1색**이라 토큰 사이 공백이 자연히 분리감을 주므로 별도 시각 구분은 두지
+  않는다. → 단계 1에서 `(?<date>)`/`(?<time>)`/`(?<recur>)` 그룹으로 구현 완료.
 
 ### 정리
 
