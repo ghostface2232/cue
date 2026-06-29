@@ -1,3 +1,4 @@
+using System.Globalization;
 using Cue.Domain;
 
 namespace Cue.Parsing;
@@ -90,6 +91,34 @@ public sealed class ParseContext
         var nextMonday = Today.AddDays(-backToMonday).AddDays(7);
         var forward = ((int)target - (int)DayOfWeek.Monday + 7) % 7;
         return nextMonday.AddDays(forward);
+    }
+
+    /// <summary>
+    /// The date for an ISO-8601 week number — <paramref name="weekday"/> of week <paramref name="week"/> in
+    /// the current ISO week-numbering year (weeks start Monday; week 1 is the one containing the first
+    /// Thursday). Declines (<c>false</c>) when the number is outside that year's week count (e.g. "W53" in a
+    /// 52-week year) so the caller leaves the text in the title rather than inventing a date. When
+    /// <see cref="KoreanDateParserOptions.WeekNumberRollsForwardWhenPast"/> is on and the resolved date is
+    /// already past, it rolls to that week of the next year (clamped to that year's week count).
+    /// </summary>
+    public bool TryWeekDate(int week, DayOfWeek weekday, out DateOnly date)
+    {
+        date = Today;
+        if (week < 1)
+            return false;
+
+        var year = ISOWeek.GetYear(Today.ToDateTime(TimeOnly.MinValue));
+        if (week > ISOWeek.GetWeeksInYear(year))
+            return false;
+
+        date = DateOnly.FromDateTime(ISOWeek.ToDateTime(year, week, weekday));
+        if (Options.WeekNumberRollsForwardWhenPast && date < Today)
+        {
+            var nextYear = year + 1;
+            var clamped = Math.Min(week, ISOWeek.GetWeeksInYear(nextYear));
+            date = DateOnly.FromDateTime(ISOWeek.ToDateTime(nextYear, clamped, weekday));
+        }
+        return true;
     }
 
     /// <summary>The next occurrence of day-of-month <paramref name="dom"/> (this month or next).</summary>
