@@ -13,8 +13,12 @@
     mc:Ignorable="d">
 
     <Page.Resources>
-        <StaticResource x:Key="TimelineRowHoverBrush" ResourceKey="CueHoverFillBrush" />
-        <SolidColorBrush x:Key="TimelineBarBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+        <!-- Timeline cards are opaque (solid base surface), not the translucent card token, so they read as
+             real picked-out cards over the track rather than letting the panel/page show through. The hover
+             tone is the opaque secondary surface (a hair darker) — kept opaque too, since the hover handler
+             swaps the whole Background and a translucent tint there would make a hovered card see-through. -->
+        <SolidColorBrush x:Key="TimelineRowHoverBrush" Color="{ThemeResource CueCardLiftHoverColor}" />
+        <SolidColorBrush x:Key="TimelineBarBrush" Color="{ThemeResource CueCardLiftColor}" />
         <SolidColorBrush x:Key="DetailCardBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
 
         <Style x:Key="TimelineMetadataTextStyle" TargetType="TextBlock">

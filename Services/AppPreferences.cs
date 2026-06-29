@@ -107,6 +107,15 @@ public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences
         set => Set(nameof(ShowWeekNumber), value);
     }
 
+    /// <summary>The global ordering applied to standard task lists — set once from any list's header and
+    /// reflected on every list. Defaults to <see cref="Cue.ViewModels.TaskSortMode.Manual"/> (the
+    /// drag-arranged order), the app's original behavior.</summary>
+    public Cue.ViewModels.TaskSortMode SortMode
+    {
+        get => EnumValue(nameof(SortMode), Cue.ViewModels.TaskSortMode.Manual);
+        set => Set(nameof(SortMode), value.ToString());
+    }
+
     /// <summary>Controls how a parsed week number that already lies in the past resolves: when on, it rolls
     /// to that week of the <i>next</i> year; when off (the default) it stays in the current ISO year even if
     /// the date is past. Only meaningful while <see cref="ShowWeekNumber"/> is on.</summary>

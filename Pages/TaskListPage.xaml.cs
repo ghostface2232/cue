@@ -923,8 +923,17 @@ public sealed partial class TaskListPage : Page
             repeater,
             (items, movedId) => ViewModel.PersistReorderAsync(items, movedId),
             _animationsEnabled,
-            suppress => _suppressItemEntrance = suppress);
+            suppress => _suppressItemEntrance = suppress,
+            () => ViewModel.CanReorder);
         _reorderSurfaces.Add(repeater, surface);
+    }
+
+    /// <summary>Applies a sort choice from the header dropdown. The selected option carries its
+    /// <see cref="TaskSortMode"/> in its Tag; the view model persists it app-wide and reloads.</summary>
+    private void SortOption_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string tag } && Enum.TryParse<TaskSortMode>(tag, out var mode))
+            ViewModel.SetSortModeCommand.Execute(mode);
     }
 
     private void TaskRepeater_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)

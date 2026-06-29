@@ -17,4 +17,10 @@ public interface IListDisplayPreferences
     /// (e.g. "7월 1일 (수) · W27"), and the quick-add parser recognizes week expressions ("W27", "27주차")
     /// as dates. Off (the default) shows no week number and leaves those expressions in the title.</summary>
     bool ShowWeekNumber { get; }
+
+    /// <summary>How standard task lists order their open rows — a single global choice shared by every list
+    /// (set from any list's header, reflected everywhere on the next load). Defaults to
+    /// <see cref="TaskSortMode.Manual"/>, the drag-arranged order. Settable: the list header writes the
+    /// user's pick straight back here so it persists app-wide.</summary>
+    TaskSortMode SortMode { get; set; }
 }

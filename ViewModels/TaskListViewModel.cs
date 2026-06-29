@@ -192,7 +192,42 @@ public partial class TaskListViewModel : ObservableObject
     public partial bool IsEmpty { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChooseSort))]
     public partial bool IsStandardList { get; set; } = true;
+
+    /// <summary>The active global sort for standard lists. Mirrors the persisted preference; the header
+    /// dropdown writes it through <see cref="SetSortModeAsync"/>. Computed companions below drive the
+    /// dropdown's label, its checked option, and whether drag-reorder is live.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SortModeLabel))]
+    [NotifyPropertyChangedFor(nameof(IsSortManual))]
+    [NotifyPropertyChangedFor(nameof(IsSortByDate))]
+    [NotifyPropertyChangedFor(nameof(IsSortByName))]
+    [NotifyPropertyChangedFor(nameof(IsSortByPriority))]
+    [NotifyPropertyChangedFor(nameof(CanReorder))]
+    public partial TaskSortMode SortMode { get; set; }
+
+    /// <summary>The sort dropdown shows only on standard (flat) lists — the 중요도 / 완료한 일 views carry
+    /// their own intrinsic ordering.</summary>
+    public bool CanChooseSort => IsStandardList;
+
+    /// <summary>Drag-to-reorder is live only in 자유 배치 (the hand-arranged order) — a computed sort owns the
+    /// order in the other modes, so dragging is off there. This holds wherever a reorder surface is wired:
+    /// the standard list and each 중요도 section (whose within-section order is the same global manual rank).</summary>
+    public bool CanReorder => SortMode == TaskSortMode.Manual;
+
+    public string SortModeLabel => SortMode switch
+    {
+        TaskSortMode.Date => "날짜순",
+        TaskSortMode.Name => "이름순",
+        TaskSortMode.Priority => "중요도순",
+        _ => "자유 배치",
+    };
+
+    public bool IsSortManual => SortMode == TaskSortMode.Manual;
+    public bool IsSortByDate => SortMode == TaskSortMode.Date;
+    public bool IsSortByName => SortMode == TaskSortMode.Name;
+    public bool IsSortByPriority => SortMode == TaskSortMode.Priority;
 
     [ObservableProperty]
     public partial bool IsTaskGroupMode { get; set; }
@@ -224,6 +259,7 @@ public partial class TaskListViewModel : ObservableObject
         _timeZone = zone;
         _navNotifier = navNotifier;
         _listPreferences = listPreferences;
+        SortMode = _listPreferences?.SortMode ?? TaskSortMode.Manual;
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
@@ -303,6 +339,24 @@ public partial class TaskListViewModel : ObservableObject
         CompletedSection.Title = _mode == TaskListMode.Today ? "오늘 완료한 일" : "완료한 일";
         OnPropertyChanged(nameof(CanQuickAdd));
     }
+
+    /// <summary>Applies a new global sort from the list header: persists the choice app-wide, then reloads
+    /// so the open rows reorder. A computed sort leaves the stored ranks alone, so switching back to
+    /// 자유 배치 restores the hand-arranged order. No-op if the mode is unchanged.</summary>
+    [RelayCommand]
+    public async Task SetSortModeAsync(TaskSortMode mode)
+    {
+        if (SortMode == mode) return;
+        SortMode = mode;
+        if (_listPreferences is not null) _listPreferences.SortMode = mode;
+        await LoadAsync();
+    }
+
+    /// <summary>Orders an open result for display per the active <see cref="SortMode"/> — used for the flat
+    /// list and within each 중요도 section. The index already returns rows in 자유 배치 (stored rank) order, so
+    /// that mode passes through untouched; see <see cref="TaskListOrdering"/> for the computed modes.</summary>
+    private IReadOnlyList<TaskListItem> OrderForDisplay(IReadOnlyList<TaskListItem> items)
+        => TaskListOrdering.Apply(items, SortMode);
 
     /// <summary>Quick-add via the Enter command path: commit the current <see cref="QuickAddText"/> with no
     /// suppression. The control's richer commit (carrying reverted spans) goes through
@@ -491,7 +545,7 @@ public partial class TaskListViewModel : ObservableObject
                 SyncPrioritySections([]);
                 SyncLogbookSections([]);
                 ClearCompletedSection();   // these views exclude completed work outright
-                SyncRows(Tasks, items);
+                SyncRows(Tasks, OrderForDisplay(items));
                 IsEmpty = Tasks.Count == 0;
                 break;
         }
@@ -512,7 +566,7 @@ public partial class TaskListViewModel : ObservableObject
     {
         SyncPrioritySections([]);
         SyncLogbookSections([]);
-        SyncRows(Tasks, open);
+        SyncRows(Tasks, OrderForDisplay(open));
 
         _completedPager = completedPage;
         CompletedSection.TotalCount = completedTotal;
@@ -797,7 +851,9 @@ public partial class TaskListViewModel : ObservableObject
                 if (existing >= 0) PrioritySections.Move(existing, i);
                 else PrioritySections.Insert(i, new PrioritySectionViewModel(name));
             }
-            SyncRows(PrioritySections[i].Tasks, bucket);
+            // The priority grouping is fixed, but rows *within* a section follow the global sort (날짜순 /
+            // 이름순 / 자유 배치); 중요도순 collapses to the stored-rank tiebreaker since a section is one priority.
+            SyncRows(PrioritySections[i].Tasks, OrderForDisplay(bucket));
         }
     }
 

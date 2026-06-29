@@ -34,6 +34,11 @@
                  double-stack (the only place the rule is unavoidable as a literal). -->
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#12000000" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#18000000" />
+            <!-- Opaque, bright surface for a "lifted" card: a row picked up to drag-reorder, and a timeline
+                 card. Brighter than the translucent card token so it reads as a solid white card over the
+                 list; the hover tone darkens a touch. (Dark splits to an elevated grey that lightens on hover.) -->
+            <Color x:Key="CueCardLiftColor">#FFFFFF</Color>
+            <Color x:Key="CueCardLiftHoverColor">#F2F2F2</Color>
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
             <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
@@ -42,6 +47,9 @@
             <SolidColorBrush x:Key="CueDangerFillBrush" Color="{ThemeResource SystemFillColorCritical}" />
             <SolidColorBrush x:Key="CueSavingBrush" Color="{ThemeResource SystemColorButtonText}" />
             <SolidColorBrush x:Key="CueChipNeutralFillBrush" Color="#14000000" />
+            <!-- HC: lean on the system surface colors so a lifted card stays legible; its stroke defines it. -->
+            <StaticResource x:Key="CueCardLiftColor" ResourceKey="SystemColorWindowColor" />
+            <StaticResource x:Key="CueCardLiftHoverColor" ResourceKey="SystemColorButtonFaceColor" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="TextControlBackground" Color="#18000000" />
@@ -56,6 +64,10 @@
             <!-- Dark counterpart of the deepen-on-hover selection (white overlay). See Light note. -->
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#1DFFFFFF" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#28FFFFFF" />
+            <!-- Dark counterpart of the lifted-card surface: an elevated grey above the #202020 base that
+                 lightens further on hover (see Light note). -->
+            <Color x:Key="CueCardLiftColor">#383838</Color>
+            <Color x:Key="CueCardLiftHoverColor">#454545</Color>
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
@@ -209,6 +221,9 @@
     <!-- Shared hover language. Main list rows, subtle buttons, and local panel
          controls all use the same fill so light mode does not drift between surfaces. -->
     <SolidColorBrush x:Key="CueHoverFillBrush" Color="{ThemeResource SubtleFillColorSecondary}" />
+    <!-- Opaque bright surface a lifted card takes (drag-reorder + timeline). Single brush whose Color is a
+         theme-split token, so it stays correct across a runtime light/dark switch even when assigned in code. -->
+    <SolidColorBrush x:Key="CueCardLiftBrush" Color="{ThemeResource CueCardLiftColor}" />
     <SolidColorBrush x:Key="CuePressedFillBrush" Color="{ThemeResource SubtleFillColorTertiary}" />
     <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
     <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />

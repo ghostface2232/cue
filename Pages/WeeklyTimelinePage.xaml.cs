@@ -1060,15 +1060,24 @@ public sealed partial class WeeklyTimelinePage : Page
         CommitFocusedTextBox();
         ObserveFlushTask(ViewModel.Detail.FlushAsync());
 
+        // The timeline re-widths its columns when it reclaims the panel's space on close. Capture the week
+        // column at the left edge now and re-pin it afterwards (against the new, wider column width) so the
+        // view stays on the same week instead of jumping — mirrors the pinning done when the panel opens.
+        var leftColumn = ViewModel.WeekWidth > 0
+            ? Math.Round(TimelineScrollViewer.HorizontalOffset / ViewModel.WeekWidth)
+            : 0;
+
         if (!_animationsEnabled || _detailPanelVisual is null)
         {
             ViewModel.Detail.Close();
+            ScrollColumnToLeft(() => leftColumn * ViewModel.WeekWidth);
             return;
         }
 
         AnimateDetailPanelOut(_detailPanelVisual);
         await Task.Delay(170);
         ViewModel.Detail.Close();
+        ScrollColumnToLeft(() => leftColumn * ViewModel.WeekWidth);
     }
 
     // Title and notes are continuous-typing fields: they autosave on focus-out rather than per keystroke.

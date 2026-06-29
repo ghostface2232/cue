@@ -49,6 +49,7 @@ public sealed class ReorderSurface
     private readonly Func<ObservableCollection<TaskRowViewModel>, Guid, Task> _commitAsync;
     private readonly bool _animationsEnabled;
     private readonly Action<bool>? _suppressEntrance;
+    private readonly Func<bool>? _canReorder;
 
     private Drag? _drag;
 
@@ -56,22 +57,28 @@ public sealed class ReorderSurface
         ItemsRepeater repeater,
         Func<ObservableCollection<TaskRowViewModel>, Guid, Task> commitAsync,
         bool animationsEnabled,
-        Action<bool>? suppressEntrance)
+        Action<bool>? suppressEntrance,
+        Func<bool>? canReorder)
     {
         _repeater = repeater;
         _commitAsync = commitAsync;
         _animationsEnabled = animationsEnabled;
         _suppressEntrance = suppressEntrance;
+        _canReorder = canReorder;
     }
 
-    /// <summary>Wires reorder gestures onto <paramref name="repeater"/> and returns the controller.</summary>
+    /// <summary>Wires reorder gestures onto <paramref name="repeater"/> and returns the controller.
+    /// <paramref name="canReorder"/> is polled at the start of every press so the gesture can be turned
+    /// off live (e.g. when the list is showing a computed sort rather than its hand-arranged order)
+    /// without detaching.</summary>
     public static ReorderSurface Attach(
         ItemsRepeater repeater,
         Func<ObservableCollection<TaskRowViewModel>, Guid, Task> commitAsync,
         bool animationsEnabled,
-        Action<bool>? suppressEntrance = null)
+        Action<bool>? suppressEntrance = null,
+        Func<bool>? canReorder = null)
     {
-        var surface = new ReorderSurface(repeater, commitAsync, animationsEnabled, suppressEntrance);
+        var surface = new ReorderSurface(repeater, commitAsync, animationsEnabled, suppressEntrance, canReorder);
         repeater.PointerPressed += surface.OnPointerPressed;
         repeater.PointerMoved += surface.OnPointerMoved;
         repeater.PointerReleased += surface.OnPointerReleased;
@@ -85,6 +92,7 @@ public sealed class ReorderSurface
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (_drag is not null) return;
+        if (_canReorder is { } can && !can()) return;   // a computed sort owns the order — no dragging
         if (_repeater.ItemsSource is not ObservableCollection<TaskRowViewModel> items) return;
 
         var element = ChildFromSource(e.OriginalSource as DependencyObject);
@@ -153,6 +161,22 @@ public sealed class ReorderSurface
 
         var lifted = TransformOf(drag.Element);
         Canvas.SetZIndex(drag.Element, 50);
+
+        // Give the lifted row a bright, opaque card fill plus a 1px rounded outline so it reads as a picked-up
+        // card over the list instead of a transparent ghost. It's the row's own Border (the hover/selection
+        // surface, already CueRadiusRow-rounded — the same radius as the hover highlight), so the fill and
+        // outline match that region exactly; the Border's BrushTransition fades the fill in.
+        if (drag.Element is Border card)
+        {
+            drag.Card = card;
+            drag.OriginalBackground = card.Background;
+            drag.OriginalBorderBrush = card.BorderBrush;
+            drag.OriginalBorderThickness = card.BorderThickness;
+            card.Background = LiftedCardBrush();
+            card.BorderBrush = CardStrokeBrush();
+            card.BorderThickness = new Thickness(1);
+        }
+
         if (_animationsEnabled)
         {
             lifted.CenterX = drag.Element.ActualWidth / 2;
@@ -179,7 +203,10 @@ public sealed class ReorderSurface
         var draggedCenter = draggedTop + drag.DraggedHeight / 2;
 
         var siblings = RealizedSiblings(drag);
-        var margin = Math.Max(6.0, drag.DraggedHeight * 0.2);
+        // Re-target as soon as the dragged center crosses a neighbour's center (its halfway line), with only a
+        // small dead-zone to stop jitter right at the boundary. The old margin (~20% of the row) made you
+        // overshoot well past the half and, worst of all, made the final slot hard to reach at the list's foot.
+        var margin = Math.Max(3.0, drag.DraggedHeight * 0.06);
 
         // Hysteresis: only re-target when the dragged center passes a neighbor center by the margin.
         var k = drag.TargetIndex;
@@ -201,23 +228,63 @@ public sealed class ReorderSurface
     /// <summary>Animates each realized sibling to its resting position for the current gap.</summary>
     private void ApplyGap(Drag drag, List<Sibling> siblings)
     {
-        Storyboard? storyboard = null;
         foreach (var sibling in siblings)
         {
             var shift = ShiftFor(drag, sibling.Top);
-            if (Math.Abs(sibling.Transform.TranslateY - shift) < Epsilon) continue;
+            var element = sibling.Element;
 
-            if (_animationsEnabled)
+            // Skip if this row is already settled at — or animating toward — this exact shift. Re-issuing the
+            // same animation each pointer move restarts its easing from the current mid-flight value every
+            // frame, which is what made neighbours tremble during a slow drag. Only a *changed* target re-animates.
+            var known = drag.AppliedShift.TryGetValue(element, out var applied);
+            if (known && Math.Abs(applied - shift) < Epsilon)
+                continue;
+
+            drag.AppliedShift[element] = shift;
+
+            // A row we haven't shifted yet this drag — including one just realized by an auto-scroll — snaps
+            // straight to its slot. Animating it from 0 would flash it for one frame at the un-shifted position
+            // (overlapping its neighbour) before easing in, which read as a card briefly popping out and back.
+            if (!known || !_animationsEnabled)
             {
-                storyboard ??= new Storyboard();
-                AddDouble(storyboard, sibling.Transform, "TranslateY", shift, GapAnimationMs);
-            }
-            else
-            {
+                StopAnim(drag, element);
                 sibling.Transform.TranslateY = shift;
+                continue;
             }
+
+            // The target changed while a previous gap animation may still be in flight. Pin the row to where it
+            // is right now and stop that animation *before* starting the new one — otherwise the old animation,
+            // which holds its end value (±one row height), re-asserts that value the instant it completes and
+            // snaps the row a full row up/down (the "jumps off-screen and back" glitch). The new tween then
+            // eases cleanly from the pinned position to the new target.
+            if (drag.ActiveAnim.TryGetValue(element, out var inFlight))
+            {
+                var current = sibling.Transform.TranslateY;
+                inFlight.Stop();
+                sibling.Transform.TranslateY = current;
+            }
+
+            var storyboard = new Storyboard();
+            AddDouble(storyboard, sibling.Transform, "TranslateY", shift, GapAnimationMs);
+            storyboard.Completed += (_, _) =>
+            {
+                if (drag.ActiveAnim.TryGetValue(element, out var done) && ReferenceEquals(done, storyboard))
+                    drag.ActiveAnim.Remove(element);
+            };
+            drag.ActiveAnim[element] = storyboard;
+            storyboard.Begin();
         }
-        storyboard?.Begin();
+    }
+
+    /// <summary>Stops and forgets any in-flight gap animation on <paramref name="element"/> without snapping it
+    /// (the caller sets the resting value explicitly right after).</summary>
+    private static void StopAnim(Drag drag, FrameworkElement element)
+    {
+        if (drag.ActiveAnim.TryGetValue(element, out var sb))
+        {
+            sb.Stop();
+            drag.ActiveAnim.Remove(element);
+        }
     }
 
     /// <summary>The displacement a row at <paramref name="rowTop"/> must take to open the gap.</summary>
@@ -241,7 +308,29 @@ public sealed class ReorderSurface
         drag.Dropping = true;
         drag.AutoScrollTimer?.Stop();
 
-        // Ease the lifted row down into the gap before the data move, so it lands rather than snaps.
+        var items = drag.Items;
+        var oldIndex = items.IndexOf(drag.Row);
+        if (oldIndex < 0) { ClearVisuals(drag); _suppressEntrance?.Invoke(false); _drag = null; return; }
+
+        // Resolve the target collection index from the gap's frozen realized neighbours *before* the settle, so
+        // we know whether this drop moves anything and exactly where it lands.
+        var newIndex = oldIndex;
+        if (drag.NextRow is { } next)
+        {
+            var ni = items.IndexOf(next);
+            if (ni >= 0) newIndex = oldIndex < ni ? ni - 1 : ni;
+        }
+        else if (drag.PrevRow is { } prev)
+        {
+            var pi = items.IndexOf(prev);
+            if (pi >= 0) newIndex = oldIndex <= pi ? pi : pi + 1;
+        }
+        newIndex = Math.Clamp(newIndex, 0, items.Count - 1);
+
+        // Ease the lifted card down into the gap slot. The gap top is exactly the dragged row's *final* layout
+        // slot — its origin when nothing moved, or the target slot when it did — so this single motion both
+        // "snaps back" a cancelled drag and "drops into place" a real move. It must finish before the data move
+        // so the card is already sitting on its destination when the order changes underneath it.
         if (_animationsEnabled && _repeater.GetElementIndex(drag.Element) >= 0)
         {
             var settle = new Storyboard();
@@ -256,47 +345,72 @@ public sealed class ReorderSurface
             await tcs.Task;
         }
 
-        var items = drag.Items;
-        var oldIndex = items.IndexOf(drag.Row);
-        if (oldIndex < 0) { ClearVisuals(drag); _suppressEntrance?.Invoke(false); _drag = null; return; }
-
-        // Map the gap's realized neighbors to a collection index.
-        var newIndex = oldIndex;
-        if (drag.NextRow is { } next)
-        {
-            var ni = items.IndexOf(next);
-            if (ni >= 0) newIndex = oldIndex < ni ? ni - 1 : ni;
-        }
-        else if (drag.PrevRow is { } prev)
-        {
-            var pi = items.IndexOf(prev);
-            if (pi >= 0) newIndex = oldIndex <= pi ? pi : pi + 1;
-        }
-        newIndex = Math.Clamp(newIndex, 0, items.Count - 1);
-
-        ClearVisuals(drag);
-
         if (newIndex != oldIndex)
         {
+            // Reorder the data, force the relayout to its final arrangement, then drop every gap transform in the
+            // *same* UI tick. The dragged card already renders at the gap and each shifted sibling already renders
+            // at its gap slot — and after the move those positions ARE the rows' real layout slots — so clearing
+            // the transforms after the synchronous relayout is visually a no-op. No frame ever shows the pre-drop
+            // order, which is what made the drop flash back to the original arrangement and then jump into place.
             var movedId = drag.Row.Id;
             items.Move(oldIndex, newIndex);
+            _repeater.UpdateLayout();
+            ClearVisuals(drag);
             _ = PersistAsync(items, movedId);
         }
+        else
+        {
+            // Nothing moved: the card has already eased back onto its origin slot, so the transforms are identity.
+            ClearVisuals(drag);
+        }
+
         _suppressEntrance?.Invoke(false);
         _drag = null;
     }
 
     private void ClearVisuals(Drag drag)
     {
-        // Clearing before the data move lets the layout pass land cleanly: realized rows are already at
-        // their final slots, so dropping the transforms leaves no residual offset.
-        foreach (var sibling in RealizedSiblings(drag))
-            sibling.Transform.TranslateY = 0;
+        // Stop every in-flight gap animation first, so none completes after this point and re-asserts its held
+        // end value onto a row we're about to zero.
+        foreach (var sb in drag.ActiveAnim.Values)
+            sb.Stop();
+        drag.ActiveAnim.Clear();
+
+        // Drop the gap transform on every realized row — addressed by visual child, not by resolved data index —
+        // so a container the relayout recycled to a different item can't keep a stale offset and pop. By the time
+        // we get here the data move + UpdateLayout have already placed each row on its final slot, so nulling the
+        // transforms leaves every row exactly where it already renders.
+        var count = VisualTreeHelper.GetChildrenCount(_repeater);
+        for (var i = 0; i < count; i++)
+            if (VisualTreeHelper.GetChild(_repeater, i) is FrameworkElement fe)
+                fe.RenderTransform = null;
+        drag.AppliedShift.Clear();
 
         drag.Element.RenderTransform = null;
         drag.Element.Opacity = 1.0;
         Canvas.SetZIndex(drag.Element, 0);
+
+        // Restore the row's resting fill and stroke (the BrushTransition fades the card back out as it settles).
+        if (drag.Card is { } card)
+        {
+            card.Background = drag.OriginalBackground;
+            card.BorderBrush = drag.OriginalBorderBrush;
+            card.BorderThickness = drag.OriginalBorderThickness;
+            drag.Card = null;
+        }
     }
+
+    /// <summary>The bright, opaque fill a lifted row takes mid-drag — the shared lifted-card surface (white in
+    /// light, an elevated grey in dark), so the picked-up row reads as a solid card and fully hides the rows it
+    /// passes over. Falls back to opaque white.</summary>
+    private static Brush LiftedCardBrush()
+        => Application.Current.Resources.TryGetValue("CueCardLiftBrush", out var app) && app is Brush themed
+            ? themed
+            : new SolidColorBrush(Microsoft.UI.Colors.White);
+
+    /// <summary>The 1px card outline a lifted row takes mid-drag, matching the timeline card's stroke.</summary>
+    private static Brush? CardStrokeBrush()
+        => Application.Current.Resources.TryGetValue("CardStrokeColorDefaultBrush", out var app) ? app as Brush : null;
 
     private async Task PersistAsync(ObservableCollection<TaskRowViewModel> items, Guid movedId)
     {
@@ -463,6 +577,10 @@ public sealed class ReorderSurface
 
         public bool Started { get; set; }
         public bool Dropping { get; set; }
+        public Border? Card { get; set; }                  // the lifted row's Border, given a solid fill mid-drag
+        public Brush? OriginalBackground { get; set; }     // its fill before the lift, restored on drop
+        public Brush? OriginalBorderBrush { get; set; }    // its stroke before the lift
+        public Thickness OriginalBorderThickness { get; set; } // its stroke width before the lift
         public double OriginBaseTop { get; set; }
         public double DraggedHeight { get; set; }
         public double GrabOffset { get; set; }
@@ -470,6 +588,14 @@ public sealed class ReorderSurface
         public int TargetIndex { get; set; }
         public TaskRowViewModel? PrevRow { get; set; }
         public TaskRowViewModel? NextRow { get; set; }
+
+        // The shift each realized sibling was last animated toward, so a slow drag (many pointer moves at the
+        // same target) doesn't restart an in-flight gap animation every frame — the restart was the tremor.
+        public Dictionary<FrameworkElement, double> AppliedShift { get; } = new();
+
+        // The gap animation currently in flight per realized sibling, so a target change can stop the old one
+        // before it completes and re-asserts its held end value (the full-row-height jump glitch).
+        public Dictionary<FrameworkElement, Storyboard> ActiveAnim { get; } = new();
 
         public ScrollViewer? ScrollViewer { get; set; }
         public DispatcherTimer? AutoScrollTimer { get; set; }

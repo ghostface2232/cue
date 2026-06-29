@@ -428,6 +428,35 @@
                     Text="{x:Bind ViewModel.TitleCaption, Mode=OneWay}"
                     Visibility="{x:Bind ViewModel.HasTitleCaption, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
+
+            <!-- Global sort picker (right of the title). One choice, saved app-wide and reflected on every
+                 standard list; hidden on the 중요도 / 완료한 일 views, which carry their own ordering. The
+                 subtle transparent button echoes the restrained header look — secondary text, no fill at
+                 rest. Picking 자유 배치 re-enables drag-to-reorder. -->
+            <DropDownButton
+                x:Name="SortButton"
+                Grid.Column="1"
+                Padding="10,5"
+                VerticalAlignment="Center"
+                Background="Transparent"
+                BorderThickness="0"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                ToolTipService.ToolTip="정렬"
+                AutomationProperties.Name="정렬 방식"
+                Visibility="{x:Bind ViewModel.CanChooseSort, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" VerticalAlignment="Center">
+                    <FontIcon FontSize="14" Glyph="&#xE8CB;" />
+                    <TextBlock FontSize="{StaticResource CueFontListMeta}" Text="{x:Bind ViewModel.SortModeLabel, Mode=OneWay}" />
+                </StackPanel>
+                <DropDownButton.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                        <RadioMenuFlyoutItem Tag="Manual" Text="자유 배치" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortManual, Mode=OneWay}" />
+                        <RadioMenuFlyoutItem Tag="Date" Text="날짜순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByDate, Mode=OneWay}" />
+                        <RadioMenuFlyoutItem Tag="Name" Text="이름순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByName, Mode=OneWay}" />
+                        <RadioMenuFlyoutItem Tag="Priority" Text="중요도순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByPriority, Mode=OneWay}" />
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
         </Grid>
 
         <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="작업을 완료하지 못했습니다" />

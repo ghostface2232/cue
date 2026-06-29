@@ -29,6 +29,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     private readonly IReorderService _reorder;
     private readonly IRecurringTaskService _recurrence;
     private readonly INavDataChangeNotifier _navNotifier;
+    private readonly IListDisplayPreferences? _listPreferences;
     private readonly TimeProvider _clock;
     private readonly TimeZoneInfo _zone;
     // Serializes completion toggles so rapid ticks can't reorder their writes.
@@ -76,13 +77,15 @@ public partial class WeeklyTimelineViewModel : ObservableObject
         TimeProvider clock,
         TimeZoneInfo zone,
         INavDataChangeNotifier navNotifier,
-        SaveFailureCoordinator coordinator)
+        SaveFailureCoordinator coordinator,
+        IListDisplayPreferences? listPreferences = null)
     {
         _store = store;
         _index = index;
         _reorder = reorder;
         _recurrence = recurrence;
         _navNotifier = navNotifier;
+        _listPreferences = listPreferences;
         _clock = clock;
         _zone = zone;
 
@@ -353,9 +356,14 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     {
         var items = await _index.GetTimelineRowsAsync(_rangeStart, _rangeEnd);
 
+        // The columns (ISO weeks) are fixed, but the order of cards *within* a week follows the global sort
+        // (자유 배치 / 날짜순 / 이름순 / 중요도순) — the same preference the lists use. Reordering the flat result
+        // sets the band-packing encounter order below, so within each week column the cards stack in that order.
+        items = TaskListOrdering.Apply(items, _listPreferences?.SortMode ?? TaskSortMode.Manual);
+
         // Pack into bands: each task drops into the next free band of its own week column, so tasks in
-        // different weeks share a band (stack from band 0) instead of every task taking its own row. The
-        // query is ordered by date then rank, so within a week earlier tasks take the lower bands.
+        // different weeks share a band (stack from band 0) instead of every task taking its own row. Within a
+        // week the cards take successive bands in the global-sort order applied just above.
         var bands = new List<List<WeeklyTimelineRowViewModel>>();
         var perColumnCount = new Dictionary<int, int>();
         foreach (var item in items)
