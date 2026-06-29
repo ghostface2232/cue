@@ -91,6 +91,25 @@ public sealed class SuppressionTrackerTests
     }
 
     [Fact]
+    public void Ambiguous_repeated_token_insertion_drops_the_suppression()
+    {
+        // "내일 내일" with the second "내일" [3,2] reverted; the user adds another "내일". Front-insert and
+        // end-insert produce the identical "내일 내일 내일", so the strings can't say which "내일" the revert now
+        // sits on — drop it rather than silently suppress the wrong one.
+        var moved = Re(One(3, 2), "내일 내일", "내일 내일 내일");
+        Assert.Empty(moved);
+    }
+
+    [Fact]
+    public void Unambiguous_edit_among_repeats_still_tracks_the_span()
+    {
+        // Same repeated text, but the inserted "!" is distinct, so the edit pins to the end unambiguously —
+        // the reverted second "내일" [3,2] keeps its place.
+        var moved = Re(One(3, 2), "내일 내일", "내일 내일!");
+        Assert.Equal(new TextSpan(3, 2), Assert.Single(moved));
+    }
+
+    [Fact]
     public void No_change_and_empty_inputs_are_returned_as_is()
     {
         var spans = One(0, 3);

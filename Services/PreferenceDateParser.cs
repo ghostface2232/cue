@@ -1,4 +1,3 @@
-using System.Text;
 using Cue.Parsing;
 
 namespace Cue.Services;
@@ -61,13 +60,10 @@ public sealed class PreferenceDateParser : IDateParser
     }
 
     /// <summary>A compact key for the preference inputs that determine the parser. When this is unchanged
-    /// the cached parser is reused verbatim, so the recognizer is built at most once per distinct config.</summary>
+    /// the cached parser is reused verbatim, so the recognizer is built at most once per distinct config.
+    /// (<see cref="CustomDateMeanings"/> arrives in a stable, name-sorted order from the preference store.)</summary>
     private string BuildSignature()
-    {
-        var sb = new StringBuilder();
-        sb.Append(_preferences.AutoAfternoonForBareOneToSix ? '1' : '0').Append('|');
-        foreach (var meaning in _preferences.CustomDateMeanings)
-            sb.Append(meaning.Name).Append('=').Append(meaning.DayOfMonth).Append(';');
-        return sb.ToString();
-    }
+        => ParserConfigKey.Build(
+            _preferences.AutoAfternoonForBareOneToSix,
+            _preferences.CustomDateMeanings.Select(meaning => (meaning.Name, meaning.DayOfMonth)));
 }

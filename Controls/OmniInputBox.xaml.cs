@@ -434,6 +434,12 @@ public sealed partial class OmniInputBox : UserControl
 
             _syncingDocument = true; // formatting must not be read back as a user edit
             doc.BatchDisplayUpdates();
+            // Collect this whole re-tint into ONE undo unit. Without it each format write and the two
+            // selection moves would each be an undo anti-event — and per TOM a caret/insertion-point change
+            // terminates the current undo group — so a single re-tint could fragment the undo stack into
+            // several no-visible-change entries (the Step-0 "Ctrl+Z does nothing" risk). EndUndoGroup must
+            // run no matter what, or undo grouping stays on and all later typing collapses into one unit.
+            doc.BeginUndoGroup();
             try
             {
                 // Full reset clears any bled/IME-recommitted accent, then paint only the current tokens.
@@ -450,6 +456,7 @@ public sealed partial class OmniInputBox : UserControl
             }
             finally
             {
+                doc.EndUndoGroup();
                 doc.ApplyDisplayUpdates();
                 _syncingDocument = false;
             }
