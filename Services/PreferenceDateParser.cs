@@ -28,6 +28,9 @@ public sealed class PreferenceDateParser : IDateParser
     public ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId)
         => GetParser().Parse(input, now, timeZoneId);
 
+    public ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId, IReadOnlyList<TextSpan> suppressedSpans)
+        => GetParser().Parse(input, now, timeZoneId, suppressedSpans);
+
     /// <summary>Returns the cached parser, rebuilding it only when the preference signature changed.</summary>
     private KoreanDateParser GetParser()
     {
