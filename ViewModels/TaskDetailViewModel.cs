@@ -1218,31 +1218,56 @@ public partial class TaskDetailViewModel : ObservableObject
         });
     }
 
-    /// <summary>Persists the checklist after a tick / title edit: captures the panel's current rows and
-    /// replaces the parent task's checklist with them through the store's atomic MutateAsync (which
-    /// preserves metadata edited concurrently). Does not reload the rows, so an in-progress edit keeps
-    /// focus. The row snapshot is captured synchronously by the caller before the chained save runs, so
-    /// a task switch that repopulates the collection can't make this write one task's items onto
-    /// another. Serialized on the checklist chain; failures are logged, not thrown.</summary>
+    /// <summary>Persists the checklist after a tick / title edit through the store's atomic MutateAsync
+    /// (which preserves metadata edited concurrently). Does not reload the rows, so an in-progress edit
+    /// keeps focus. A tick/title edit only ever changes an existing item's IsChecked/Title — never the
+    /// list's membership (adds/removes run as independent <see cref="SaveOperationKind.ChecklistMutation"/>
+    /// ops) — so while the panel is still on this task the live rows are written wholesale, and after a
+    /// task switch the edit is merged by id onto the on-disk list instead. Serialized on the checklist
+    /// chain; failures are logged, not thrown.</summary>
     private void QueueChecklistSave()
     {
         if (_taskId is not { } id) return;
-        // Snapshot the rows synchronously (on the UI thread, before any await) so the values are bound to
-        // this edit and survive a task switch — after switching, the live Checklist holds another task's
-        // rows, so this frozen copy is the only safe thing to write for this task.
+        // Snapshot the rows synchronously (on the UI thread, before any await) so the edited values are
+        // bound to this edit and survive a task switch — after switching, the live Checklist holds another
+        // task's rows, so this frozen copy is the only record of what this edit changed.
         var frozen = CaptureChecklistRows();
-        // A full snapshot replaces the whole checklist, so a later one supersedes an earlier failed snapshot
-        // for this task (see RecordOutcome) — only the latest is retained. Incremental add/remove mutations
-        // are tracked separately, so this never drops one of those.
+        // A full snapshot supersedes an earlier failed snapshot for this task (see RecordOutcome) — only the
+        // latest is retained. Incremental add/remove mutations are tracked separately, so this never drops
+        // one of those.
         _ = EnqueueChecklistOp(SaveOperationKind.ChecklistSnapshot, id, async () =>
         {
-            // Re-capture the live rows at write time while the panel is still on this task. A snapshot that
-            // failed and is being retried (or that was queued before a later add/delete ran) would otherwise
-            // replay a stale list and clobber the newer items; re-capturing persists the current checklist —
-            // the toggle/title edit AND any item added since. After a task switch the live rows belong to a
-            // different task, so fall back to the frozen copy bound to this one.
-            var rows = _taskId == id ? CaptureChecklistRows() : frozen;
-            var saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist = rows; return true; });
+            TaskItem? saved;
+            if (_taskId == id)
+            {
+                // Still on this task: the live UI reflects every tick, title edit, add, and remove, so its
+                // rows are authoritative. Re-capturing at write time (rather than replaying a possibly-stale
+                // queued snapshot) folds in any item added/removed since this edit was queued, so a retry
+                // can't clobber the newer list.
+                var rows = CaptureChecklistRows();
+                saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist = rows; return true; });
+            }
+            else
+            {
+                // Switched away (or the panel closed): the live rows belong to a different task, so this
+                // task's current list can't be re-read from the UI. The frozen copy carries this edit's
+                // tick/title state but predates any add/remove that succeeded on disk since (those are
+                // independent ChecklistMutation ops). A snapshot only ever changes an existing item's
+                // IsChecked/Title, so merge the frozen field values onto the on-disk checklist by id — apply
+                // the edit to items that still exist and leave a concurrently added/removed one untouched —
+                // rather than overwriting the whole list with the stale copy.
+                var edits = frozen.ToDictionary(item => item.Id);
+                saved = await _store.MutateAsync<TaskItem>(id, task =>
+                {
+                    foreach (var item in task.Checklist)
+                        if (edits.TryGetValue(item.Id, out var edited))
+                        {
+                            item.Title = edited.Title;
+                            item.IsChecked = edited.IsChecked;
+                        }
+                    return true;
+                });
+            }
             if (saved is not null) await _refreshOwner();
         });
     }

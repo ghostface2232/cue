@@ -2536,6 +2536,55 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task StaleChecklistSnapshotRetry_AfterTaskSwitch_MergesEditWithoutDroppingConcurrentAdd()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var task = new TaskItem { Title = "parent" };
+        task.Checklist.Add(new ChecklistItem { Title = "기존 항목" });
+        await store.SaveAsync(task);
+
+        // A second task to switch to, so the live checklist no longer holds the first task's rows.
+        var other = new TaskItem { Title = "other" };
+        await store.SaveAsync(other);
+
+        // The toggle's full-checklist snapshot fails permanently (6 attempts); the store then stops failing.
+        var failingStore = new FailingTaskStore(store, 6);
+        var vm = new TaskListViewModel(failingStore, store, new KoreanDateParser(), new ReorderService(failingStore), new RecurringTaskService(failingStore), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        await vm.Detail.OpenAsync(task.Id);
+
+        // Tick the existing item — its checklist snapshot save fails permanently and is retained as pending.
+        vm.Detail.Checklist[0].IsChecked = true;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+        Assert.True(vm.Detail.HasUnsavedFailures);
+
+        // Add a new item — the store no longer fails, so this incremental add succeeds and appends to disk.
+        vm.Detail.NewChecklistItemTitle = "새 항목";
+        await vm.Detail.AddChecklistItemCommand.ExecuteAsync(null);
+        Assert.Equal(2, (await store.GetAsync<TaskItem>(task.Id))!.Checklist.Count);
+
+        // Switch to the other task: the live Checklist now holds the OTHER task's rows, so a retry of the
+        // stale snapshot can't re-read this task's list from the UI and must fall back to the frozen copy.
+        await vm.Detail.OpenAsync(other.Id);
+
+        // Retry the still-pending stale snapshot. Overwriting the whole list with the frozen [기존 항목] copy
+        // would drop 새 항목; merging the frozen tick onto the on-disk checklist by id keeps both.
+        await vm.Detail.RetrySaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(2, saved!.Checklist.Count);
+        Assert.Contains(saved.Checklist, c => c.Title == "새 항목");
+        Assert.True(saved.Checklist.Single(c => c.Title == "기존 항목").IsChecked);
+    }
+
+    [Fact]
     public async Task HasUnsavedFailures_SurvivesPanelClose_AndClearsOnRetrySuccess()
     {
         using var temp = new TempDirectory();
