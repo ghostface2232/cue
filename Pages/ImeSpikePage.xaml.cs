@@ -157,24 +157,32 @@ public sealed partial class ImeSpikePage : Page
 
             int caretStart = doc.Selection.StartPosition;
             int caretEnd = doc.Selection.EndPosition;
-            bool group = IsolateUndoGroup.IsChecked == true;
+            // Suspend the TOM undo manager while we format, so the colour never enters the undo stack.
+            // Ctrl+Z then only ever sees real text edits, never "uncolour, then delete a char". The
+            // toggle lets us A/B against recording-on behaviour.
+            bool suspendUndo = IsolateUndoGroup.IsChecked == true;
+            const int TomSuspend = -9999983, TomResume = -9999982;
 
             _tinting = true;
             doc.BatchDisplayUpdates();
             try
             {
-                if (group) doc.BeginUndoGroup();
-                // FULL RESET to default first. This is what diff-only could not do: it clears accent
-                // that bled into newly typed text (format inheritance), and accent the IME wiped when it
-                // recommitted a syllable. Then paint only the current matches. One grouped undo unit.
+                if (suspendUndo) doc.Undo(TomSuspend);
+                // FULL RESET to default first, then paint matches. Clears accent that bled into newly
+                // typed text and accent the IME wiped when it recommitted a syllable.
                 doc.GetRange(0, int.MaxValue).CharacterFormat.ForegroundColor = DefaultColor();
                 foreach (var s in desired)
                     doc.GetRange(s.Start, s.Start + s.Len).CharacterFormat.ForegroundColor = Accent;
+
+                doc.Selection.SetRange(caretStart, caretEnd);
+                // Reset the insertion (pending) format at the caret so the NEXT typed char never
+                // inherits the accent of the run it follows (the brief flash on "회" right after "3시").
+                if (caretStart == caretEnd)
+                    doc.Selection.CharacterFormat.ForegroundColor = DefaultColor();
             }
             finally
             {
-                if (group) doc.EndUndoGroup();
-                doc.Selection.SetRange(caretStart, caretEnd);
+                if (suspendUndo) doc.Undo(TomResume); // resume recording for genuine edits
                 doc.ApplyDisplayUpdates();
                 _tinting = false;
             }
@@ -183,9 +191,8 @@ public sealed partial class ImeSpikePage : Page
             foreach (var s in desired) _painted.Add(s);
 
             _tintApplied++;
-            // Undo-stack growth per tint: one unit if grouped, else the reset + one per accent span.
-            // This is the freeze signal — should grow ~1 per edit now, not unbounded.
-            _undoUnits += group ? 1 : (1 + desired.Count);
+            // With undo suspended, formatting adds ZERO undo units (the Ctrl+Z fix). Without, it grows.
+            _undoUnits += suspendUndo ? 0 : (1 + desired.Count);
 
             bool jumped = doc.Selection.StartPosition != caretStart || doc.Selection.EndPosition != caretEnd;
             if (jumped) _caretJumps++;

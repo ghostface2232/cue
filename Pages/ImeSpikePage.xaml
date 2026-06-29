@@ -41,7 +41,7 @@
         <!-- Experiment toggles. -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="20">
             <CheckBox x:Name="GateOnNonComposing" Content="비조합일 때만 재틴트 (끄면 leak 관찰)" IsChecked="True" />
-            <CheckBox x:Name="IsolateUndoGroup" Content="틴트를 undo 그룹으로 격리" IsChecked="True" />
+            <CheckBox x:Name="IsolateUndoGroup" Content="틴트를 undo에서 제외 (TOM suspend)" IsChecked="True" />
             <Button x:Name="ClearLog" Content="카운터/로그 리셋" Click="ClearLog_Click" />
         </StackPanel>
 
