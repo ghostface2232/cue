@@ -32,10 +32,6 @@ public sealed partial class OmniInputBox : UserControl
     private long _documentVersion;
     private long _lastTintedVersion = -1;
 
-    // The spans painted by the last full re-tint. When a fresh parse yields the same spans, the painted
-    // result is identical, so we skip the whole-document reformat (the costly per-keystroke/space work).
-    private IReadOnlyList<QuickAddToken> _lastTokens = Array.Empty<QuickAddToken>();
-
     // Re-tint after a typing pause for edits that don't go through composition (paste, delete, arrows,
     // digits/latin). Composition input is covered by TextCompositionEnded instead.
     private readonly DispatcherTimer _idle = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -115,7 +111,9 @@ public sealed partial class OmniInputBox : UserControl
         var value = (string)e.NewValue ?? string.Empty;
         self.PushTextToDocument(value);
         self.UpdatePlaceholder(value);
-        self.ReTint(value, force: false);
+        // Re-tint off the document's own (trimmed) text so token offsets match the painted range exactly —
+        // the VM set is not the hot keystroke path, so the extra read here is fine.
+        self.ReTint();
     }
 
     // ---- VM <-> Document bridge ----------------------------------------------------------------
@@ -243,16 +241,6 @@ public sealed partial class OmniInputBox : UserControl
         try { tokens = Tokenizer?.Invoke(raw) ?? Array.Empty<QuickAddToken>(); }
         catch { tokens = Array.Empty<QuickAddToken>(); }
 
-        // Unchanged spans paint to an identical result — skip the whole-document reset+repaint (the costly
-        // part on the per-keystroke/space path) and just keep the freshly typed tail un-accented. The tail
-        // is always past every token here: if an edit had shifted a span, the spans wouldn't compare equal.
-        if (!force && SameSpans(tokens, _lastTokens))
-        {
-            KeepTypedTailNormal();
-            return;
-        }
-        _lastTokens = tokens;
-
         try
         {
             var doc = Box.Document;
@@ -287,49 +275,6 @@ public sealed partial class OmniInputBox : UserControl
         {
             _syncingDocument = false; // a position/format failure degrades to "no tint" — never throws
         }
-    }
-
-    /// <summary>The skip-path counterpart to the full re-tint's caret handling: when the spans are
-    /// unchanged we don't repaint, but the just-typed tail (the char before a collapsed caret, always past
-    /// every token here) must stay default-coloured and the next char must not inherit an accent — exactly
-    /// what the full path's trailing caret reset does, at O(1).</summary>
-    private void KeepTypedTailNormal()
-    {
-        try
-        {
-            var doc = Box.Document;
-            if (doc.Selection.StartPosition != doc.Selection.EndPosition)
-                return; // a selection, not a caret — nothing was just typed at a single point
-            var caret = doc.Selection.StartPosition;
-            var normal = DefaultColor();
-
-            _syncingDocument = true; // formatting must not be read back as a user edit
-            try
-            {
-                if (caret > 0)
-                    doc.GetRange(caret - 1, caret).CharacterFormat.ForegroundColor = normal;
-                doc.Selection.SetRange(caret, caret);
-                doc.Selection.CharacterFormat.ForegroundColor = normal;
-            }
-            finally
-            {
-                _syncingDocument = false;
-            }
-        }
-        catch
-        {
-            _syncingDocument = false; // degrade to "no tint touch-up" — never throws
-        }
-    }
-
-    private static bool SameSpans(IReadOnlyList<QuickAddToken> a, IReadOnlyList<QuickAddToken> b)
-    {
-        if (a.Count != b.Count)
-            return false;
-        for (var i = 0; i < a.Count; i++)
-            if (a[i].Start != b[i].Start || a[i].Length != b[i].Length)
-                return false;
-        return true;
     }
 
     private Color AccentColor()

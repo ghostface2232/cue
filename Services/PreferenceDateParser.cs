@@ -1,10 +1,24 @@
+using System.Text;
 using Cue.Parsing;
 
 namespace Cue.Services;
 
+/// <summary>
+/// The app's <see cref="IDateParser"/>: a <see cref="KoreanDateParser"/> configured from the user's
+/// preferences (custom date meanings + the bare-hour afternoon rule). Registered as a singleton, so the
+/// underlying parser — whose construction builds the Microsoft.Recognizers DateTime model, a heavy step
+/// (~14ms incl. its lazy first-parse warmup) — is cached and reused across calls, and rebuilt only when
+/// the preference inputs that define it actually change. This matters because the inline quick-add
+/// highlight re-parses on every keystroke; reconstructing the parser per call put that build on the UI
+/// thread for each key, which is what made the quick-add box feel sluggish.
+/// </summary>
 public sealed class PreferenceDateParser : IDateParser
 {
     private readonly AppPreferences _preferences;
+    private readonly object _gate = new();
+
+    private KoreanDateParser? _cached;
+    private string? _cachedSignature;
 
     public PreferenceDateParser(AppPreferences preferences)
     {
@@ -12,6 +26,24 @@ public sealed class PreferenceDateParser : IDateParser
     }
 
     public ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId)
+        => GetParser().Parse(input, now, timeZoneId);
+
+    /// <summary>Returns the cached parser, rebuilding it only when the preference signature changed.</summary>
+    private KoreanDateParser GetParser()
+    {
+        var signature = BuildSignature();
+        lock (_gate)
+        {
+            if (_cached is null || _cachedSignature != signature)
+            {
+                _cached = BuildParser();
+                _cachedSignature = signature;
+            }
+            return _cached;
+        }
+    }
+
+    private KoreanDateParser BuildParser()
     {
         var customDates = _preferences.CustomDateMeanings
             .ToDictionary(meaning => meaning.Name, meaning => meaning.DayOfMonth, StringComparer.Ordinal);
@@ -22,6 +54,17 @@ public sealed class PreferenceDateParser : IDateParser
         {
             AutoAfternoonForBareOneToSix = _preferences.AutoAfternoonForBareOneToSix,
         };
-        return new KoreanDateParser(rules, options).Parse(input, now, timeZoneId);
+        return new KoreanDateParser(rules, options);
+    }
+
+    /// <summary>A compact key for the preference inputs that determine the parser. When this is unchanged
+    /// the cached parser is reused verbatim, so the recognizer is built at most once per distinct config.</summary>
+    private string BuildSignature()
+    {
+        var sb = new StringBuilder();
+        sb.Append(_preferences.AutoAfternoonForBareOneToSix ? '1' : '0').Append('|');
+        foreach (var meaning in _preferences.CustomDateMeanings)
+            sb.Append(meaning.Name).Append('=').Append(meaning.DayOfMonth).Append(';');
+        return sb.ToString();
     }
 }
