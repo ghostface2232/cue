@@ -111,6 +111,33 @@ public sealed class WeekNumberRuleTests
         Assert.Contains("W54", r.Title);
     }
 
+    // The W-form must not backtrack its 2-digit run down to 1 to slip past the decline lookahead — "W27 후"
+    // is "27 weeks later", not ISO week 2, and the stray "7" must not leak into the title.
+    [Theory]
+    [InlineData("W27 후 회의")]    // relative
+    [InlineData("W27후 회의")]     // relative, no space
+    [InlineData("W27년 기념")]     // anniversary
+    [InlineData("W53째 마무리")]   // ordinal duration
+    [InlineData("W54 후 회의")]    // over-count + trigger: must not collapse to W5 either
+    public void WForm_RelativeAndAnniversary_StayInTitle_NotABacktrackedWeek(string input)
+    {
+        var r = Parse(input);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.Equal(input, r.Title);   // nothing consumed, no stray leading digit
+    }
+
+    // The W-form must consume the whole number, not just its first two digits — "W100" is an out-of-range
+    // week that declines wholesale rather than truncating to W10 and leaving a "0" in the title.
+    [Theory]
+    [InlineData("W100 회의")]
+    [InlineData("W275 결산")]
+    public void WForm_LongNumber_IsNotTruncatedToTwoDigits(string input)
+    {
+        var r = Parse(input);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.Equal(input, r.Title);   // not partially eaten into a wrong week + stray digit
+    }
+
     [Fact]
     public void YearEndWeek_ResolvesViaIsoWeekNumberingYear()
     {

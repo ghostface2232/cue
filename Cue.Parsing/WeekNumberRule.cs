@@ -25,7 +25,11 @@ public sealed class WeekNumberRule : IQuickAddRule
         Pattern = new Regex(
             // Not glued to a preceding letter, digit, or Hangul syllable (so "VW27" / "127주" don't match).
             @"(?<![A-Za-z0-9가-힣])" +
-            @"(?:[Ww](?<wkw>\d{1,2})|(?<wkk>\d{1,2})\s*주(?<cha>차)?)" +
+            // The W-form pins its digit run with a trailing non-digit boundary so it can neither backtrack a
+            // 2-digit run down to 1 to satisfy the decline lookahead below ("W27 후" must stay relative, not
+            // become W2) nor truncate a longer number ("W100" must not read as W10 + a stray "0"). The 주-form
+            // needs no such guard — the literal "주" already anchors the right edge of its digits.
+            @"(?:[Ww](?<wkw>\d{1,2})(?![0-9])|(?<wkk>\d{1,2})\s*주(?<cha>차)?)" +
             // Decline relative/duration/recurring/anniversary forms ("27주 후", "27주째", "27주년", "27주마다").
             @"(?!\s*(?:후|뒤|째|년|간|동안|마다|지나))" +
             // Optional weekday: the long form (요일/욜) always, or a bare single char only at a word boundary
