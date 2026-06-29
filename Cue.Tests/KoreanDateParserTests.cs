@@ -471,6 +471,8 @@ public sealed class KoreanDateParserTests
     [InlineData("세 시까지 보고서 제출", "보고서 제출", 15, 0)]
     [InlineData("3시 반까지 보고서 제출", "보고서 제출", 15, 30)]
     [InlineData("점심때까지 보고서 제출", "보고서 제출", 12, 0)]
+    [InlineData("6시 전까지 보고서 제출", "보고서 제출", 18, 0)]
+    [InlineData("저녁 전까지 보고서 제출", "보고서 제출", 18, 0)]
     public void DueTimeOnly_ResolvesToTodayTime_WithCleanTitle(string input, string title, int hour, int minute)
     {
         var r = Parse(input);
@@ -487,6 +489,7 @@ public sealed class KoreanDateParserTests
     [InlineData("일요일 3시까지 보고서 제출", "보고서 제출", 2026, 6, 28, 15, 0)]
     [InlineData("다음주 토요일 2시까지 보고서 제출", "보고서 제출", 2026, 7, 4, 14, 0)]
     [InlineData("26일 점심까지 보고서 제출", "보고서 제출", 2026, 6, 26, 12, 0)]
+    [InlineData("내일 6시 전까지 보고서 제출", "보고서 제출", 2026, 6, 24, 18, 0)]
     public void DueDateTimeCombination_ResolvesCorrectly(string input, string title, int year, int month, int day, int hour, int minute)
     {
         var r = Parse(input);
