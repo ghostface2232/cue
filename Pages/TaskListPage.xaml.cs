@@ -177,11 +177,10 @@ public sealed partial class TaskListPage : Page
         ScheduleDayRollover(); // arm the next midnight
     }
 
-    private async void QuickAdd_KeyDown(object sender, KeyRoutedEventArgs e)
+    // Raised by OmniInputBox on Enter (only when not mid-IME-composition); the box owns the keystroke
+    // and the composition gate, so the page just runs the add command.
+    private async void QuickAdd_Submit(object sender, System.EventArgs e)
     {
-        if (e.Key != VirtualKey.Enter)
-            return;
-        e.Handled = true;
         if (ViewModel.AddCommand.CanExecute(null))
             await RunSafelyAsync(() => ViewModel.AddCommand.ExecuteAsync(null));
     }

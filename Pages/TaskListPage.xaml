@@ -7,6 +7,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:Cue.ViewModels"
     xmlns:behaviors="using:Cue.Behaviors"
+    xmlns:controls="using:Cue.Controls"
     Background="{ThemeResource LayerFillColorDefaultBrush}"
     FontFamily="{StaticResource CueFontFamily}"
     mc:Ignorable="d">
@@ -440,65 +441,11 @@
             Grid.Row="2"
             Margin="4,2,4,14"
             Visibility="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-            <TextBox
-                MinHeight="48"
-                Padding="46,13,14,9"
-                VerticalContentAlignment="Center"
-                Background="{ThemeResource ControlFillColorDefaultBrush}"
-                BackgroundSizing="InnerBorderEdge"
-                BorderBrush="{ThemeResource CircleElevationBorderBrush}"
-                BorderThickness="1"
-                CornerRadius="24"
-                FontSize="15"
-                KeyDown="QuickAdd_KeyDown"
-                Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
-                <TextBox.Resources>
-                    <!-- Hover lift is theme-split. Light keeps the standard one-tone lift
-                         (ControlFillColorSecondary). Dark's ControlFillColorSecondary (#15FFFFFF) jumps too
-                         bright over the resting fill (#0FFFFFFF) on the dark page, so the dark hover uses a
-                         gentler white overlay (#12FFFFFF) — a smaller, calmer lift. -->
-                    <ResourceDictionary>
-                        <ResourceDictionary.ThemeDictionaries>
-                            <ResourceDictionary x:Key="Light">
-                                <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="ControlFillColorSecondaryBrush" />
-                                <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
-                                <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="CircleElevationBorderBrush" />
-                                <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
-                            </ResourceDictionary>
-                            <ResourceDictionary x:Key="Dark">
-                                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#12FFFFFF" />
-                                <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
-                                <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="CircleElevationBorderBrush" />
-                                <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
-                            </ResourceDictionary>
-                        </ResourceDictionary.ThemeDictionaries>
-                    </ResourceDictionary>
-                </TextBox.Resources>
-            </TextBox>
-            <FontIcon
-                Margin="20,0,0,0"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Center"
-                FontSize="16"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Glyph="&#xE710;"
-                IsHitTestVisible="False" />
-            <!-- Custom placeholder: PlaceholderText is a plain string, but a filtered view colors the
-                 group/tag name with the accent, so the placeholder is two Runs in an overlay. The Margin
-                 starts from the TextBox's own Padding (46,_,14,9), but the edit surface seats the typed
-                 text ~3px higher than a centered TextBlock in the same box, so the top inset is lifted
-                 13→7 to match it. Shown only while the box is empty. -->
-            <TextBlock
-                Margin="46,7,14,9"
-                VerticalAlignment="Center"
-                FontSize="15"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                IsHitTestVisible="False"
-                TextTrimming="CharacterEllipsis"
-                Visibility="{x:Bind ViewModel.QuickAddIsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-                <Run Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Text="{x:Bind ViewModel.QuickAddPlaceholderName, Mode=OneWay}" />
-                <Run Text="{x:Bind ViewModel.QuickAddPlaceholderSuffix, Mode=OneWay}" />
-            </TextBlock>
+            <controls:OmniInputBox
+                Submit="QuickAdd_Submit"
+                Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay}"
+                PlaceholderName="{x:Bind ViewModel.QuickAddPlaceholderName, Mode=OneWay}"
+                PlaceholderSuffix="{x:Bind ViewModel.QuickAddPlaceholderSuffix, Mode=OneWay}" />
         </Grid>
 
         <Grid
