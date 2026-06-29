@@ -2098,9 +2098,10 @@ public sealed class ViewModelRegressionTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class StubListDisplayPreferences(bool keepCompletedForToday) : IListDisplayPreferences
+    private sealed class StubListDisplayPreferences(bool keepCompletedForToday = false, bool showWeekNumber = false) : IListDisplayPreferences
     {
         public bool KeepCompletedForToday { get; } = keepCompletedForToday;
+        public bool ShowWeekNumber { get; } = showWeekNumber;
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
