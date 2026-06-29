@@ -157,17 +157,17 @@ public sealed partial class ImeSpikePage : Page
 
             int caretStart = doc.Selection.StartPosition;
             int caretEnd = doc.Selection.EndPosition;
-            // Suspend the TOM undo manager while we format, so the colour never enters the undo stack.
-            // Ctrl+Z then only ever sees real text edits, never "uncolour, then delete a char". The
-            // toggle lets us A/B against recording-on behaviour.
-            bool suspendUndo = IsolateUndoGroup.IsChecked == true;
-            const int TomSuspend = -9999983, TomResume = -9999982;
+            // NOTE: WinUI's ITextDocument has no Undo(count) overload, so the TOM tomSuspend/tomResume
+            // trick to keep formatting out of the undo stack is NOT available here. Grouping is the most
+            // we can do, and it does NOT stop Ctrl+Z from undoing the colour before the text — that is a
+            // hard limit of formatting-in-the-document and the reason to prefer the overlay approach.
+            bool group = IsolateUndoGroup.IsChecked == true;
 
             _tinting = true;
             doc.BatchDisplayUpdates();
             try
             {
-                if (suspendUndo) doc.Undo(TomSuspend);
+                if (group) doc.BeginUndoGroup();
                 // FULL RESET to default first, then paint matches. Clears accent that bled into newly
                 // typed text and accent the IME wiped when it recommitted a syllable.
                 doc.GetRange(0, int.MaxValue).CharacterFormat.ForegroundColor = DefaultColor();
@@ -182,7 +182,7 @@ public sealed partial class ImeSpikePage : Page
             }
             finally
             {
-                if (suspendUndo) doc.Undo(TomResume); // resume recording for genuine edits
+                if (group) doc.EndUndoGroup();
                 doc.ApplyDisplayUpdates();
                 _tinting = false;
             }
@@ -191,8 +191,7 @@ public sealed partial class ImeSpikePage : Page
             foreach (var s in desired) _painted.Add(s);
 
             _tintApplied++;
-            // With undo suspended, formatting adds ZERO undo units (the Ctrl+Z fix). Without, it grows.
-            _undoUnits += suspendUndo ? 0 : (1 + desired.Count);
+            _undoUnits += group ? 1 : (1 + desired.Count);
 
             bool jumped = doc.Selection.StartPosition != caretStart || doc.Selection.EndPosition != caretEnd;
             if (jumped) _caretJumps++;
