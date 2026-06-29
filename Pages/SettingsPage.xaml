@@ -422,6 +422,44 @@
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
+                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
+                                        <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="연중 주차 (W27)" />
+                                        <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="목록 날짜 옆에 주차 표시, &quot;W27&quot;·&quot;27주차&quot; 입력을 해당 주(월요일)로 인식" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        x:Name="WeekNumberSwitch"
+                                        Grid.Column="1"
+                                        Style="{StaticResource SettingsToggleStyle}"
+                                        Toggled="WeekNumberSwitch_Toggled" />
+                                </Grid>
+
+                                <Border Style="{StaticResource SettingsDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
+                                        <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="지난 주차는 다음 해로" />
+                                        <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="입력한 주차가 이미 지났으면 내년 같은 주차로 (끄면 올해 기준)" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        x:Name="WeekRollForwardSwitch"
+                                        Grid.Column="1"
+                                        Style="{StaticResource SettingsToggleStyle}"
+                                        Toggled="WeekRollForwardSwitch_Toggled" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
                             <StackPanel Spacing="{StaticResource CueGap16}">
                                 <StackPanel Spacing="{StaticResource CueGap4}">
                                     <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="나만의 날짜 인식" />

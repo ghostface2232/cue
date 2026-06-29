@@ -98,6 +98,24 @@ public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences
         set => Set(nameof(KeepCompletedForToday), value);
     }
 
+    /// <summary>When on, a dated list row shows its ISO-8601 week number next to the date ("· W27") and the
+    /// quick-add parser recognizes week expressions ("W27", "27주차", "27주에", "W27까지", with an optional
+    /// weekday) as dates — a single switch for the whole "연중 주차" feature. Off by default.</summary>
+    public bool ShowWeekNumber
+    {
+        get => BoolValue(nameof(ShowWeekNumber), false);
+        set => Set(nameof(ShowWeekNumber), value);
+    }
+
+    /// <summary>Controls how a parsed week number that already lies in the past resolves: when on, it rolls
+    /// to that week of the <i>next</i> year; when off (the default) it stays in the current ISO year even if
+    /// the date is past. Only meaningful while <see cref="ShowWeekNumber"/> is on.</summary>
+    public bool WeekNumberPastRollsToNextYear
+    {
+        get => BoolValue(nameof(WeekNumberPastRollsToNextYear), false);
+        set => Set(nameof(WeekNumberPastRollsToNextYear), value);
+    }
+
     /// <summary>The width the user last dragged the task detail panel to, shared across every task list so
     /// the resize sticks as you move between lists. Null until the panel has ever been resized; the page
     /// clamps it to its current window-dependent range and falls back to its own default when unset.</summary>

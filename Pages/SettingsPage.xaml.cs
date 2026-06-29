@@ -65,6 +65,9 @@ public sealed partial class SettingsPage : Page
         ReloadCustomDateRows();
         AutoAfternoonSwitch.IsOn = _preferences.AutoAfternoonForBareOneToSix;
         KeepCompletedSwitch.IsOn = _preferences.KeepCompletedForToday;
+        WeekNumberSwitch.IsOn = _preferences.ShowWeekNumber;
+        WeekRollForwardSwitch.IsOn = _preferences.WeekNumberPastRollsToNextYear;
+        WeekRollForwardSwitch.IsEnabled = _preferences.ShowWeekNumber;
         VersionText.Text = $"버전 {AppVersion()}";
         ApplySelectedSection();
         _loading = false;
@@ -297,6 +300,24 @@ public sealed partial class SettingsPage : Page
         // The active lists pick this up the next time they load — returning from Settings recreates the
         // list page (and its view model), which reads the preference fresh.
         _preferences.KeepCompletedForToday = KeepCompletedSwitch.IsOn;
+    }
+
+    private void WeekNumberSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        // Keep the dependent roll-forward toggle's enabled state in sync even while loading (it has no
+        // persistence side effect); only the preference write is gated on _loading.
+        WeekRollForwardSwitch.IsEnabled = WeekNumberSwitch.IsOn;
+        if (_loading)
+            return;
+        // Display (list rows) and input recognition both read this; a fresh list / next parse pick it up.
+        _preferences.ShowWeekNumber = WeekNumberSwitch.IsOn;
+    }
+
+    private void WeekRollForwardSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+            return;
+        _preferences.WeekNumberPastRollsToNextYear = WeekRollForwardSwitch.IsOn;
     }
 
     private void AddCustomDate_Click(object sender, RoutedEventArgs e)
