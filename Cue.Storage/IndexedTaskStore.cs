@@ -149,8 +149,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     {
         if (task.TaskGroupId is { } taskGroupId)
         {
-            var taskGroup = await _files.GetAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
-            if (taskGroup is not { IsDeleted: false })
+            var result = await ReadReferenceAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
+            if (result.Status == ReferenceReadStatus.Absent ||
+                result is { Status: ReferenceReadStatus.Found, Record.IsDeleted: true })
                 task.TaskGroupId = null;
         }
 
@@ -159,12 +160,52 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             var retainedTags = new List<Guid>(task.TagIds.Count);
             foreach (var tagId in task.TagIds.Distinct())
             {
-                var tag = await _files.GetAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
-                if (tag is { IsDeleted: false }) retainedTags.Add(tagId);
+                var result = await ReadReferenceAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
+                if (result.Status == ReferenceReadStatus.Unreadable ||
+                    result is { Status: ReferenceReadStatus.Found, Record.IsDeleted: false })
+                    retainedTags.Add(tagId);
             }
             task.TagIds = retainedTags;
         }
     }
+
+    private async Task<ReferenceReadResult<T>> ReadReferenceAsync<T>(Guid id, CancellationToken cancellationToken)
+        where T : RecordBase
+    {
+        try
+        {
+            var record = _files is FileTaskStore fileStore
+                ? await fileStore.ReadForReferenceValidationAsync<T>(id, cancellationToken).ConfigureAwait(false)
+                : await _files.GetAsync<T>(id, cancellationToken).ConfigureAwait(false);
+            return record is null
+                ? new(ReferenceReadStatus.Absent, null)
+                : new(ReferenceReadStatus.Found, record);
+        }
+        catch (FileNotFoundException)
+        {
+            return new(ReferenceReadStatus.Absent, null);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new(ReferenceReadStatus.Absent, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[Cue] Preserving unreadable {typeof(T).Name} reference '{id}': {ex.Message}");
+            return new(ReferenceReadStatus.Unreadable, null);
+        }
+    }
+
+    private enum ReferenceReadStatus
+    {
+        Found,
+        Absent,
+        Unreadable,
+    }
+
+    private readonly record struct ReferenceReadResult<T>(ReferenceReadStatus Status, T? Record)
+        where T : RecordBase;
 
     public async Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
     {

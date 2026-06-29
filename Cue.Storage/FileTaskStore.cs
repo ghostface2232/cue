@@ -62,6 +62,20 @@ public sealed class FileTaskStore : ITaskStore
         return await ReadRecordAsync<T>(path, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Reads a record without corruption isolation so <see cref="IndexedTaskStore"/> can distinguish
+    /// an absent reference from a temporarily or permanently unreadable one during normalization.
+    /// This is intentionally internal; the public <see cref="GetAsync{T}"/> contract still folds both
+    /// outcomes to <see langword="null"/>.
+    /// </summary>
+    internal async Task<T> ReadForReferenceValidationAsync<T>(Guid id, CancellationToken cancellationToken)
+        where T : RecordBase
+    {
+        var bytes = await File.ReadAllBytesAsync(PathFor(typeof(T), id), cancellationToken).ConfigureAwait(false);
+        return JsonSerializer.Deserialize<T>(bytes, _json)
+            ?? throw new JsonException("The record payload deserialized to null.");
+    }
+
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default)
         where T : RecordBase
     {

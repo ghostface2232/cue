@@ -748,6 +748,36 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Save_PreservesReferencesWhenContainersAreUnreadable()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        var group = new TaskGroup { Name = "잠긴 그룹" };
+        var tag = new Tag { Name = "잠긴 태그" };
+        await store.SaveAsync(group);
+        await store.SaveAsync(tag);
+
+        var groupPath = Path.Combine(root, "groups", group.Id + ".json");
+        var tagPath = Path.Combine(root, "tags", tag.Id + ".json");
+        await using var lockedGroup = new FileStream(groupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        await using var lockedTag = new FileStream(tagPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var task = new TaskItem
+        {
+            Title = "읽을 수 없는 참조 보존",
+            TaskGroupId = group.Id,
+            TagIds = { tag.Id, tag.Id },
+        };
+        await store.SaveAsync(task);
+
+        var persisted = (await store.GetAsync<TaskItem>(task.Id))!;
+        Assert.Equal(group.Id, persisted.TaskGroupId);
+        Assert.Equal(new[] { tag.Id }, persisted.TagIds);
+    }
+
+    [Fact]
     public async Task Checklist_IsMirroredInTheIndex_AndRebuildsFromFiles()
     {
         var root = NewRoot();
