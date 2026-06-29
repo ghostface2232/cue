@@ -224,7 +224,7 @@ public partial class TaskRowViewModel : ObservableObject
         AcknowledgeMessage = string.Empty;
     }
 
-    public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled)
+    public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled, bool showWeekNumber = false)
     {
         _onUserToggled = onUserToggled;
         // The in-place list reconcile mutates ChecklistItems directly, so notify HasChecklist from the
@@ -238,7 +238,7 @@ public partial class TaskRowViewModel : ObservableObject
         Id = item.Id;
         Title = FormatTitle(item.Title);
         SortOrder = item.SortOrder;
-        Schedule = BuildSchedule(item);
+        Schedule = BuildSchedule(item, showWeekNumber);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
         IsAheadOfSchedule = item.IsAheadOfSchedule;
@@ -258,10 +258,10 @@ public partial class TaskRowViewModel : ObservableObject
     /// a row whose <see cref="Id"/> already matches <paramref name="item"/>. The generated setters skip the
     /// change notification when a value is unchanged, so a refresh that touched nothing here is silent.
     /// </summary>
-    public void Update(TaskListItem item)
+    public void Update(TaskListItem item, bool showWeekNumber = false)
     {
         Title = FormatTitle(item.Title);
-        Schedule = BuildSchedule(item);
+        Schedule = BuildSchedule(item, showWeekNumber);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
         IsAheadOfSchedule = item.IsAheadOfSchedule;
@@ -326,14 +326,16 @@ public partial class TaskRowViewModel : ObservableObject
         => string.IsNullOrWhiteSpace(title) ? "(제목 없음)" : title;
 
     // An all-day (종일) task carries no time in the index (its time column is NULL), so the row shows the
-    // date alone. A present time is a deliberate schedule and is shown next to the date.
-    private static string BuildSchedule(TaskListItem item)
+    // date alone. A present time is a deliberate schedule and is shown next to the date. When the "연중 주차"
+    // preference is on, the ISO-8601 week number is appended ("· W27") so a dated row carries its week.
+    private static string BuildSchedule(TaskListItem item, bool showWeekNumber)
     {
         if (item.WhenDate is not { } when)
             return string.Empty;
-        return item.WhenTime is { } time
+        var label = item.WhenTime is { } time
             ? $"{Day(when)} {Time(time)}"
             : Day(when);
+        return showWeekNumber ? $"{label} · {Week(when)}" : label;
     }
 
     private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
@@ -341,4 +343,8 @@ public partial class TaskRowViewModel : ObservableObject
     private static string Day(DateOnly d) => d.ToString("M월 d일 (ddd)", Korean);
 
     private static string Time(TimeOnly t) => t.ToString("tt h:mm", Korean);
+
+    // ISO-8601 week of the year, zero-padded to two digits ("W27"). The week-numbering year handles the
+    // late-Dec / early-Jan boundary so a date that ISO assigns to an adjacent year still reads correctly.
+    private static string Week(DateOnly d) => $"W{ISOWeek.GetWeekOfYear(d.ToDateTime(TimeOnly.MinValue)):00}";
 }

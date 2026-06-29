@@ -62,6 +62,10 @@ public partial class App : Application
         services.AddSingleton(timeZone);
         services.AddSingleton(preferences);
 
+        // The slice of preferences the task list reads (the keep-completed-in-place toggle), exposed to the
+        // ViewModels layer through its own interface so that layer stays free of the WinUI settings store.
+        services.AddSingleton<IListDisplayPreferences>(preferences);
+
         // The quick-add parser.
         services.AddSingleton<IDateParser, PreferenceDateParser>();
 

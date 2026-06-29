@@ -46,7 +46,7 @@ public sealed class WindowPlacement
 /// <summary>
 /// App-local preferences. Task/project/label data still lives exclusively in the file-backed store.
 /// </summary>
-public sealed class AppPreferences
+public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences
 {
     private static readonly Dictionary<string, object?> Memory = new();
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -86,6 +86,34 @@ public sealed class AppPreferences
     {
         get => BoolValue(nameof(AutoAfternoonForBareOneToSix), true);
         set => Set(nameof(AutoAfternoonForBareOneToSix), value);
+    }
+
+    /// <summary>When on, a task completed today stays in its place on the active list, dimmed, for the rest
+    /// of the local day instead of dropping out into its 완료한 일 section immediately; at the next day
+    /// rollover it leaves the list and lives only in the completed section / Logbook. Off (the default)
+    /// keeps the original open-only behavior — a completion drops out of the live list at once.</summary>
+    public bool KeepCompletedForToday
+    {
+        get => BoolValue(nameof(KeepCompletedForToday), false);
+        set => Set(nameof(KeepCompletedForToday), value);
+    }
+
+    /// <summary>When on, a dated list row shows its ISO-8601 week number next to the date ("· W27") and the
+    /// quick-add parser recognizes week expressions ("W27", "27주차", "27주에", "W27까지", with an optional
+    /// weekday) as dates — a single switch for the whole "연중 주차" feature. Off by default.</summary>
+    public bool ShowWeekNumber
+    {
+        get => BoolValue(nameof(ShowWeekNumber), false);
+        set => Set(nameof(ShowWeekNumber), value);
+    }
+
+    /// <summary>Controls how a parsed week number that already lies in the past resolves: when on, it rolls
+    /// to that week of the <i>next</i> year; when off (the default) it stays in the current ISO year even if
+    /// the date is past. Only meaningful while <see cref="ShowWeekNumber"/> is on.</summary>
+    public bool WeekNumberPastRollsToNextYear
+    {
+        get => BoolValue(nameof(WeekNumberPastRollsToNextYear), false);
+        set => Set(nameof(WeekNumberPastRollsToNextYear), value);
     }
 
     /// <summary>The width the user last dragged the task detail panel to, shared across every task list so
