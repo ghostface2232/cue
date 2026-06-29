@@ -88,7 +88,13 @@ public sealed class ReorderSurface
         if (_repeater.ItemsSource is not ObservableCollection<TaskRowViewModel> items) return;
 
         var element = ChildFromSource(e.OriginalSource as DependencyObject);
-        if (element is null || element.DataContext is not TaskRowViewModel row) return;
+        if (element is null) return;
+        // The row template binds with compiled x:Bind, which does NOT flow a DataContext onto the
+        // realized container — so map the element back to its row through the repeater's item index
+        // rather than its (always-null) DataContext.
+        var pressedIndex = _repeater.GetElementIndex(element);
+        if (pressedIndex < 0 || pressedIndex >= items.Count) return;
+        var row = items[pressedIndex];
         if (IsInteractiveElement(e.OriginalSource as DependencyObject)) return;
 
         // Arm — but don't capture yet. We only become a drag once the pointer crosses the threshold,
@@ -344,7 +350,10 @@ public sealed class ReorderSurface
         {
             if (VisualTreeHelper.GetChild(_repeater, i) is not FrameworkElement fe) continue;
             if (ReferenceEquals(fe, drag.Element)) continue;
-            if (fe.DataContext is not TaskRowViewModel row) continue;
+            // x:Bind leaves DataContext null on realized rows; resolve the row by item index instead.
+            var index = _repeater.GetElementIndex(fe);
+            if (index < 0 || index >= drag.Items.Count) continue;
+            var row = drag.Items[index];
 
             var transform = TransformOf(fe);
             var measured = fe.TransformToVisual(_repeater).TransformPoint(new Point(0, 0)).Y;
