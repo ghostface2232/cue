@@ -1,3 +1,4 @@
+using Cue.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
@@ -20,7 +21,9 @@ public sealed partial class HexToTintBrushConverter : IValueConverter
     {
         if (value is string hex && TryParse(hex, out var color))
             return new SolidColorBrush(Color.FromArgb(TintAlpha, color.R, color.G, color.B));
-        return Application.Current.Resources["ControlFillColorSecondaryBrush"];
+        // Uncolored tag: neutral control fill, resolved for the in-app theme.
+        return ThemeResources.Brush("CueControlFillSecondaryBrush")
+            ?? Application.Current.Resources["ControlFillColorSecondaryBrush"];
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)

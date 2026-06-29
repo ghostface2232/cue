@@ -39,6 +39,26 @@
                  list; the hover tone darkens a touch. (Dark splits to an elevated grey that lightens on hover.) -->
             <Color x:Key="CueCardLiftColor">#FFFFFF</Color>
             <Color x:Key="CueCardLiftHoverColor">#F2F2F2</Color>
+            <!-- Code-resolved themed brushes (see Services/ThemeResources.cs). These alias system tokens
+                 but live in the theme dictionaries so code can resolve them for the app's IN-APP theme
+                 (the window root's ElementTheme) instead of the OS theme that Application.Current.Resources
+                 follows. The aliasing ThemeResource resolves within THIS dictionary's theme. -->
+            <SolidColorBrush x:Key="CueGlyphPrimaryBrush" Color="{ThemeResource TextFillColorPrimary}" />
+            <SolidColorBrush x:Key="CueGlyphSecondaryBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueAccentGlyphBrush" Color="{ThemeResource AccentTextFillColorPrimary}" />
+            <SolidColorBrush x:Key="CueControlFillSecondaryBrush" Color="{ThemeResource ControlFillColorSecondary}" />
+            <!-- Priority cue colors (row dot), theme-split so PriorityToBrush/Tint resolve them per the
+                 in-app theme. P3 uses the (theme-independent) accent. -->
+            <SolidColorBrush x:Key="CuePriorityP1Brush" Color="{ThemeResource SystemFillColorCritical}" />
+            <SolidColorBrush x:Key="CuePriorityP2Brush" Color="{ThemeResource SystemFillColorCaution}" />
+            <SolidColorBrush x:Key="CuePriorityP3Brush" Color="{ThemeResource SystemAccentColor}" />
+            <SolidColorBrush x:Key="CuePriorityP4Brush" Color="{ThemeResource TextFillColorTertiary}" />
+            <!-- Recurrence timeline pip colors, resolved by OccurrencePipKindToBrushConverter. -->
+            <SolidColorBrush x:Key="CueTimelineCompletedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.6" />
+            <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
+            <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
             <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource ControlFillColorDefault}" />
@@ -50,6 +70,21 @@
             <!-- HC: lean on the system surface colors so a lifted card stays legible; its stroke defines it. -->
             <StaticResource x:Key="CueCardLiftColor" ResourceKey="SystemColorWindowColor" />
             <StaticResource x:Key="CueCardLiftHoverColor" ResourceKey="SystemColorButtonFaceColor" />
+            <!-- Code-resolved themed brushes (see Light dict note). HC resolves the same aliases to its
+                 own system colors so code-driven glyphs/pips stay legible in high contrast too. -->
+            <SolidColorBrush x:Key="CueGlyphPrimaryBrush" Color="{ThemeResource TextFillColorPrimary}" />
+            <SolidColorBrush x:Key="CueGlyphSecondaryBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueAccentGlyphBrush" Color="{ThemeResource AccentTextFillColorPrimary}" />
+            <SolidColorBrush x:Key="CueControlFillSecondaryBrush" Color="{ThemeResource ControlFillColorSecondary}" />
+            <SolidColorBrush x:Key="CuePriorityP1Brush" Color="{ThemeResource SystemFillColorCritical}" />
+            <SolidColorBrush x:Key="CuePriorityP2Brush" Color="{ThemeResource SystemFillColorCaution}" />
+            <SolidColorBrush x:Key="CuePriorityP3Brush" Color="{ThemeResource SystemAccentColor}" />
+            <SolidColorBrush x:Key="CuePriorityP4Brush" Color="{ThemeResource TextFillColorTertiary}" />
+            <SolidColorBrush x:Key="CueTimelineCompletedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.6" />
+            <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
+            <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="TextControlBackground" Color="#18000000" />
@@ -68,6 +103,21 @@
                  stroke still reads it as an elevated card, and lightening a touch on hover (see Light note). -->
             <Color x:Key="CueCardLiftColor">#2C2C2C</Color>
             <Color x:Key="CueCardLiftHoverColor">#383838</Color>
+            <!-- Code-resolved themed brushes (see Light dict note). In dark these alias the dark system
+                 tokens, so code-driven glyphs/pips follow the in-app dark theme even while the OS is light. -->
+            <SolidColorBrush x:Key="CueGlyphPrimaryBrush" Color="{ThemeResource TextFillColorPrimary}" />
+            <SolidColorBrush x:Key="CueGlyphSecondaryBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueAccentGlyphBrush" Color="{ThemeResource AccentTextFillColorPrimary}" />
+            <SolidColorBrush x:Key="CueControlFillSecondaryBrush" Color="{ThemeResource ControlFillColorSecondary}" />
+            <SolidColorBrush x:Key="CuePriorityP1Brush" Color="{ThemeResource SystemFillColorCritical}" />
+            <SolidColorBrush x:Key="CuePriorityP2Brush" Color="{ThemeResource SystemFillColorCaution}" />
+            <SolidColorBrush x:Key="CuePriorityP3Brush" Color="{ThemeResource SystemAccentColor}" />
+            <SolidColorBrush x:Key="CuePriorityP4Brush" Color="{ThemeResource TextFillColorTertiary}" />
+            <SolidColorBrush x:Key="CueTimelineCompletedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.6" />
+            <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
+            <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
+            <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
@@ -255,30 +305,19 @@
          of this file: Light uses the system critical red; Dark uses a clean literal red because the system
          critical color is a washed-out pink on dark surfaces. -->
 
-    <!-- Priority cue colors (Todoist-style row dot). Theme-aware via ThemeResource on Color;
-         resolved by PriorityToBrushConverter. -->
-    <SolidColorBrush x:Key="CuePriorityP1Brush" Color="{ThemeResource SystemFillColorCritical}" />
-    <SolidColorBrush x:Key="CuePriorityP2Brush" Color="{ThemeResource SystemFillColorCaution}" />
-    <SolidColorBrush x:Key="CuePriorityP3Brush" Color="{ThemeResource SystemAccentColor}" />
-    <SolidColorBrush x:Key="CuePriorityP4Brush" Color="{ThemeResource TextFillColorTertiary}" />
+    <!-- Priority cue colors (Todoist-style row dot) and recurrence timeline pip colors are theme-split in
+         the ThemeDictionaries at the top of this file, so PriorityToBrush/Tint and
+         OccurrencePipKindToBrushConverter (via ThemeResources.Brush) resolve them for the IN-APP theme
+         rather than the OS theme. Non-color timeline metrics stay here. -->
 
     <!-- Recurrence timeline (detail-panel 반복 기록 strip). A compact, fixed-height horizontal agenda strip
          of cycle pips — not a large card carousel. Sizes keep every pip uniform so the row reads as a band.
-         The height carries top/bottom breathing room around each pip's date / glyph / label stack. -->
+         The height carries top/bottom breathing room around each pip's date / glyph / label stack. The pip
+         status colors (완료 ● accent, 현재 ○ secondary, 미수행 × tertiary, 예정 ◌ disabled, ended secondary)
+         live in the ThemeDictionaries above. -->
     <x:Double x:Key="CueTimelineStripHeight">78</x:Double>
     <x:Double x:Key="CueTimelinePipWidth">52</x:Double>
     <x:Double x:Key="CueTimelinePipGlyph">15</x:Double>
-    <!-- Pip status colors. These never carry the status alone — each pip also shows a distinct glyph and a
-         status word, and an automation name + tooltip — so the strip stays legible without color. A soft
-         accent marks performed cycles (완료 ●) — the only colored state, since color reads as "done"; the
-         current cycle (현재 ○) is a neutral secondary gray because it is pending, not done; missed cycles
-         (미수행 ×) fall to a muted tertiary gray; future cycles (예정 ◌) to the dim disabled tone; the ended
-         head to secondary. Resolved by OccurrencePipKindToBrushConverter. -->
-    <SolidColorBrush x:Key="CueTimelineCompletedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.6" />
-    <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
-    <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
-    <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
-    <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
 
     <!-- Flatten text inputs: remove the Fluent bottom "accent bar" (the focused 2px bottom
          border and the resting gradient) so all input fields read as calm, uniform 1px boxes.

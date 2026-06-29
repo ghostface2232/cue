@@ -344,6 +344,8 @@ public sealed partial class OmniInputBox : UserControl
         revert.Click += (_, _) => RevertToken(token);
         flyout.Items.Add(revert);
 
+        // Menu content lives in the pop-up root and doesn't inherit the window root's theme override.
+        Cue.Services.ThemeResources.Apply(flyout);
         flyout.ShowAt(Box, new FlyoutShowOptions { Position = at });
     }
 

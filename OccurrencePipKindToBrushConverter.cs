@@ -1,3 +1,4 @@
+using Cue.Services;
 using Cue.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
@@ -27,7 +28,7 @@ public sealed partial class OccurrencePipKindToBrushConverter : IValueConverter
             }
             : "CueTimelineMutedBrush";
 
-        if (Application.Current.Resources.TryGetValue(key, out var brush) && brush is Brush)
+        if (ThemeResources.Brush(key) is { } brush)
             return brush;
         return new SolidColorBrush(Microsoft.UI.Colors.Transparent);
     }

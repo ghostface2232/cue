@@ -480,7 +480,7 @@ public sealed partial class WeeklyTimelinePage : Page
         menu.Items.Add(new MenuFlyoutSeparator());
 
         var delete = new MenuFlyoutItem { Text = "삭제" };
-        if (Application.Current.Resources["SystemFillColorCriticalBrush"] is Microsoft.UI.Xaml.Media.Brush critical)
+        if (Cue.Services.ThemeResources.Brush("CueDangerFillBrush") is { } critical)
             delete.Foreground = critical;
         delete.Click += async (_, _) => await RunSafelyAsync(async () =>
         {
@@ -489,6 +489,8 @@ public sealed partial class WeeklyTimelinePage : Page
         });
         menu.Items.Add(delete);
 
+        // Menu content lives in the pop-up root and doesn't inherit the window root's theme override.
+        Cue.Services.ThemeResources.Apply(menu);
         return menu;
     }
 
@@ -996,7 +998,7 @@ public sealed partial class WeeklyTimelinePage : Page
                 {
                     FontSize = 13,
                     Glyph = item.IsChecked ? "" : "",
-                    Foreground = (Brush)Application.Current.Resources[item.IsChecked ? "CueTimelineCompletedBrush" : "CueTimelineMutedBrush"],
+                    Foreground = Cue.Services.ThemeResources.Brush(item.IsChecked ? "CueTimelineCompletedBrush" : "CueTimelineMutedBrush"),
                 });
                 row.Children.Add(new TextBlock
                 {
@@ -1040,6 +1042,8 @@ public sealed partial class WeeklyTimelinePage : Page
         }
         content.Children.Add(picker);
 
+        // Popup content does not inherit the window root's theme override — pin the in-app theme.
+        Cue.Services.ThemeResources.Apply(content);
         flyout.Content = content;
         return flyout;
     }

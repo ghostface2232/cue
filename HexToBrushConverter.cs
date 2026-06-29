@@ -1,3 +1,4 @@
+using Cue.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
@@ -23,7 +24,10 @@ public sealed partial class HexToBrushConverter : IValueConverter
     {
         if (value is string hex && TryParse(hex, out var color))
             return new SolidColorBrush(IsLightTheme() ? DarkenForLight(color) : color);
-        return Application.Current.Resources["TextFillColorSecondaryBrush"];
+        // No/blank color (e.g. the "태그 없음" option): fall back to the secondary text tone, resolved for
+        // the in-app theme so the glyph follows Cue's theme even when it differs from the OS theme.
+        return ThemeResources.Brush("CueGlyphSecondaryBrush")
+            ?? Application.Current.Resources["TextFillColorSecondaryBrush"];
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)

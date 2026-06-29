@@ -15,6 +15,9 @@ public sealed class DialogService
         try
         {
             if (dialog.XamlRoot is null) return null;
+            // A ContentDialog is hosted in the pop-up root, which doesn't inherit the window root's theme
+            // override — pin the in-app theme so every dialog follows Cue's 화면 모드, not the OS theme.
+            dialog.RequestedTheme = ThemeResources.Effective;
             return await dialog.ShowAsync();
         }
         finally

@@ -83,7 +83,9 @@ public static class ConfirmPopover
             Text = message,
             TextWrapping = TextWrapping.Wrap,
             FontSize = (double)resources["CueFontRow"],
-            Foreground = (Brush)resources["TextFillColorPrimaryBrush"],
+            // No explicit Foreground: the default themed text brush resolves against the content root's
+            // RequestedTheme (set below), so the message follows the in-app theme rather than the OS theme
+            // a pinned Application.Current brush would carry.
             // Popup content lives in the popup root, outside the page's FontFamily inheritance — pin
             // Pretendard so this message never falls back to the system font.
             FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)resources["CueFontFamily"],
@@ -120,7 +122,11 @@ public static class ConfirmPopover
             // button's own scope, keeping the accent template's white text and hover/press deepening.
             if (action.Destructive)
             {
-                var danger = ((SolidColorBrush)resources["CueDangerFillBrush"]).Color;
+                // Resolve the danger red for the in-app theme (light: system critical; dark: the literal
+                // red), not the OS theme an Application.Current lookup would return.
+                var dangerBrush = (SolidColorBrush)(ThemeResources.Brush("CueDangerFillBrush")
+                    ?? resources["CueDangerFillBrush"]);
+                var danger = dangerBrush.Color;
                 button.Resources["AccentButtonBackground"] = new SolidColorBrush(danger);
                 button.Resources["AccentButtonBackgroundPointerOver"] = new SolidColorBrush(danger) { Opacity = 0.9 };
                 button.Resources["AccentButtonBackgroundPressed"] = new SolidColorBrush(danger) { Opacity = 0.8 };
@@ -140,6 +146,9 @@ public static class ConfirmPopover
         var root = new StackPanel { Spacing = (double)resources["CueGap16"] };
         root.Children.Add(messageBlock);
         root.Children.Add(buttons);
+        // Popup content does not inherit the window root's theme override — pin the in-app theme so the
+        // message text, buttons, and presenter chrome follow Cue's theme rather than the OS theme.
+        ThemeResources.Apply(root);
 
         var flyout = new Flyout
         {

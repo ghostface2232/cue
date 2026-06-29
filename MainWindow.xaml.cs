@@ -572,6 +572,9 @@ public sealed partial class MainWindow : Window
         var panel = new StackPanel { Spacing = 1, MinWidth = 220 };
         foreach (var (key, glyph, name) in ToggleableNav)
             panel.Children.Add(BuildNavToggleRow(key, glyph, name));
+        // Flyout content lives in the pop-up root, which doesn't inherit the window root's theme override —
+        // pin the in-app theme so the rows (and their accent checks) follow Cue's theme, not the OS theme.
+        Services.ThemeResources.Apply(panel);
         new Flyout
         {
             Content = panel,
@@ -626,13 +629,9 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
-    private static Microsoft.UI.Xaml.Media.Brush? AccentBrush() => ThemeBrush("AccentTextFillColorPrimaryBrush");
-
-    private static Microsoft.UI.Xaml.Media.Brush? ThemeBrush(string key)
-    {
-        try { return (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[key]; }
-        catch { return null; }
-    }
+    // The accent glyph tone, resolved for the app's IN-APP theme (not the OS theme that
+    // Application.Current.Resources would follow) so a check/ring drawn in code flips with Cue's theme.
+    private static Microsoft.UI.Xaml.Media.Brush? AccentBrush() => Services.ThemeResources.Brush("CueAccentGlyphBrush");
 
     private NavigationViewItem CreateTaskGroupItem(TaskGroupListItem taskGroup)
     {
@@ -943,6 +942,8 @@ public sealed partial class MainWindow : Window
             menu.Items.Add(pick);
         }
         menu.Items.Add(delete);
+        // Menu content lives in the pop-up root and doesn't inherit the window root's theme override.
+        Services.ThemeResources.Apply(menu);
         return menu;
     }
 
@@ -962,6 +963,8 @@ public sealed partial class MainWindow : Window
             Grid.SetRow(cell, row);
             grid.Children.Add(cell);
         }
+        // Pop-up content doesn't inherit the window root's theme override — pin the in-app theme.
+        Services.ThemeResources.Apply(grid);
         return new Flyout { Content = grid };
     }
 
@@ -993,7 +996,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowTagColorPicker(FrameworkElement anchor, Guid tagId, string? currentColor)
     {
-        var ring = ThemeBrush("TextFillColorPrimaryBrush");
+        var ring = Services.ThemeResources.Brush("CueGlyphPrimaryBrush");
         Flyout? flyout = null;
         flyout = BuildSwatchGridFlyout(TagColors.Palette.Count, 4, i =>
         {

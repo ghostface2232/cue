@@ -52,6 +52,10 @@ public sealed partial class SettingsPage : Page
         _preferences = App.Services.GetRequiredService<AppPreferences>();
         InitializeComponent();
         Loaded += SettingsPage_Loaded;
+        // The selected section's glyph is tinted imperatively (the container template can't drive an icon
+        // that lives in the item's content), so re-tint it when the app theme changes — including the
+        // user picking a new 화면 모드 right here — so it follows Cue's theme without a navigation.
+        ActualThemeChanged += (_, _) => UpdateNavGlyphs();
     }
 
     private void SettingsPage_Loaded(object sender, RoutedEventArgs e)
@@ -212,8 +216,12 @@ public sealed partial class SettingsPage : Page
     /// </summary>
     private void UpdateNavGlyphs()
     {
-        if (Application.Current.Resources["TextFillColorPrimaryBrush"] is not Brush primary ||
-            Application.Current.Resources["TextFillColorSecondaryBrush"] is not Brush secondary)
+        // Resolve the glyph tones for the IN-APP theme (the window root's ElementTheme), not the OS theme
+        // that Application.Current.Resources follows — otherwise the glyphs keep the OS theme's color while
+        // Cue is switched to a different mode. Re-run on ActualThemeChanged (see constructor) so a runtime
+        // theme switch repaints them.
+        if (ThemeResources.Brush("CueGlyphPrimaryBrush") is not Brush primary ||
+            ThemeResources.Brush("CueGlyphSecondaryBrush") is not Brush secondary)
             return;
 
         foreach (var item in SectionNav.Items.OfType<ListViewItem>())

@@ -1,4 +1,5 @@
 using Cue.Domain;
+using Cue.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
@@ -29,8 +30,7 @@ public sealed partial class PriorityToTintBrushConverter : IValueConverter
             : null;
 
         if (key is not null
-            && Application.Current.Resources.TryGetValue(key, out var resource)
-            && resource is SolidColorBrush brush)
+            && ThemeResources.Brush(key) is SolidColorBrush brush)
         {
             var color = brush.Color;
             return new SolidColorBrush(Windows.UI.Color.FromArgb(TintAlpha, color.R, color.G, color.B));

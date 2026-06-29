@@ -2,6 +2,7 @@ using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
+using Cue.Services;
 using Cue.ViewModels;
 
 namespace Cue;
@@ -22,7 +23,7 @@ public sealed class SaveStatusToBrushConverter : IValueConverter
                 _ => null
             };
 
-            if (key is not null && Application.Current.Resources.TryGetValue(key, out var brush) && brush is Brush)
+            if (key is not null && ThemeResources.Brush(key) is { } brush)
                 return brush;
         }
         return new SolidColorBrush(Microsoft.UI.Colors.Transparent);
