@@ -88,6 +88,9 @@ public sealed partial class TaskListPage : Page
         // the resize range still clamps it per window size in ApplyDetailPanelWidth.
         _detailPreferredWidth = _preferences.DetailPanelWidth ?? DetailDefaultWidth;
         InitializeComponent();
+        // The quick-add box re-parses the live line through the VM (current clock/zone) to drive the
+        // inline accent. Positional only — commit still re-parses (AddAsync).
+        QuickAddBox.Tokenizer = ViewModel.TokenizeQuickAdd;
         // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
         _navNotifier.Changed += OnNavDataChanged;

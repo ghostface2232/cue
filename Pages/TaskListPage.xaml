@@ -442,6 +442,7 @@
             Margin="4,2,4,14"
             Visibility="{x:Bind ViewModel.CanQuickAdd, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
             <controls:OmniInputBox
+                x:Name="QuickAddBox"
                 Submit="QuickAdd_Submit"
                 Text="{x:Bind ViewModel.QuickAddText, Mode=TwoWay}"
                 PlaceholderName="{x:Bind ViewModel.QuickAddPlaceholderName, Mode=OneWay}"

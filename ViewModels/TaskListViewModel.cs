@@ -133,6 +133,15 @@ public partial class TaskListViewModel : ObservableObject
 
     partial void OnQuickAddTextChanged(string value) => OnPropertyChanged(nameof(QuickAddIsEmpty));
 
+    /// <summary>Tokenizes a raw quick-add line at the current clock/zone for the inline accent. This is
+    /// positional metadata only — scheduling still resolves at commit (<see cref="AddAsync"/> re-parses
+    /// with the clock at that moment), so this never becomes the source of truth. Never throws.</summary>
+    public IReadOnlyList<QuickAddToken> TokenizeQuickAdd(string raw)
+    {
+        try { return _parser.Parse(raw ?? string.Empty, _clock.GetUtcNow(), _timeZoneId).Tokens; }
+        catch { return Array.Empty<QuickAddToken>(); }
+    }
+
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
 

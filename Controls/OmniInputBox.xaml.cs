@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
+using Cue.Parsing;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
+using Windows.UI;
+using Windows.UI.ViewManagement;
 
 namespace Cue.Controls;
 
@@ -24,9 +28,14 @@ public sealed partial class OmniInputBox : UserControl
     // never treat Enter as a task commit (the IME owns that keystroke to finalize the syllable).
     private bool _isComposing;
 
-    // Bumped on every real (visible) text change. Step 3 uses it to re-parse at most once per version;
-    // declared here so the bridge owns the single source of truth for "the text changed".
+    // Bumped on every real (visible) text change; re-tint re-parses at most once per version.
     private long _documentVersion;
+    private long _lastTintedVersion = -1;
+
+    // Re-tint after a typing pause for edits that don't go through composition (paste, delete, arrows,
+    // digits/latin). Composition input is covered by TextCompositionEnded instead.
+    private readonly DispatcherTimer _idle = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private UISettings? _uiSettings;
 
     public OmniInputBox()
     {
@@ -34,23 +43,32 @@ public sealed partial class OmniInputBox : UserControl
 
         Box.TextChanged += OnBoxTextChanged;
         Box.TextCompositionStarted += (_, _) => _isComposing = true;
-        Box.TextCompositionEnded += (_, _) => _isComposing = false;
+        Box.TextCompositionEnded += OnBoxCompositionEnded;
         // PreviewKeyDown (tunneling) — RichEditBox inserts the newline in its own KeyDown handling, so a
         // bubbling KeyDown handler is too late; we must intercept Enter on the way down.
         Box.PreviewKeyDown += OnBoxKeyDown;
         Box.Paste += OnBoxPaste;
 
+        _idle.Tick += (_, _) => { _idle.Stop(); if (!_isComposing) ReTint(); };
+        // CharacterFormat does not auto-flip with the theme — re-apply the accent/default on theme change.
+        ActualThemeChanged += (_, _) => ReTint(force: true);
+
         Loaded += (_, _) =>
         {
             PushTextToDocument(Text);   // honour a Text set before the template was ready
             UpdatePlaceholder();
+            ReTint();
         };
     }
 
     /// <summary>Raised when the user commits the line (Enter while not composing).</summary>
     public event EventHandler? Submit;
 
-    /// <summary>Current monotonically-increasing version of the visible text (Step 3 re-parse dedup).</summary>
+    /// <summary>Supplies the recognized tokens for the raw line (the VM parses at the current clock/zone).
+    /// Positional only; null means "no tinting".</summary>
+    public Func<string, IReadOnlyList<QuickAddToken>>? Tokenizer { get; set; }
+
+    /// <summary>Current monotonically-increasing version of the visible text (re-parse dedup).</summary>
     public long DocumentVersion => _documentVersion;
 
     // ---- Dependency properties (bridged to the VM via x:Bind) ----------------------------------
@@ -92,6 +110,7 @@ public sealed partial class OmniInputBox : UserControl
             return; // change originated in the document — don't echo it back and reset the caret
         self.PushTextToDocument((string)e.NewValue ?? string.Empty);
         self.UpdatePlaceholder();
+        self.ReTint();
     }
 
     // ---- VM <-> Document bridge ----------------------------------------------------------------
@@ -113,6 +132,16 @@ public sealed partial class OmniInputBox : UserControl
         Text = text;                 // propagates to the bound VM property
         _updatingTextFromDocument = false;
         UpdatePlaceholder();
+
+        // Re-tint trigger (unified rules): never while composing (that path re-tints on
+        // TextCompositionEnded); space is a hard delimiter → now; otherwise debounce via idle.
+        _idle.Stop();
+        if (_isComposing)
+            return;
+        if (text.EndsWith(" ", StringComparison.Ordinal))
+            ReTint();
+        else
+            _idle.Start();
     }
 
     private void PushTextToDocument(string text)
@@ -129,6 +158,7 @@ public sealed partial class OmniInputBox : UserControl
         {
             _syncingDocument = false;
         }
+        _documentVersion++; // external (VM) set changed the visible text too
     }
 
     private string GetPlainText()
@@ -182,4 +212,80 @@ public sealed partial class OmniInputBox : UserControl
             // Clipboard can throw (access denied / odd payloads); a failed paste must not crash the box.
         }
     }
+
+    private void OnBoxCompositionEnded(RichEditBox sender, TextCompositionEndedEventArgs args)
+    {
+        _isComposing = false;
+        _idle.Stop();   // the commit is our trigger; don't let a queued idle double it
+        ReTint();       // a syllable just finalized — paint the now-committed text
+    }
+
+    // ---- Inline accent (Step 3): full reset, then paint token spans one accent colour --------------
+
+    private void ReTint(bool force = false)
+    {
+        if (_isComposing)
+            return; // never format a composing (incomplete) syllable
+        if (!force && _lastTintedVersion == _documentVersion)
+            return; // already tinted this exact text — collapses space+CompositionEnded+idle into one parse
+        _lastTintedVersion = _documentVersion;
+
+        var raw = GetPlainText();
+        IReadOnlyList<QuickAddToken> tokens;
+        try { tokens = Tokenizer?.Invoke(raw) ?? Array.Empty<QuickAddToken>(); }
+        catch { tokens = Array.Empty<QuickAddToken>(); }
+
+        try
+        {
+            var doc = Box.Document;
+            var caretStart = doc.Selection.StartPosition;
+            var caretEnd = doc.Selection.EndPosition;
+            var accent = AccentColor();
+            var normal = DefaultColor();
+
+            _syncingDocument = true; // formatting must not be read back as a user edit
+            doc.BatchDisplayUpdates();
+            try
+            {
+                // Full reset clears any bled/IME-recommitted accent, then paint only the current tokens.
+                doc.GetRange(0, int.MaxValue).CharacterFormat.ForegroundColor = normal;
+                foreach (var t in tokens)
+                {
+                    if (t.Length <= 0)
+                        continue;
+                    doc.GetRange(t.Start, t.Start + t.Length).CharacterFormat.ForegroundColor = accent;
+                }
+                doc.Selection.SetRange(caretStart, caretEnd);
+                if (caretStart == caretEnd)
+                    doc.Selection.CharacterFormat.ForegroundColor = normal; // next typed char won't inherit accent
+            }
+            finally
+            {
+                doc.ApplyDisplayUpdates();
+                _syncingDocument = false;
+            }
+        }
+        catch
+        {
+            _syncingDocument = false; // a position/format failure degrades to "no tint" — never throws
+        }
+    }
+
+    private Color AccentColor()
+    {
+        try
+        {
+            _uiSettings ??= new UISettings();
+            return _uiSettings.GetColorValue(UIColorType.Accent);
+        }
+        catch
+        {
+            return new Color { A = 255, R = 0x4C, G = 0x8B, B = 0xF5 };
+        }
+    }
+
+    private Color DefaultColor()
+        => ActualTheme == ElementTheme.Dark
+            ? new Color { A = 255, R = 0xF2, G = 0xF2, B = 0xF2 }
+            : new Color { A = 255, R = 0x1A, G = 0x1A, B = 0x1A };
 }
