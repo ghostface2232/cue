@@ -1,4 +1,5 @@
-<img width="144" alt="cue_icon" src="https://github.com/user-attachments/assets/8c8dde4f-2708-4a68-8571-ce5a79de3ebb" />
+<img width="128" alt="cue_icon" src="https://github.com/user-attachments/assets/449cc938-aef6-4303-9697-fa4ef7791f06" />
+
 
 # Cue
 
