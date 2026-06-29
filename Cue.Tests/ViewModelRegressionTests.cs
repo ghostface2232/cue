@@ -1929,6 +1929,20 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public void Row_AppendsIsoWeekNumber_OnlyWhenEnabled()
+    {
+        // W27 Monday of 2026 is 2026-06-29.
+        var item = new TaskListItem(
+            Guid.NewGuid(), "회의", null, WhenKind.OnDate, new DateOnly(2026, 6, 29), null, false, Priority.None, "0|hzzzzz:");
+
+        var on = new TaskRowViewModel(item, _ => { }, showWeekNumber: true);
+        Assert.Contains("W27", on.Schedule);
+
+        var off = new TaskRowViewModel(item, _ => { });
+        Assert.DoesNotContain("W27", off.Schedule);
+    }
+
+    [Fact]
     public void RefreshTagColorsIsNoOpForUntaggedRow()
     {
         // An untagged row has no chip to re-resolve, so the refresh must not churn its Tags binding.
