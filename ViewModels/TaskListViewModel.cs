@@ -61,6 +61,13 @@ public partial class TaskListViewModel : ObservableObject
     private readonly string _timeZoneId;
     private readonly TimeZoneInfo _timeZone;
     private readonly INavDataChangeNotifier _navNotifier;
+    private readonly IListDisplayPreferences? _listPreferences;
+
+    /// <summary>Whether a task completed today should linger dimmed in its place on the active list until
+    /// the day rolls over (the "완료한 일 당일 표시" preference). Read live from the injected preferences so a
+    /// fresh list (recreated when the user returns from Settings) picks up a toggled value; null prefs (tests)
+    /// mean off — the open-only default.</summary>
+    private bool KeepCompletedToday => _listPreferences?.KeepCompletedForToday ?? false;
 
     // Serializes reorder persists so a fast run of drops can't interleave their rank writes.
     private readonly SemaphoreSlim _reorderGate = new(1, 1);
@@ -157,7 +164,7 @@ public partial class TaskListViewModel : ObservableObject
     public bool HasTitleCaption => TitleCaption.Length > 0;
     public bool CanQuickAdd => _mode is not (TaskListMode.Logbook or TaskListMode.Priority);
 
-    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone, INavDataChangeNotifier navNotifier, SaveFailureCoordinator? coordinator = null)
+    public TaskListViewModel(ITaskStore store, ITaskIndex index, IDateParser parser, IReorderService reorder, IRecurringTaskService recurrence, TimeProvider clock, TimeZoneInfo zone, INavDataChangeNotifier navNotifier, SaveFailureCoordinator? coordinator = null, IListDisplayPreferences? listPreferences = null)
     {
         _store = store;
         _index = index;
@@ -168,6 +175,7 @@ public partial class TaskListViewModel : ObservableObject
         _timeZoneId = zone.Id;
         _timeZone = zone;
         _navNotifier = navNotifier;
+        _listPreferences = listPreferences;
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
@@ -341,13 +349,17 @@ public partial class TaskListViewModel : ObservableObject
         // so a refresh (every save routes through here) reuses unchanged row instances. That keeps scroll
         // position, focus, selection, a drag in progress, and the entrance animation intact. The branches
         // not in use are emptied so a switch between views leaves no stale rows behind.
+        // When the "완료한 일 당일 표시" preference is on, active lists also carry today's completed work
+        // (dimmed, in place); the paired "완료한 일" sections then drop today's rows so nothing is doubled.
+        var keep = KeepCompletedToday;
+
         switch (_mode)
         {
             case TaskListMode.Priority:
                 SyncRows(Tasks, []);
                 ClearCompletedSection();
                 SyncLogbookSections([]);
-                SyncPrioritySections(await _index.GetByPriorityAsync());
+                SyncPrioritySections(await _index.GetByPriorityAsync(keep));
                 IsEmpty = PrioritySections.Count == 0;
                 break;
 
@@ -360,36 +372,40 @@ public partial class TaskListViewModel : ObservableObject
                 break;
 
             case TaskListMode.Today:
+                // With keep on, every task completed today is already shown in place, so the
+                // "오늘 완료한 일" section would only duplicate it — skip it entirely (count 0, empty pager).
+                Func<int, Task<IReadOnlyList<TaskListItem>>>? todayCompletedPager =
+                    keep ? null : limit => _index.GetTodayCompletedAsync(limit);
                 await LoadFlatWithCompletedAsync(
-                    await _index.GetTodayAsync(),
-                    await _index.GetTodayCompletedCountAsync(),
-                    limit => _index.GetTodayCompletedAsync(limit));
+                    await _index.GetTodayAsync(keep),
+                    keep ? 0 : await _index.GetTodayCompletedCountAsync(),
+                    todayCompletedPager);
                 break;
 
             case TaskListMode.TaskGroup:
                 var groupId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
-                    await _index.GetByTaskGroupAsync(groupId),
-                    await _index.GetCompletedCountByTaskGroupAsync(groupId),
-                    limit => _index.GetCompletedByTaskGroupAsync(groupId, limit));
+                    await _index.GetByTaskGroupAsync(groupId, keep),
+                    await _index.GetCompletedCountByTaskGroupAsync(groupId, excludeCompletedToday: keep),
+                    limit => _index.GetCompletedByTaskGroupAsync(groupId, limit, excludeCompletedToday: keep));
                 break;
 
             case TaskListMode.Tag:
                 var tagId = RequiredFilterId();
                 await LoadFlatWithCompletedAsync(
-                    await _index.GetByTagAsync(tagId),
-                    await _index.GetCompletedCountByTagAsync(tagId),
-                    limit => _index.GetCompletedByTagAsync(tagId, limit));
+                    await _index.GetByTagAsync(tagId, keep),
+                    await _index.GetCompletedCountByTagAsync(tagId, excludeCompletedToday: keep),
+                    limit => _index.GetCompletedByTagAsync(tagId, limit, excludeCompletedToday: keep));
                 break;
 
             default:
                 var items = _mode switch
                 {
-                    TaskListMode.AllTasks => await _index.GetAllActiveAsync(),
-                    TaskListMode.Upcoming => await _index.GetUpcomingAsync(),
-                    TaskListMode.Anytime => await _index.GetAnytimeAsync(),
-                    TaskListMode.NoTaskGroup => await _index.GetWithoutTaskGroupAsync(),
-                    TaskListMode.NoTag => await _index.GetWithoutTagAsync(),
+                    TaskListMode.AllTasks => await _index.GetAllActiveAsync(keep),
+                    TaskListMode.Upcoming => await _index.GetUpcomingAsync(keep),
+                    TaskListMode.Anytime => await _index.GetAnytimeAsync(keep),
+                    TaskListMode.NoTaskGroup => await _index.GetWithoutTaskGroupAsync(keep),
+                    TaskListMode.NoTag => await _index.GetWithoutTagAsync(keep),
                     _ => throw new ArgumentOutOfRangeException(),
                 };
                 SyncPrioritySections([]);
@@ -412,7 +428,7 @@ public partial class TaskListViewModel : ObservableObject
     private async Task LoadFlatWithCompletedAsync(
         IReadOnlyList<TaskListItem> open,
         int completedTotal,
-        Func<int, Task<IReadOnlyList<TaskListItem>>> completedPage)
+        Func<int, Task<IReadOnlyList<TaskListItem>>>? completedPage)
     {
         SyncPrioritySections([]);
         SyncLogbookSections([]);
@@ -422,9 +438,10 @@ public partial class TaskListViewModel : ObservableObject
         CompletedSection.TotalCount = completedTotal;
 
         // Realize only the rows within the current window (0 while collapsed and never opened), capped at
-        // the live total so a just-shrunk list can't ask for more than exists.
+        // the live total so a just-shrunk list can't ask for more than exists. A null pager pairs with a
+        // zero total (the Today view when completed work is kept in place), so the window is 0 and unused.
         var window = Math.Min(_completedWindow, completedTotal);
-        SyncCompletedSection(window > 0 ? await completedPage(window) : []);
+        SyncCompletedSection(window > 0 && completedPage is not null ? await completedPage(window) : []);
 
         IsEmpty = Tasks.Count == 0 && CompletedSection.TotalCount == 0;
     }
@@ -953,14 +970,24 @@ public partial class TaskListViewModel : ObservableObject
                 var nextOccurrence = await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());
                 _navNotifier.NotifyCountsChanged();
 
-                // Hand off to the View for the acknowledgement moment. A terminal completion (nextOccurrence
-                // == null) lets the check + dim register, swaps in the undo note, then folds the row away and
-                // calls FinalizeCompletionAsync — dropping it into its 완료한 일 section. A repeating
-                // completion (next occurrence non-null) keeps the row in place and just reconciles it: it
-                // stays ticked + dimmed once the advance lands in the future (it is now ahead of schedule),
-                // or returns unchecked if another cycle is still due. No reload here — that would whisk a
-                // terminal completion away before its acknowledgement.
-                CompletionAcknowledged?.Invoke(row, nextOccurrence);
+                if (KeepCompletedToday && nextOccurrence is null)
+                {
+                    // "완료한 일 당일 표시" on, terminal completion: the finished one-off stays dimmed right
+                    // where it sat for the rest of the day, so there is nothing to whisk away and no undo bar
+                    // to offer (re-tick the dimmed row to reopen it). Just reconcile in place.
+                    await FinalizeCompletionAsync(row);
+                }
+                else
+                {
+                    // Hand off to the View for the acknowledgement moment. A terminal completion (nextOccurrence
+                    // == null) lets the check + dim register, swaps in the undo note, then folds the row away and
+                    // calls FinalizeCompletionAsync — dropping it into its 완료한 일 section. A repeating
+                    // completion (next occurrence non-null) keeps the row in place and just reconciles it: it
+                    // stays ticked + dimmed once the advance lands in the future (it is now ahead of schedule),
+                    // or returns unchecked if another cycle is still due. No reload here — that would whisk a
+                    // terminal completion away before its acknowledgement.
+                    CompletionAcknowledged?.Invoke(row, nextOccurrence);
+                }
             }
             else if (row.IsAheadOfSchedule)
             {
