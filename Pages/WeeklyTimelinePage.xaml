@@ -327,7 +327,7 @@
                             MinHeight="420"
                             Background="Transparent"
                             DoubleTapped="TimelineSurface_DoubleTapped">
-                            <StackPanel>
+                            <StackPanel Canvas.ZIndex="1">
                                 <ItemsRepeater ItemTemplate="{StaticResource TimelineWeekTemplate}" ItemsSource="{x:Bind ViewModel.Weeks, Mode=OneWay}">
                                     <ItemsRepeater.Layout>
                                         <StackLayout Orientation="Horizontal" />
@@ -340,6 +340,7 @@
                                     ElementClearing="TimelineRows_ElementClearing" />
                             </StackPanel>
                             <Rectangle
+                                Canvas.ZIndex="0"
                                 Width="1"
                                 HorizontalAlignment="Left"
                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
