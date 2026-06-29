@@ -35,7 +35,9 @@ public sealed partial class OmniInputBox : UserControl
         Box.TextChanged += OnBoxTextChanged;
         Box.TextCompositionStarted += (_, _) => _isComposing = true;
         Box.TextCompositionEnded += (_, _) => _isComposing = false;
-        Box.KeyDown += OnBoxKeyDown;
+        // PreviewKeyDown (tunneling) — RichEditBox inserts the newline in its own KeyDown handling, so a
+        // bubbling KeyDown handler is too late; we must intercept Enter on the way down.
+        Box.PreviewKeyDown += OnBoxKeyDown;
         Box.Paste += OnBoxPaste;
 
         Loaded += (_, _) =>
