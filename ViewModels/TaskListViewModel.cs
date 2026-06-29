@@ -144,6 +144,30 @@ public partial class TaskListViewModel : ObservableObject
         catch { return Array.Empty<QuickAddToken>(); }
     }
 
+    private static readonly System.Globalization.CultureInfo KoreanCulture = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
+
+    /// <summary>Formats what the live line resolves to (date/time) for the token popover header — e.g.
+    /// "내일" → "6월 30일 (화)" / "오후 3:00". Honours the same reverts as the inline accent. Recurrence and
+    /// someday headers use the token's own phrase, so only date/time are projected. Never throws.</summary>
+    public QuickAddPreview PreviewQuickAdd(string raw, IReadOnlyList<TextSpan> suppressedSpans)
+    {
+        try
+        {
+            var parsed = _parser.Parse(raw ?? string.Empty, _clock.GetUtcNow(), _timeZoneId, suppressedSpans);
+            if (parsed.When.Kind != WhenKind.OnDate || parsed.When.Date is not { } date)
+                return new QuickAddPreview(null, null, null, null);
+            var local = date.ToLocal();
+            var dateText = local.ToString("M월 d일 (ddd)", KoreanCulture);
+            var hasTime = parsed.WhenHasTime;
+            var timeText = hasTime ? local.ToString("tt h:mm", KoreanCulture) : null;
+            return new QuickAddPreview(dateText, timeText, hasTime ? local.Hour : null, hasTime ? local.Minute : null);
+        }
+        catch
+        {
+            return new QuickAddPreview(null, null, null, null);
+        }
+    }
+
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
 

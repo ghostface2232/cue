@@ -131,7 +131,9 @@ internal static class Korean
         @"|(?<weekend>이번\s*주말|주말)" +
         @"|(?:다음\s*달|담\s*달)\s*(?<nmdom>\d{1,2})\s*일" +
         @"|(?:다음|담)\s*(?<nextdom>\d{1,2})\s*일" +
+        @"|(?:다다음\s*주|다다음)\s*(?<nnwwd>[월화수목금토일])(?:요일|욜)" +
         @"|(?:다음\s*주|다음|담주|담)\s*(?<nwwd>[월화수목금토일])(?:요일|욜)" +
+        @"|(?<weekafternext>다다음\s*주)" +
         @"|(?<nextweek>다음\s*주|담주)" +
         @"|(?<nextmonth>다음\s*달|담\s*달)" +
         @"|(?<endmonth>이번\s*달\s*말일|이번\s*달\s*말)" +
@@ -200,7 +202,9 @@ internal static class Korean
                 date = ctx.UpcomingDayOfMonth(dom);
                 return true;
             }
+            if (m.Groups["nnwwd"].Success) { date = ctx.WeekdayInWeeksAhead(Weekdays[m.Groups["nnwwd"].Value[0]], 2); return true; }
             if (m.Groups["nwwd"].Success) { date = ctx.NextWeekWeekday(Weekdays[m.Groups["nwwd"].Value[0]]); return true; }
+            if (m.Groups["weekafternext"].Success) { date = ctx.Today.AddDays(14); return true; }
             if (m.Groups["nextweek"].Success) { date = ctx.Today.AddDays(7); return true; }
             if (m.Groups["nextmonth"].Success) { date = ctx.NextMonthSameDay(); return true; }
             if (m.Groups["endmonth"].Success) { date = ctx.EndOfThisMonth(); return true; }

@@ -20,9 +20,11 @@
             BackgroundSizing="InnerBorderEdge"
             BorderBrush="{ThemeResource CircleElevationBorderBrush}"
             BorderThickness="1"
+            ContextFlyout="{x:Null}"
             CornerRadius="24"
             FontSize="15"
-            IsSpellCheckEnabled="False">
+            IsSpellCheckEnabled="False"
+            SelectionFlyout="{x:Null}">
             <RichEditBox.Resources>
                 <!-- Same theme-split hover/focus tones the old quick-add TextBox used; RichEditBox reads
                      the identical TextControl* resource keys. -->

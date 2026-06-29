@@ -91,6 +91,8 @@ public sealed partial class TaskListPage : Page
         // The quick-add box re-parses the live line through the VM (current clock/zone) to drive the
         // inline accent. Positional only — commit still re-parses (AddAsync).
         QuickAddBox.Tokenizer = ViewModel.TokenizeQuickAdd;
+        // The token popover header shows what the live line resolved to (e.g. "내일 → 6월 30일 (화)").
+        QuickAddBox.PreviewProvider = ViewModel.PreviewQuickAdd;
         // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
         _navNotifier.Changed += OnNavDataChanged;
