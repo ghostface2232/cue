@@ -466,6 +466,38 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task TodayCompletion_WithKeepCompletedForToday_LeavesTheRowDimmedInPlace_AndSkipsTheSection()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "오늘 할 일", When = ScheduledWhen.AllDay(ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 0, 0, 0), "UTC")) };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), listPreferences: new StubListDisplayPreferences(keepCompletedForToday: true));
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.Today));
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+
+        // Complete it. With the preference on, a terminal completion reconciles in place (no acknowledgement
+        // hand-off to the View) — so the test does not call FinalizeCompletionAsync; the command does it.
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+
+        // The row stays on the Today list, now completed (the view dims it via VisualOpacity), and the
+        // "오늘 완료한 일" section stays empty — the kept-in-place row is not also listed there.
+        var stillThere = Assert.Single(vm.Tasks);
+        Assert.Equal(task.Id, stillThere.Id);
+        Assert.True(stillThere.IsCompleted);
+        Assert.False(vm.CompletedSection.HasItems);
+        Assert.Equal(0, vm.CompletedSection.TotalCount);
+        Assert.False(vm.IsEmpty);
+    }
+
+    [Fact]
     public async Task CompletedSection_LazyLoadsRowsInPages_AndKeepsThemAcrossRefresh()
     {
         using var temp = new TempDirectory();
@@ -2050,6 +2082,11 @@ public sealed class ViewModelRegressionTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class StubListDisplayPreferences(bool keepCompletedForToday) : IListDisplayPreferences
+    {
+        public bool KeepCompletedForToday { get; } = keepCompletedForToday;
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
