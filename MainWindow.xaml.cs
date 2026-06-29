@@ -531,7 +531,7 @@ public sealed partial class MainWindow : Window
         ("anytime", "", "언젠가 할 일"),
         ("logbook", "", "완료한 일"),
         ("priority", "", "중요도"),
-        ("weekly", "", "주간 타임라인"),
+        ("weekly", "", "타임라인"),
     };
 
     private NavigationViewItem NavItemFor(string key) => key switch

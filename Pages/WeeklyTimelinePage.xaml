@@ -94,32 +94,43 @@
             </Grid>
         </DataTemplate>
 
-        <!-- A lane: a full-width track with a bottom divider, holding one card positioned at the task's
-             ISO-week column. The card is the current list-row design — circular check + SemiBold title +
+        <!-- A packed band: a full-width track with a bottom divider, holding every card that shares this grid
+             row across different week columns. Cards are placed by a left margin (their week offset) in a
+             single-cell Grid panel so they sit side by side without overlapping; the band auto-heights to its
+             tallest card. Each card is the current list-row design — circular check + SemiBold title +
              priority dot/label + schedule line + group/tag chips reflowed under the title (compact). -->
-        <DataTemplate x:Key="TimelineLaneTemplate" x:DataType="vm:WeeklyTimelineRowViewModel">
-            <!-- An auto-height row: the lane grows with the card's content (so a card carrying chips never
-                 overflows a fixed height), and the bottom divider sits flush below it. The card is
-                 left-positioned by a margin (offset, 10, 0, 10) instead of a Canvas, since a Canvas can't
-                 auto-size to its children. -->
+        <DataTemplate x:Key="TimelineBandTemplate" x:DataType="vm:TimelineBandViewModel">
             <Grid Width="{x:Bind TrackWidth, Mode=OneWay}">
-                <Border
-                    HorizontalAlignment="Left"
-                    Margin="{x:Bind local:WeeklyTimelinePage.LeftMargin(StartOffset), Mode=OneWay}"
-                    Width="{x:Bind CardWidth, Mode=OneWay}"
-                    MinHeight="80"
-                    Padding="14,12"
-                    Background="{StaticResource TimelineBarBrush}"
-                    BackgroundSizing="InnerBorderEdge"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    CornerRadius="{StaticResource CueRadiusRow}"
-                    Opacity="{x:Bind Row.VisualOpacity, Mode=OneWay}"
-                    PointerEntered="TimelineBar_PointerEntered"
-                    PointerExited="TimelineBar_PointerExited"
-                    Tapped="TimelineBar_Tapped"
-                    DoubleTapped="TimelineBar_DoubleTapped"
-                    Tag="{x:Bind Row.Id}">
+                <ItemsControl ItemsSource="{x:Bind Cards}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <!-- Single cell: every card lands in it, separated by its own left margin. -->
+                            <Grid />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:WeeklyTimelineRowViewModel">
+                            <Border
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Top"
+                                Margin="{x:Bind local:WeeklyTimelinePage.LeftMargin(StartOffset), Mode=OneWay}"
+                                Width="{x:Bind CardWidth, Mode=OneWay}"
+                                MinHeight="80"
+                                Padding="14,12"
+                                Background="{StaticResource TimelineBarBrush}"
+                                BackgroundSizing="InnerBorderEdge"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource CueRadiusRow}"
+                                IsTabStop="True"
+                                Opacity="{x:Bind Row.VisualOpacity, Mode=OneWay}"
+                                PointerEntered="TimelineBar_PointerEntered"
+                                PointerExited="TimelineBar_PointerExited"
+                                Tapped="TimelineBar_Tapped"
+                                DoubleTapped="TimelineBar_DoubleTapped"
+                                RightTapped="TimelineBar_RightTapped"
+                                KeyDown="TimelineCard_KeyDown"
+                                Tag="{x:Bind Row.Id}">
                         <Grid ColumnSpacing="{StaticResource CueGap12}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -210,8 +221,11 @@
                                     </ItemsControl>
                                 </StackPanel>
                             </StackPanel>
-                        </Grid>
-                </Border>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <Rectangle
                     Height="1"
                     VerticalAlignment="Bottom"
@@ -297,6 +311,7 @@
                         KeyDown="TimelineScrollViewer_KeyDown"
                         Loaded="TimelineScrollViewer_Loaded"
                         SizeChanged="TimelineScrollViewer_SizeChanged"
+                        ViewChanged="TimelineScrollViewer_ViewChanged"
                         PointerCanceled="TimelineScrollViewer_PointerCanceled"
                         PointerMoved="TimelineScrollViewer_PointerMoved"
                         PointerPressed="TimelineScrollViewer_PointerPressed"
@@ -319,8 +334,8 @@
                                     </ItemsRepeater.Layout>
                                 </ItemsRepeater>
                                 <ItemsRepeater
-                                    ItemTemplate="{StaticResource TimelineLaneTemplate}"
-                                    ItemsSource="{x:Bind ViewModel.Rows, Mode=OneWay}"
+                                    ItemTemplate="{StaticResource TimelineBandTemplate}"
+                                    ItemsSource="{x:Bind ViewModel.Bands, Mode=OneWay}"
                                     ElementPrepared="TimelineRows_ElementPrepared"
                                     ElementClearing="TimelineRows_ElementClearing" />
                             </StackPanel>

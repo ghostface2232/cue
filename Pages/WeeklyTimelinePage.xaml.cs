@@ -95,7 +95,7 @@ public sealed partial class WeeklyTimelinePage : Page
         await RunSafelyAsync(async () =>
         {
             await ViewModel.LoadCommand.ExecuteAsync(null);
-            CenterTodayInView();
+            CenterTodayInView(animate: false);
         });
     }
 
@@ -103,24 +103,23 @@ public sealed partial class WeeklyTimelinePage : Page
         => await RunSafelyAsync(async () =>
         {
             await ViewModel.PreviousMonthCommand.ExecuteAsync(null);
-            // Stepping back in time lands on the new (earlier) month's LAST week, so the band reads as one
-            // continuous scroll backward.
-            ScrollToEnd();
+            // Animate the band leftward to the earlier month — a directional slide over the continuous year.
+            AnimateToFocusedMonth();
         });
 
     private async void Today_Click(object sender, RoutedEventArgs e)
         => await RunSafelyAsync(async () =>
         {
             await ViewModel.GoTodayCommand.ExecuteAsync(null);
-            CenterTodayInView();
+            CenterTodayInView(animate: true);
         });
 
     private async void NextMonth_Click(object sender, RoutedEventArgs e)
         => await RunSafelyAsync(async () =>
         {
             await ViewModel.NextMonthCommand.ExecuteAsync(null);
-            // Stepping forward lands on the new month's FIRST week — continuous scroll forward.
-            ScrollToStart();
+            // Animate the band rightward to the later month — a directional slide over the continuous year.
+            AnimateToFocusedMonth();
         });
 
     // --- Horizontal scroll / drag-pan / wheel-pan / keyboard ---
@@ -140,7 +139,7 @@ public sealed partial class WeeklyTimelinePage : Page
         }
         ViewModel.SetViewportWidth(TimelineViewportWidth());
         FocusTimeline();
-        CenterTodayInView();
+        CenterTodayInView(animate: false);
     }
 
     // The timeline content viewport width that drives the dynamic column width. Prefer the ScrollViewer's
@@ -155,7 +154,7 @@ public sealed partial class WeeklyTimelinePage : Page
 
     /// <summary>Builds the left-positioning margin for a card from its computed left offset (the view-model
     /// layer keeps it a plain double since it doesn't reference WinUI's <see cref="Thickness"/>).</summary>
-    public static Thickness LeftMargin(double left) => new(left, 10, 0, 10);
+    public static Thickness LeftMargin(double left) => new(left, 6, 0, 6);
 
     private void TimelineScrollViewer_KeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -248,7 +247,9 @@ public sealed partial class WeeklyTimelinePage : Page
         e.Handled = true;
     }
 
-    private void CenterTodayInView()
+    // animate: false jumps straight to today (used on first open, so the year band doesn't visibly scroll
+    // all the way from January); true slides there (the 오늘 button, a deliberate directional move).
+    private void CenterTodayInView(bool animate)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
@@ -265,16 +266,13 @@ public sealed partial class WeeklyTimelinePage : Page
                 ClampOffset(SnapToColumn(raw), TimelineScrollViewer.ScrollableWidth),
                 null,
                 null,
-                disableAnimation: false);
+                disableAnimation: !animate);
         });
     }
 
-    // The track starts at the first week column and ends at the last, and ScrollableWidth is a whole
-    // number of column widths, so jumping to 0 / ScrollableWidth lands flush on the month's first / last
-    // column. Deferred so the new month's track has laid out (ScrollableWidth is current).
-    private void ScrollToStart() => ScrollHorizontally(0);
-
-    private void ScrollToEnd() => ScrollHorizontally(double.PositiveInfinity);
+    // Animate the band to the focused month's first week column (a directional slide over the continuous
+    // year). FocusedMonthOffset is column-aligned. Deferred so the offset reflects any just-rebuilt year.
+    private void AnimateToFocusedMonth() => ScrollHorizontally(ViewModel.FocusedMonthOffset);
 
     private void ScrollHorizontally(double offset)
     {
@@ -292,6 +290,16 @@ public sealed partial class WeeklyTimelinePage : Page
 
     private void FocusTimeline()
         => TimelineScrollViewer.Focus(FocusState.Programmatic);
+
+    // Keep the month heading in step with what's on screen: once a scroll settles (nav animation, wheel,
+    // drag), resolve the focused month from the rested offset. Intermediate frames are skipped so the title
+    // doesn't flicker mid-slide.
+    private void TimelineScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (e.IsIntermediate)
+            return;
+        ViewModel.SyncFocusedMonthToOffset(TimelineScrollViewer.HorizontalOffset);
+    }
 
     // The columns tile the viewport exactly (see ComputeWeekWidth), so all horizontal movement lands on a
     // whole-column boundary: at rest the view always shows N full columns flush on both edges, never a
@@ -330,11 +338,175 @@ public sealed partial class WeeklyTimelinePage : Page
         }
 
         // Tapping the card's checkbox (or any control) just toggles/acts — it must not open the detail.
-        if (sender is not FrameworkElement { Tag: Guid id } || IsInteractiveElement(e.OriginalSource as DependencyObject))
+        if (sender is not FrameworkElement { Tag: Guid id } element || IsInteractiveElement(e.OriginalSource as DependencyObject))
             return;
 
         e.Handled = true;
+        // Give the card keyboard focus so a follow-up Delete acts on it (matching the list view).
+        element.Focus(FocusState.Pointer);
         await SelectTaskAndCenterTimelineAsync(id);
+    }
+
+    // Delete on a focused card soft-deletes that task (with the same anchored confirmation as the list).
+    private async void TimelineCard_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Delete || sender is not FrameworkElement { Tag: Guid id } element)
+            return;
+        e.Handled = true;
+        await RunSafelyAsync(async () =>
+        {
+            if (await ConfirmDeleteTaskAsync(element))
+                await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
+        });
+    }
+
+    // Right-click a card opens its context menu: move to a group, toggle tags, rename, end series, delete —
+    // the same actions as a list row.
+    private async void TimelineBar_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: Guid id } element)
+            return;
+        e.Handled = true;
+        element.Focus(FocusState.Pointer);
+        await RunSafelyAsync(async () =>
+        {
+            var menu = await BuildTaskContextMenuAsync(id, element);
+            menu.ShowAt(element, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+            {
+                Position = e.GetPosition(element),
+            });
+        });
+    }
+
+    private async Task<MenuFlyout> BuildTaskContextMenuAsync(Guid id, FrameworkElement anchor)
+    {
+        var task = await ViewModel.GetTaskAsync(id);
+        var taskGroups = await ViewModel.GetTaskGroupsAsync();
+        var tags = await ViewModel.GetTagsAsync();
+        var menu = new MenuFlyout();
+
+        // 그룹으로 이동 — every group, plus a "그룹에서 빼기" entry that returns the task to the Cue home.
+        var moveGroup = new MenuFlyoutSubItem { Text = "그룹으로 이동" };
+        var clearGroup = new MenuFlyoutItem { Text = "그룹에서 빼기" };
+        if (task?.TaskGroupId is null) clearGroup.Icon = CheckIcon();
+        clearGroup.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToTaskGroupAsync(id, null));
+        moveGroup.Items.Add(clearGroup);
+        if (taskGroups.Count > 0) moveGroup.Items.Add(new MenuFlyoutSeparator());
+        foreach (var taskGroup in taskGroups)
+        {
+            var taskGroupId = taskGroup.Id;
+            var item = new MenuFlyoutItem { Text = taskGroup.Name };
+            if (task?.TaskGroupId == taskGroupId) item.Icon = CheckIcon();
+            item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.MoveTaskToTaskGroupAsync(id, taskGroupId));
+            moveGroup.Items.Add(item);
+        }
+        menu.Items.Add(moveGroup);
+
+        // 태그 — a multi-select list; each toggles independently so a task can carry several at once.
+        var tagGroup = new MenuFlyoutSubItem { Text = "태그" };
+        if (tags.Count == 0)
+        {
+            tagGroup.Items.Add(new MenuFlyoutItem { Text = "태그 없음", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var tag in tags)
+            {
+                var tagId = tag.Id;
+                var item = new ToggleMenuFlyoutItem
+                {
+                    Text = tag.Name,
+                    IsChecked = task?.TagIds.Contains(tagId) == true,
+                };
+                item.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ToggleTaskTagAsync(id, tagId));
+                tagGroup.Items.Add(item);
+            }
+
+            // 태그 지우기 — clears outright with one tag; with two or more it expands into a picker (plus a
+            // 모두 지우기 escape hatch) so a single tag can be dropped without losing the rest.
+            tagGroup.Items.Add(new MenuFlyoutSeparator());
+            var assigned = task?.TagIds ?? (IReadOnlyList<Guid>)Array.Empty<Guid>();
+            if (assigned.Count >= 2)
+            {
+                var clearTags = new MenuFlyoutSubItem { Text = "태그 지우기" };
+                var clearAll = new MenuFlyoutItem { Text = "모두 지우기" };
+                clearAll.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ClearTaskTagsAsync(id));
+                clearTags.Items.Add(clearAll);
+                clearTags.Items.Add(new MenuFlyoutSeparator());
+                foreach (var tag in tags)
+                {
+                    if (!assigned.Contains(tag.Id)) continue;
+                    var tagId = tag.Id;
+                    var remove = new MenuFlyoutItem { Text = tag.Name };
+                    remove.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.RemoveTaskTagAsync(id, tagId));
+                    clearTags.Items.Add(remove);
+                }
+                tagGroup.Items.Add(clearTags);
+            }
+            else
+            {
+                var clearTags = new MenuFlyoutItem { Text = "태그 지우기", IsEnabled = assigned.Count > 0 };
+                clearTags.Click += async (_, _) => await RunSafelyAsync(() => ViewModel.ClearTaskTagsAsync(id));
+                tagGroup.Items.Add(clearTags);
+            }
+        }
+        menu.Items.Add(tagGroup);
+
+        var rename = new MenuFlyoutItem { Text = "이름 바꾸기" };
+        rename.Click += async (_, _) => await RunSafelyAsync(async () =>
+        {
+            var name = await PromptNameAsync("할 일 이름 바꾸기", "할 일 제목", task?.Title ?? string.Empty);
+            if (name is not null) await ViewModel.RenameTaskAsync(id, name);
+        });
+        menu.Items.Add(rename);
+
+        // 반복 종료 — only for a recurring task; ends the series (to 완료한 일), distinct from 삭제.
+        if (task?.Recurrence is not null)
+        {
+            var endSeries = new MenuFlyoutItem { Text = "반복 종료" };
+            endSeries.Click += async (_, _) => await RunSafelyAsync(async () =>
+            {
+                if (await ConfirmEndSeriesAsync(anchor))
+                    await ViewModel.EndSeriesAsync(id);
+            });
+            menu.Items.Add(endSeries);
+        }
+
+        menu.Items.Add(new MenuFlyoutSeparator());
+
+        var delete = new MenuFlyoutItem { Text = "삭제" };
+        if (Application.Current.Resources["SystemFillColorCriticalBrush"] is Microsoft.UI.Xaml.Media.Brush critical)
+            delete.Foreground = critical;
+        delete.Click += async (_, _) => await RunSafelyAsync(async () =>
+        {
+            if (await ConfirmDeleteTaskAsync(anchor))
+                await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
+        });
+        menu.Items.Add(delete);
+
+        return menu;
+    }
+
+    private static FontIcon CheckIcon() => new() { Glyph = "", FontSize = 14 };
+
+    private Task<bool> ConfirmDeleteTaskAsync(FrameworkElement anchor)
+        => ConfirmPopover.ShowAsync(anchor, new ConfirmPopoverOptions { Message = "이 할 일을 삭제할까요?" });
+
+    private async Task<string?> PromptNameAsync(string title, string placeholder, string initial = "")
+    {
+        var input = new TextBox { Text = initial, PlaceholderText = placeholder, MinWidth = 320 };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = title,
+            Content = input,
+            PrimaryButtonText = "저장",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        var result = await _dialogs.ShowAsync(dialog);
+        var name = input.Text.Trim();
+        return result == ContentDialogResult.Primary && name.Length > 0 ? name : null;
     }
 
     // Double-clicking empty space creates a task in the week column under the pointer and opens it. A card
@@ -351,6 +523,8 @@ public sealed partial class WeeklyTimelinePage : Page
         var weekIndex = (int)(x / weekWidth);
         e.Handled = true;
         await RunSafelyAsync(() => ViewModel.CreateTaskInWeekCommand.ExecuteAsync(weekIndex));
+        // Opening the new task's panel narrows the timeline; keep its (clicked) week column pinned left.
+        ScrollColumnToLeft(() => weekIndex * ViewModel.WeekWidth);
     }
 
     // A double-tap on a card is consumed so it doesn't bubble to the surface and create a task; the card's
@@ -366,8 +540,30 @@ public sealed partial class WeeklyTimelinePage : Page
         var switching = ViewModel.Detail.IsOpen && ViewModel.Detail.CurrentTaskId != id;
         if (switching) _timelineScrollToEndPending = true;
         await RunSafelyAsync(() => ViewModel.SelectTaskCommand.ExecuteAsync(id));
+        // Pin the tapped card's week column to the left edge: opening the panel narrows the timeline and
+        // recomputes the column width, which would otherwise leave the scroll on a different week.
+        ScrollColumnToLeft(() => ViewModel.ColumnOffsetForTask(id));
         if (switching)
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, RefreshTimelineViewport);
+    }
+
+    // Pins a week column to the left edge after the detail panel's open/resize settles (so the recomputed
+    // column width is in effect). Deferred + UpdateLayout so the offset is read post-resize; placed without
+    // animation so it lands directly on the column rather than visibly sliding from the bumped position.
+    private void ScrollColumnToLeft(Func<double> offset)
+    {
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            TimelineScrollViewer.UpdateLayout();
+            var x = offset();
+            if (x < 0)
+                return;
+            TimelineScrollViewer.ChangeView(
+                ClampOffset(SnapToColumn(x), TimelineScrollViewer.ScrollableWidth),
+                null,
+                null,
+                disableAnimation: true);
+        });
     }
 
     private static bool IsInteractiveElement(DependencyObject? element)
