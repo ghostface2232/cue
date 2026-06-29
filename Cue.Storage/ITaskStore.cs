@@ -20,7 +20,9 @@ public interface ITaskStore
     /// </summary>
     Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : RecordBase;
 
-    /// <summary>Returns the record with the given id, or <c>null</c> if no file exists for it.</summary>
+    /// <summary>
+    /// Returns the record with the given id, or <c>null</c> if its file is missing or unreadable.
+    /// </summary>
     Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase;
 
     /// <summary>

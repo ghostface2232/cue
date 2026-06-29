@@ -150,7 +150,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         if (task.TaskGroupId is { } taskGroupId)
         {
             var taskGroup = await _files.GetAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
-            if (taskGroup?.IsDeleted == true)
+            if (taskGroup is not { IsDeleted: false })
                 task.TaskGroupId = null;
         }
 
@@ -160,7 +160,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             foreach (var tagId in task.TagIds.Distinct())
             {
                 var tag = await _files.GetAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
-                if (tag?.IsDeleted != true) retainedTags.Add(tagId);
+                if (tag is { IsDeleted: false }) retainedTags.Add(tagId);
             }
             task.TagIds = retainedTags;
         }
