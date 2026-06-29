@@ -398,6 +398,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => _index.GetByPriorityAsync(keepCompletedToday, cancellationToken);
 
+    public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
+        => _index.GetTimelineRowsAsync(rangeStart, rangeEnd, cancellationToken);
+
     public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
         => _index.GetOccurrencesAsync(seriesId, limit, offset, cancellationToken);
 
