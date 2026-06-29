@@ -72,5 +72,7 @@ public sealed class PreferenceDateParser : IDateParser
     private string BuildSignature()
         => ParserConfigKey.Build(
             _preferences.AutoAfternoonForBareOneToSix,
+            _preferences.ShowWeekNumber,
+            _preferences.WeekNumberPastRollsToNextYear,
             _preferences.CustomDateMeanings.Select(meaning => (meaning.Name, meaning.DayOfMonth)));
 }
