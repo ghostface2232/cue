@@ -629,6 +629,17 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY t.priority = 0, t.priority, t.sort_order;",
             cmd => BindKeptInPlaceWindow(cmd, keepCompletedToday), cancellationToken);
 
+    // The 주간 타임라인 (weekly timeline) projection: every dated task whose When date falls in the
+    // inclusive [start, end] window, ordered by date then rank. Completed tasks are NOT filtered — a
+    // finished card renders dimmed in its week — so this is a literal date span, not an open-work lens.
+    // The when_date column stores the ISO yyyy-MM-dd string, so the bounds are bound the same way and
+    // compared lexically (Today() formats identically).
+    public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
+        => QueryAsync(
+            SelectRows + "WHERE t.deleted_at IS NULL AND t.when_kind = 'OnDate' AND t.when_date IS NOT NULL " +
+            "AND t.when_date >= $start AND t.when_date <= $end ORDER BY t.when_date, t.sort_order;",
+            cmd => { Bind(cmd, "$start", rangeStart.ToString("yyyy-MM-dd")); Bind(cmd, "$end", rangeEnd.ToString("yyyy-MM-dd")); }, cancellationToken);
+
     // Recurrence history (the detail-panel timeline)
 
     public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)

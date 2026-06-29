@@ -1,0 +1,772 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="Cue.Pages.WeeklyTimelinePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:Cue.ViewModels"
+    xmlns:behaviors="using:Cue.Behaviors"
+    xmlns:local="using:Cue.Pages"
+    Background="{ThemeResource LayerFillColorDefaultBrush}"
+    FontFamily="{StaticResource CueFontFamily}"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <StaticResource x:Key="TimelineRowHoverBrush" ResourceKey="CueHoverFillBrush" />
+        <SolidColorBrush x:Key="TimelineBarBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+        <SolidColorBrush x:Key="DetailCardBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+
+        <Style x:Key="TimelineMetadataTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource CueFontListMeta}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <!-- Tag chips on a card, copied from the list-row design (this page hosts its own card template,
+             like the old timeline kept its own row template). One tag reads as a named pill; two+ collapse
+             to name-less square icon chips so the card height stays fixed. -->
+        <DataTemplate x:Key="TagChipTemplate" x:DataType="vm:TaskRowTag">
+            <Border
+                Height="{StaticResource CueChipHeight}"
+                Padding="{StaticResource CuePadChip}"
+                VerticalAlignment="Center"
+                Background="{x:Bind Color, Converter={StaticResource HexToTint}}"
+                CornerRadius="{StaticResource CueRadiusChip}">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                    <FontIcon FontSize="12" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
+                    <TextBlock MaxWidth="120" FontSize="{StaticResource CueFontSecondary}" Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="TagIconChipTemplate" x:DataType="vm:TaskRowTag">
+            <Border
+                Width="{StaticResource CueChipHeight}"
+                Height="{StaticResource CueChipHeight}"
+                VerticalAlignment="Center"
+                Background="{x:Bind Color, Converter={StaticResource HexToTint}}"
+                CornerRadius="{StaticResource CueRadiusChip}"
+                ToolTipService.ToolTip="{x:Bind Name}"
+                AutomationProperties.Name="{x:Bind Name}">
+                <FontIcon
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{x:Bind Color, Converter={StaticResource HexToBrush}}"
+                    Glyph="&#xE8EC;" />
+            </Border>
+        </DataTemplate>
+
+        <!-- A week-column header: the week number over the date range, with the current week's number
+             wrapped in an accent pill (the way the old day header highlighted today). -->
+        <DataTemplate x:Key="TimelineWeekTemplate" x:DataType="vm:TimelineWeekViewModel">
+            <Grid Width="{x:Bind Width}" Height="58">
+                <Border BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,1,1" />
+                <StackPanel VerticalAlignment="Center" Spacing="{StaticResource CueGap2}">
+                    <Border
+                        MinWidth="40"
+                        Height="26"
+                        Padding="10,0"
+                        HorizontalAlignment="Center"
+                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                        CornerRadius="13"
+                        Visibility="{x:Bind IsThisWeek, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontFamily="{StaticResource CueFontFamilySemiBold}"
+                            FontSize="13"
+                            Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                            Text="{x:Bind WeekNumberLabel}" />
+                    </Border>
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontFamily="{StaticResource CueFontFamilySemiBold}"
+                        FontSize="13"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind WeekNumberLabel}"
+                        Visibility="{x:Bind IsNotThisWeek, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Style="{StaticResource TimelineMetadataTextStyle}"
+                        Text="{x:Bind RangeLabel}" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
+        <!-- A lane: a full-width track with a bottom divider, holding one card positioned at the task's
+             ISO-week column. The card is the current list-row design — circular check + SemiBold title +
+             priority dot/label + schedule line + group/tag chips reflowed under the title (compact). -->
+        <DataTemplate x:Key="TimelineLaneTemplate" x:DataType="vm:WeeklyTimelineRowViewModel">
+            <!-- An auto-height row: the lane grows with the card's content (so a card carrying chips never
+                 overflows a fixed height), and the bottom divider sits flush below it. The card is
+                 left-positioned by a margin (offset, 10, 0, 10) instead of a Canvas, since a Canvas can't
+                 auto-size to its children. -->
+            <Grid Width="{x:Bind TrackWidth, Mode=OneWay}">
+                <Border
+                    HorizontalAlignment="Left"
+                    Margin="{x:Bind local:WeeklyTimelinePage.LeftMargin(StartOffset), Mode=OneWay}"
+                    Width="{x:Bind CardWidth, Mode=OneWay}"
+                    MinHeight="80"
+                    Padding="14,12"
+                    Background="{StaticResource TimelineBarBrush}"
+                    BackgroundSizing="InnerBorderEdge"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource CueRadiusRow}"
+                    Opacity="{x:Bind Row.VisualOpacity, Mode=OneWay}"
+                    PointerEntered="TimelineBar_PointerEntered"
+                    PointerExited="TimelineBar_PointerExited"
+                    Tapped="TimelineBar_Tapped"
+                    Tag="{x:Bind Row.Id}">
+                        <Grid ColumnSpacing="{StaticResource CueGap12}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox
+                                behaviors:CircleCheckBoxPop.IsEnabled="True"
+                                VerticalAlignment="Center"
+                                IsChecked="{x:Bind Row.IsCompleted, Mode=TwoWay}"
+                                Style="{StaticResource CueCircleCheckBoxStyle}"
+                                AutomationProperties.AutomationId="TimelineCardCheckBox"
+                                AutomationProperties.Name="완료" />
+
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="{StaticResource CueGap4}">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                        FontSize="{StaticResource CueFontListTitle}"
+                                        MaxLines="1"
+                                        Text="{x:Bind Row.Title, Mode=OneWay}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <Border
+                                        Width="{StaticResource CuePriorityDotSize}"
+                                        Height="{StaticResource CuePriorityDotSize}"
+                                        Margin="2,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Background="{x:Bind Row.Priority, Converter={StaticResource PriorityToBrush}, Mode=OneWay}"
+                                        CornerRadius="{StaticResource CuePriorityDotRadius}"
+                                        ToolTipService.ToolTip="{x:Bind Row.Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}"
+                                        AutomationProperties.Name="{x:Bind Row.Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}"
+                                        Visibility="{x:Bind Row.HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        Style="{StaticResource TimelineMetadataTextStyle}"
+                                        Text="{x:Bind Row.Priority, Converter={StaticResource PriorityToLabel}, Mode=OneWay}"
+                                        Visibility="{x:Bind Row.HasPriority, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
+                                </StackPanel>
+                                <!-- Schedule + recurrence glyph; hidden when the card carries no date. -->
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="{StaticResource CueGap8}"
+                                    VerticalAlignment="Center"
+                                    Visibility="{x:Bind Row.HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+                                    <TextBlock VerticalAlignment="Center" Style="{StaticResource TimelineMetadataTextStyle}" Text="{x:Bind Row.ScheduleCaption, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                    <FontIcon
+                                        VerticalAlignment="Center"
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Glyph="&#xE8EE;"
+                                        ToolTipService.ToolTip="반복"
+                                        AutomationProperties.Name="반복"
+                                        Visibility="{x:Bind Row.IsRecurring, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
+                                </StackPanel>
+                                <!-- Group/tag chips reflowed under the title (the card is always compact). -->
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" Visibility="{x:Bind Row.ShowInlineMeta, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <Border
+                                        Height="{StaticResource CueChipHeight}"
+                                        Padding="{StaticResource CuePadChip}"
+                                        VerticalAlignment="Center"
+                                        Background="{ThemeResource CueChipNeutralFillBrush}"
+                                        CornerRadius="{StaticResource CueRadiusChip}"
+                                        Visibility="{x:Bind Row.HasGroup, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" VerticalAlignment="Center">
+                                            <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind Row.GroupGlyph, Mode=OneWay}" />
+                                            <TextBlock MaxWidth="120" FontSize="{StaticResource CueFontSecondary}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Row.GroupName, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                    <ItemsControl
+                                        ItemsSource="{x:Bind Row.Tags, Mode=OneWay}"
+                                        ItemTemplate="{StaticResource TagChipTemplate}"
+                                        Visibility="{x:Bind Row.HasSingleTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <ItemsControl
+                                        ItemsSource="{x:Bind Row.Tags, Mode=OneWay}"
+                                        ItemTemplate="{StaticResource TagIconChipTemplate}"
+                                        Visibility="{x:Bind Row.HasMultipleTags, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap4}" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                </Border>
+                <Rectangle
+                    Height="1"
+                    VerticalAlignment="Bottom"
+                    Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Padding="{StaticResource CuePadPage}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="4,0,4,10" ColumnSpacing="{StaticResource CueGap12}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource CuePageTitleTextStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.RangeCaption, Mode=OneWay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="{StaticResource CueGap4}">
+                <Button
+                    Width="34"
+                    Height="34"
+                    Padding="0"
+                    Click="PreviousMonth_Click"
+                    Style="{StaticResource CueSubtleTextButtonStyle}"
+                    ToolTipService.ToolTip="이전 달"
+                    AutomationProperties.AutomationId="WeeklyPreviousMonthButton"
+                    AutomationProperties.Name="이전 달">
+                    <FontIcon FontSize="14" Glyph="&#xE76B;" />
+                </Button>
+                <Button Click="Today_Click" Content="오늘" Style="{StaticResource CueSubtleTextButtonStyle}" AutomationProperties.AutomationId="WeeklyTodayButton" />
+                <Button
+                    Width="34"
+                    Height="34"
+                    Padding="0"
+                    Click="NextMonth_Click"
+                    Style="{StaticResource CueSubtleTextButtonStyle}"
+                    ToolTipService.ToolTip="다음 달"
+                    AutomationProperties.AutomationId="WeeklyNextMonthButton"
+                    AutomationProperties.Name="다음 달">
+                    <FontIcon FontSize="14" Glyph="&#xE76C;" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="타임라인을 표시하지 못했습니다" />
+
+        <Grid
+            x:Name="ContentSplitGrid"
+            Grid.Row="2"
+            ColumnSpacing="{StaticResource CueGap16}"
+            SizeChanged="ContentSplitGrid_SizeChanged">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <!-- Timeline content (scrolling track + empty state). Hidden while the detail panel overlays it
+                 in the narrow layout, so the translucent panel keeps its exact color. -->
+            <Grid x:Name="ContentContainer">
+                <Border
+                    Margin="4,0,4,4"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BackgroundSizing="InnerBorderEdge"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource CueRadiusPanel}">
+                    <!-- The wheel→horizontal pan handler is attached in code with handledEventsToo:true
+                         (TimelineScrollViewer_Loaded): the ScrollViewer marks the wheel event handled
+                         internally before a XAML-attached PointerWheelChanged would run, so it must be
+                         registered to also receive already-handled events. -->
+                    <ScrollViewer
+                        x:Name="TimelineScrollViewer"
+                        behaviors:ScrollBarAutoHide.IsEnabled="True"
+                        behaviors:ScrollBarAutoHide.ReserveGutter="False"
+                        HorizontalScrollBarVisibility="Auto"
+                        HorizontalScrollMode="Enabled"
+                        IsTabStop="True"
+                        KeyDown="TimelineScrollViewer_KeyDown"
+                        Loaded="TimelineScrollViewer_Loaded"
+                        SizeChanged="TimelineScrollViewer_SizeChanged"
+                        PointerCanceled="TimelineScrollViewer_PointerCanceled"
+                        PointerMoved="TimelineScrollViewer_PointerMoved"
+                        PointerPressed="TimelineScrollViewer_PointerPressed"
+                        PointerReleased="TimelineScrollViewer_PointerReleased"
+                        VerticalScrollBarVisibility="Auto"
+                        VerticalScrollMode="Enabled"
+                        ZoomMode="Disabled">
+                        <Grid Width="{x:Bind ViewModel.TrackWidth, Mode=OneWay}" MinHeight="420">
+                            <StackPanel>
+                                <ItemsRepeater ItemTemplate="{StaticResource TimelineWeekTemplate}" ItemsSource="{x:Bind ViewModel.Weeks, Mode=OneWay}">
+                                    <ItemsRepeater.Layout>
+                                        <StackLayout Orientation="Horizontal" />
+                                    </ItemsRepeater.Layout>
+                                </ItemsRepeater>
+                                <ItemsRepeater
+                                    ItemTemplate="{StaticResource TimelineLaneTemplate}"
+                                    ItemsSource="{x:Bind ViewModel.Rows, Mode=OneWay}"
+                                    ElementPrepared="TimelineRows_ElementPrepared"
+                                    ElementClearing="TimelineRows_ElementClearing" />
+                            </StackPanel>
+                            <Rectangle
+                                Width="1"
+                                HorizontalAlignment="Left"
+                                Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                IsHitTestVisible="False"
+                                Opacity="0.8"
+                                Visibility="{x:Bind ViewModel.HasTodayInRange, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <Rectangle.RenderTransform>
+                                    <TranslateTransform X="{x:Bind ViewModel.TodayLineOffset, Mode=OneWay}" />
+                                </Rectangle.RenderTransform>
+                            </Rectangle>
+                        </Grid>
+                    </ScrollViewer>
+                </Border>
+
+                <TextBlock
+                    Margin="0,112,0,0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    FontSize="14"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="이 달에 표시할 날짜가 있는 할 일이 없습니다."
+                    Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+            </Grid>
+
+            <Border
+                x:Name="DetailPanel"
+                Grid.Column="1"
+                Width="460"
+                MinWidth="260"
+                Margin="0,0,4,4"
+                Padding="{StaticResource CuePadDetailPanel}"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BackgroundSizing="InnerBorderEdge"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource CueRadiusPanel}"
+                Loaded="DetailPanel_Loaded"
+                SizeChanged="DetailPanel_SizeChanged"
+                Visibility="{x:Bind ViewModel.Detail.IsOpen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                <Border.Resources>
+                    <!-- Detail controls use the same hover/press fill as task rows so interaction
+                         color stays consistent across light and dark surfaces. -->
+                    <ResourceDictionary>
+                        <ResourceDictionary.ThemeDictionaries>
+                            <ResourceDictionary x:Key="Light">
+                                <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+                            </ResourceDictionary>
+                            <ResourceDictionary x:Key="Dark">
+                                <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="CueHoverFillBrush" />
+                                <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="CuePressedFillBrush" />
+                            </ResourceDictionary>
+                        </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
+                </Border.Resources>
+                <Grid>
+                    <Rectangle
+                        x:Name="DetailResizeHitArea"
+                        Width="24"
+                        Margin="-18,0,0,0"
+                        HorizontalAlignment="Left"
+                        Canvas.ZIndex="3"
+                        Fill="Transparent"
+                        PointerMoved="DetailResizeHandle_PointerMoved"
+                        PointerEntered="DetailResizeHandle_PointerEntered"
+                        PointerExited="DetailResizeHandle_PointerExited"
+                        PointerPressed="DetailResizeHandle_PointerPressed"
+                        PointerReleased="DetailResizeHandle_PointerReleased"
+                        PointerCanceled="DetailResizeHandle_PointerReleased" />
+                    <Border
+                        x:Name="DetailResizeGrip"
+                        Width="4"
+                        Height="58"
+                        Margin="-15,0,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Canvas.ZIndex="4"
+                        Background="{ThemeResource TextFillColorTertiaryBrush}"
+                        CornerRadius="2"
+                        IsHitTestVisible="False"
+                        Opacity="0">
+                        <Border.OpacityTransition>
+                            <ScalarTransition Duration="0:0:0.083" />
+                        </Border.OpacityTransition>
+                    </Border>
+                    <ScrollViewer x:Name="DetailScrollViewer" IsTabStop="True" behaviors:ScrollBarAutoHide.IsEnabled="True" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="2,0,4,0" Spacing="{StaticResource CueGap12}">
+                        <Grid ColumnSpacing="{StaticResource CueGap8}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox
+                                Padding="2,2,4,3"
+                                VerticalAlignment="Center"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                FontSize="24"
+                                KeyDown="DetailTitle_KeyDown"
+                                LostFocus="DetailText_LostFocus"
+                                PlaceholderText="할 일 제목"
+                                Text="{x:Bind ViewModel.Detail.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                TextWrapping="Wrap">
+                                <TextBox.Resources>
+                                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                                </TextBox.Resources>
+                            </TextBox>
+                            <!-- Save status indicator dot -->
+                            <Ellipse
+                                Grid.Column="1"
+                                Width="8"
+                                Height="8"
+                                Margin="0,0,16,0"
+                                VerticalAlignment="Center"
+                                Fill="{x:Bind ViewModel.Detail.CurrentSaveStatus, Mode=OneWay, Converter={StaticResource SaveStatusToBrush}}"
+                                Visibility="{x:Bind ViewModel.Detail.IsSaveStatusVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}"
+                                ToolTipService.ToolTip="{x:Bind ViewModel.Detail.SaveStatusToolTip, Mode=OneWay}" />
+                            <HyperlinkButton
+                                Grid.Column="2"
+                                Style="{StaticResource CueIconButtonStyle}"
+                                Click="CloseDetail_Click"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                ToolTipService.ToolTip="닫기"
+                                AutomationProperties.Name="닫기">
+                                <FontIcon FontSize="17" Glyph="&#xE711;" />
+                            </HyperlinkButton>
+                        </Grid>
+
+                        <Border Margin="{StaticResource CuePadDetailCardFirst}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
+                                <TextBox AcceptsReturn="True" LostFocus="DetailText_LostFocus" MinHeight="92" PlaceholderText="메모를 추가하세요" Text="{x:Bind ViewModel.Detail.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+                                <Grid x:Name="DetailMetaGrid" ColumnSpacing="{StaticResource CueGap12}" RowSpacing="{StaticResource CueGap12}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="{StaticResource CueGap4}">
+                                        <TextBlock Text="중요도" />
+                                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Bind ViewModel.Detail.Priorities}" SelectedItem="{x:Bind ViewModel.Detail.SelectedPriority, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Converter={StaticResource PriorityToLabel}}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel x:Name="DetailGroupField" Grid.Column="1" Spacing="{StaticResource CueGap4}"><TextBlock Text="그룹" /><ComboBox HorizontalAlignment="Stretch" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.Detail.TaskGroups}" SelectedItem="{x:Bind ViewModel.Detail.SelectedTaskGroup, Mode=TwoWay}" /></StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- A task has a single date (When). Before a date is set the + 일시 추가 button
+                             takes the editor's place; once set, a date (+ optional time / 종일) shows. -->
+                        <Border Margin="{StaticResource CuePadDetailCard}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
+                                <Button
+                                    HorizontalAlignment="Left"
+                                    Click="EnableWhen_Click"
+                                    Content="+ 일시 추가"
+                                    Style="{StaticResource CueSubtleTextButtonStyle}"
+                                    Visibility="{x:Bind ViewModel.Detail.CanAddWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+
+                                <StackPanel Spacing="{StaticResource CueGap12}" Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <Grid>
+                                        <TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="일시" />
+                                        <Button HorizontalAlignment="Right" Padding="8,3" Background="Transparent" BorderThickness="0" Click="ClearWhen_Click" Content="제거" />
+                                    </Grid>
+                                    <Grid x:Name="WhenDateTimeGrid" ColumnSpacing="{StaticResource CueGap8}" RowSpacing="{StaticResource CueGap8}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <CalendarDatePicker HorizontalAlignment="Stretch" Date="{x:Bind ViewModel.Detail.WhenDate, Mode=TwoWay}" PlaceholderText="날짜 선택" />
+                                        <Grid
+                                            x:Name="WhenTimePanel"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            ColumnSpacing="{StaticResource CueGap8}"
+                                            Visibility="{x:Bind ViewModel.Detail.ShowWhenTime, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition x:Name="WhenHourCol" Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition x:Name="WhenMinuteCol" Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox x:Name="WhenHourCombo" Width="72" HorizontalAlignment="Stretch" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Hours}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenHour, Mode=TwoWay}" />
+                                            <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="18" Text=":" />
+                                            <ComboBox x:Name="WhenMinuteCombo" Grid.Column="2" Width="72" HorizontalAlignment="Stretch" DisplayMemberPath="Label" ItemsSource="{x:Bind ViewModel.Detail.Minutes}" SelectedItem="{x:Bind ViewModel.Detail.SelectedWhenMinute, Mode=TwoWay}" />
+                                        </Grid>
+                                    </Grid>
+                                    <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+
+                                <!-- 반복 (recurrence) field. Shown only when the task carries a concrete 일시. -->
+                                <StackPanel
+                                    Spacing="{StaticResource CueGap4}"
+                                    Visibility="{x:Bind ViewModel.Detail.IsWhenEditorVisible, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="반복" />
+                                    <ComboBox
+                                        HorizontalAlignment="Stretch"
+                                        DisplayMemberPath="Name"
+                                        ItemsSource="{x:Bind ViewModel.Detail.RecurrenceOptions}"
+                                        SelectedItem="{x:Bind ViewModel.Detail.SelectedRecurrence, Mode=TwoWay}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 반복 기록 (recurrence cycle timeline). Shown only for a recurring task. -->
+                        <Border
+                            Margin="{StaticResource CuePadDetailCard}"
+                            Padding="{StaticResource CuePadCard}"
+                            Background="{StaticResource DetailCardBrush}"
+                            CornerRadius="{StaticResource CueRadiusCard}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            BackgroundSizing="InnerBorderEdge"
+                            Visibility="{x:Bind ViewModel.Detail.IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel Spacing="{StaticResource CueGap8}">
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="반복 기록" />
+                                <Grid ColumnSpacing="{StaticResource CueGap4}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button
+                                        x:Name="TimelinePrevButton"
+                                        Width="28"
+                                        Height="{StaticResource CueTimelineStripHeight}"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="TimelinePrev_Click"
+                                        AutomationProperties.Name="이전 기록"
+                                        ToolTipService.ToolTip="이전 기록">
+                                        <FontIcon FontSize="13" Glyph="&#xE76B;" />
+                                    </Button>
+                                    <ScrollViewer
+                                        x:Name="TimelineScroller"
+                                        Grid.Column="1"
+                                        Height="{StaticResource CueTimelineStripHeight}"
+                                        HorizontalScrollMode="Auto"
+                                        HorizontalScrollBarVisibility="Hidden"
+                                        VerticalScrollMode="Disabled"
+                                        VerticalScrollBarVisibility="Disabled">
+                                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.Detail.Timeline, Mode=OneWay}" SizeChanged="TimelineRepeater_SizeChanged">
+                                            <ItemsRepeater.Layout>
+                                                <StackLayout Orientation="Horizontal" Spacing="{StaticResource CueGap4}" />
+                                            </ItemsRepeater.Layout>
+                                            <ItemsRepeater.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:OccurrencePipViewModel">
+                                                    <Button
+                                                        Width="{StaticResource CueTimelinePipWidth}"
+                                                        Height="{StaticResource CueTimelineStripHeight}"
+                                                        Padding="0"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        CornerRadius="{StaticResource CueRadiusSmall}"
+                                                        Opacity="{x:Bind VisualOpacity, Mode=OneWay}"
+                                                        IsHitTestVisible="{x:Bind IsInteractive}"
+                                                        Click="OccurrencePip_Click"
+                                                        AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
+                                                        ToolTipService.ToolTip="{x:Bind Tooltip, Mode=OneWay}">
+                                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="{StaticResource CueGap4}">
+                                                            <TextBlock
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                TextAlignment="Center"
+                                                                TextLineBounds="Tight"
+                                                                FontFamily="{StaticResource CueFontFamilySemiBold}"
+                                                                FontSize="{StaticResource CueFontListMeta}"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind DateLabel}" />
+                                                            <TextBlock
+                                                                Height="20"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                TextAlignment="Center"
+                                                                TextLineBounds="Tight"
+                                                                FontSize="{StaticResource CueTimelinePipGlyph}"
+                                                                Foreground="{x:Bind Kind, Mode=OneWay, Converter={StaticResource OccurrencePipKindToBrush}}"
+                                                                Text="{x:Bind Glyph, Mode=OneWay}" />
+                                                            <TextBlock
+                                                                HorizontalAlignment="Center"
+                                                                TextAlignment="Center"
+                                                                FontSize="{StaticResource CueFontSecondary}"
+                                                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                                Text="{x:Bind StatusLabel, Mode=OneWay}" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsRepeater.ItemTemplate>
+                                        </ItemsRepeater>
+                                    </ScrollViewer>
+                                    <Button
+                                        Grid.Column="2"
+                                        Width="28"
+                                        Height="{StaticResource CueTimelineStripHeight}"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="TimelineNext_Click"
+                                        AutomationProperties.Name="다음 기록"
+                                        ToolTipService.ToolTip="다음 기록">
+                                        <FontIcon FontSize="13" Glyph="&#xE76C;" />
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="{StaticResource CuePadDetailCard}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
+                                <Grid><TextBlock VerticalAlignment="Center" Style="{StaticResource CueCardHeaderTextStyle}" Text="태그" /><Button HorizontalAlignment="Right" Click="BeginAddTag_Click" Content="+ 새 태그" Style="{StaticResource CueSubtleTextButtonStyle}" /></Grid>
+                                <!-- Inline new-tag field, shown in place of the old modal when + 새 태그 is tapped. -->
+                                <Grid ColumnSpacing="{StaticResource CueGap8}" Visibility="{x:Bind ViewModel.Detail.IsAddingTag, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Name="NewTagBox"
+                                        KeyDown="NewTagBox_KeyDown"
+                                        LostFocus="NewTagBox_LostFocus"
+                                        PlaceholderText="태그 이름"
+                                        Text="{x:Bind ViewModel.Detail.NewTagName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Grid.Column="1" Click="ConfirmAddTag_Click" Content="추가" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Tags}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:TagEditorOption">
+                                            <Button
+                                                Margin="0,1"
+                                                Padding="8,7"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Stretch"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Click="TagRow_Click"
+                                                CornerRadius="{StaticResource CueRadiusSmall}"
+                                                Tag="{x:Bind Id}">
+                                                <Grid ColumnSpacing="{StaticResource CueGap8}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon VerticalAlignment="Center" FontSize="15" Foreground="{x:Bind Color, Mode=OneWay, Converter={StaticResource HexToBrush}}" Glyph="&#xE8EC;" />
+                                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock x:Name="TagNameText" Loaded="FadeText_Loaded" SizeChanged="FadeText_SizeChanged" Text="{x:Bind Name}" TextTrimming="Clip" />
+                                                        <Rectangle
+                                                            x:Name="TagNameFade"
+                                                            Width="24"
+                                                            HorizontalAlignment="Right"
+                                                            IsHitTestVisible="False"
+                                                            Opacity="0">
+                                                            <Rectangle.Fill>
+                                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                    <GradientStop Offset="0" Color="Transparent" />
+                                                                    <GradientStop Offset="0.55" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+                                                                    <GradientStop Offset="1" Color="{ThemeResource CardBackgroundFillColorDefault}" />
+                                                                </LinearGradientBrush>
+                                                            </Rectangle.Fill>
+                                                        </Rectangle>
+                                                    </Grid>
+                                                    <FontIcon Grid.Column="2" VerticalAlignment="Center" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE73E;" Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="{StaticResource CuePadDetailCardLast}" Padding="{StaticResource CuePadCard}" Background="{StaticResource DetailCardBrush}" CornerRadius="{StaticResource CueRadiusCard}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" BackgroundSizing="InnerBorderEdge">
+                            <StackPanel Spacing="{StaticResource CueGap12}">
+                                <TextBlock Style="{StaticResource CueCardHeaderTextStyle}" Text="체크리스트" />
+                                <Grid ColumnSpacing="{StaticResource CueGap8}">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBox PlaceholderText="체크리스트 항목" KeyDown="NewChecklistItem_KeyDown" Text="{x:Bind ViewModel.Detail.NewChecklistItemTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Grid.Column="1" Click="AddChecklistItem_Click" Content="추가" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.Detail.Checklist}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ChecklistItemViewModel">
+                                            <Grid Margin="0,1" Padding="0,2" ColumnSpacing="{StaticResource CueGap8}">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <CheckBox Width="24" Height="24" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,5,0,0" behaviors:CircleCheckBoxPop.IsEnabled="True" IsChecked="{x:Bind IsChecked, Mode=TwoWay}" Style="{StaticResource CueCircleCheckBoxStyle}" />
+                                                <TextBox Grid.Column="1" Margin="0,1,0,0" PlaceholderText="항목" KeyDown="ChecklistItemTitle_KeyDown" Text="{x:Bind Title, Mode=TwoWay}" Opacity="{x:Bind VisualOpacity, Mode=OneWay}" Background="Transparent" BorderBrush="Transparent" Padding="8,5,8,3" FontFamily="{StaticResource CueFontFamilyMedium}" FontSize="{StaticResource CueFontRowSub}" />
+                                                <Button Grid.Column="2" VerticalAlignment="Top" Width="32" Height="32" Padding="0" Background="Transparent" BorderThickness="0" Click="DeleteChecklistItem_Click" Tag="{x:Bind Id}" ToolTipService.ToolTip="삭제" AutomationProperties.Name="체크리스트 항목 삭제"><FontIcon FontSize="13" Glyph="&#xE74D;" /></Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 반복 종료 + 할 일 삭제 share one row for a recurring task; otherwise 삭제 spans
+                             the full width (reflow driven from Detail_PropertyChanged). -->
+                        <Grid x:Name="RecurringActionsGrid" Margin="4,2,8,4" ColumnSpacing="{StaticResource CueGap8}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="0" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Button
+                                x:Name="EndSeriesButton"
+                                Grid.Column="0"
+                                Padding="10,9"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="Transparent"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Click="EndSeries_Click"
+                                CornerRadius="{StaticResource CueRadiusCard}"
+                                Visibility="{x:Bind ViewModel.Detail.IsRecurring, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
+                                    <FontIcon FontSize="14" Glyph="&#xE7C1;" />
+                                    <TextBlock Text="반복 종료" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button
+                                x:Name="DeleteTaskButton"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="2"
+                                Padding="10,9"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="Transparent"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Click="DeleteTask_Click"
+                                CornerRadius="{StaticResource CueRadiusCard}">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource CueGap8}">
+                                    <FontIcon FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE74D;" />
+                                    <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="할 일 삭제" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

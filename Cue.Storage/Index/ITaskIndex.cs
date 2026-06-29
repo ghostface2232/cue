@@ -161,6 +161,15 @@ public interface ITaskIndex
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Non-deleted, dated (When kind <c>OnDate</c>) tasks whose When date falls within the inclusive
+    /// <paramref name="rangeStart"/>..<paramref name="rangeEnd"/> window, ordered by When date then rank —
+    /// the rows behind the 주간 타임라인 (weekly timeline). Unlike the active list queries this <i>includes</i>
+    /// completed tasks (a finished card renders dimmed in its week), so the range is a literal date span, not
+    /// an open-work lens. Unscheduled (no When) tasks are excluded — they have no week to sit in.
+    /// </summary>
+    Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default);
+
     // Recurrence history (the detail-panel timeline)
 
     /// <summary>

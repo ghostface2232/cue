@@ -87,6 +87,11 @@
                         <FontIcon Glyph="&#xE7C1;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem x:Name="WeeklyItem" Content="주간 타임라인" Tag="weekly">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8C0;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItemSeparator />
                 <NavigationViewItem
                     x:Name="GroupsSection"

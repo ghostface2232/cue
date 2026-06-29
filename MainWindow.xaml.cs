@@ -279,6 +279,16 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // The weekly timeline is its own page, not an index-backed list, so it bypasses the generic
+        // TaskListPage navigation below (mirrors the settings branch).
+        if (item.Tag is string weekly && weekly == "weekly")
+        {
+            _currentNavigation = null;
+            NavFrame.Navigate(typeof(WeeklyTimelinePage));
+            NavFrame.BackStack.Clear();
+            return;
+        }
+
         if (item.Tag is not (string or TaskListNavigation)) return;
         _currentNavigation = item.Tag as TaskListNavigation;
         NavFrame.Navigate(typeof(TaskListPage), item.Tag);
@@ -521,6 +531,7 @@ public sealed partial class MainWindow : Window
         ("anytime", "", "언젠가 할 일"),
         ("logbook", "", "완료한 일"),
         ("priority", "", "중요도"),
+        ("weekly", "", "주간 타임라인"),
     };
 
     private NavigationViewItem NavItemFor(string key) => key switch
@@ -530,6 +541,7 @@ public sealed partial class MainWindow : Window
         "anytime" => AnytimeItem,
         "logbook" => LogbookItem,
         "priority" => PriorityItem,
+        "weekly" => WeeklyItem,
         _ => throw new ArgumentOutOfRangeException(nameof(key)),
     };
 

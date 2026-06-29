@@ -834,6 +834,44 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Equal(Today.AddDays(3), indexed.WhenDate);
     }
 
+    [Fact]
+    public async Task TimelineRows_ReturnsDatedTasksInRangeInOrder_IncludingCompleted()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        // A window of two weeks around the reference Monday. Three tasks land inside it (one of them
+        // completed), and two fall just outside either edge.
+        var rangeStart = Today;                 // Monday 2026-06-22
+        var rangeEnd = Today.AddDays(13);       // Sunday 2026-07-05
+
+        var first = new TaskItem { Title = "범위 시작", When = OnDay(rangeStart), SortOrder = "b" };
+        var middleEarlier = new TaskItem { Title = "같은 날 먼저", When = OnDay(rangeStart.AddDays(5)), SortOrder = "a" };
+        var middleLater = new TaskItem { Title = "같은 날 나중", When = OnDay(rangeStart.AddDays(5)), SortOrder = "c" };
+        var doneInRange = new TaskItem { Title = "완료했지만 범위 안", When = OnDay(rangeEnd), CompletedAt = Now, SortOrder = "d" };
+        var beforeRange = new TaskItem { Title = "범위 이전", When = OnDay(rangeStart.AddDays(-1)) };
+        var afterRange = new TaskItem { Title = "범위 이후", When = OnDay(rangeEnd.AddDays(1)) };
+        var unscheduled = new TaskItem { Title = "날짜 없음" };
+
+        await store.SaveAsync(first);
+        await store.SaveAsync(middleEarlier);
+        await store.SaveAsync(middleLater);
+        await store.SaveAsync(doneInRange);
+        await store.SaveAsync(beforeRange);
+        await store.SaveAsync(afterRange);
+        await store.SaveAsync(unscheduled);
+
+        var rows = await store.GetTimelineRowsAsync(rangeStart, rangeEnd);
+
+        // Only the four in-range dated tasks, ordered by When date then sort_order; the out-of-range,
+        // unscheduled rows are excluded, and the completed task is kept (so the view can dim it).
+        Assert.Equal(
+            new[] { first.Id, middleEarlier.Id, middleLater.Id, doneInRange.Id },
+            rows.Select(r => r.Id).ToArray());
+        Assert.True(Assert.Single(rows, r => r.Id == doneInRange.Id).IsCompleted);
+    }
+
     private sealed class MutableTimeProvider : TimeProvider
     {
         public DateTimeOffset Now { get; set; }
