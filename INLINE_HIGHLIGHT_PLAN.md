@@ -15,8 +15,8 @@ Cue의 핵심 차별점은 한국어 자연어 파서다. 지금 이 파서는 *
 ### 동작 목표 (Acceptance)
 
 1. 날짜/시각/반복으로 해석된 토막에만, 정확히 그 자리에 액센트가 들어간다.
-2. 날짜·시각·반복은 **시각적으로 구분되는** 강조를 갖는다(예: `오늘`·`15:00`·`매주`가
-   서로 다른 톤). 색만으로는 전달하지 않고 보조 신호(밑줄/굵기)를 병행한다.
+2. 강조는 **단일 액센트 1색**(결정). 종류별 색 구분은 하지 않되, 토큰은 종류별로 분리돼
+   각각 클릭 교정 대상이 된다. 색약·고대비 대비 밑줄/굵기 등 색 외 신호를 병행한다.
 3. 한글 IME 조합 중인 미완성 글자에는 **절대** 서식이 들어가지 않는다(글자 깨짐 없음).
 4. 내용을 일부 지우거나 고치면 액센트가 깔끔히 취소되고, **다른 토막으로 전이되지 않는다.**
 5. `금요일` → `금요일마다`로 고치면 일회성 날짜에서 **매주 반복**으로 파싱·강조가 매끄럽게
@@ -102,7 +102,12 @@ UserControl 경계** 안에서 짓는다(8절).
 
 ---
 
-## 단계 0 — IME 조합 신호 스파이크 (착수 전 필수 게이트, 버리는 코드)
+## 단계 0 — IME 조합 신호 스파이크 (착수 전 필수 게이트, 버리는 코드) — ✅ 완료
+
+> **결과:** RichEditBox + 문서 CharacterFormat(글자색) 경로 확정. 오버레이는 기각(칩이 따로
+> 놀고 복합 표현에서 과다). 조합 신호 감지·게이트·full-reset 재틴트·삽입 상속 차단 검증됨.
+> Ctrl+Z는 WinUI `ITextDocument`에 `Undo(count)`가 없어 "색→글자" 2단계가 잔존하나 수용(삭제는
+> 주로 Backspace/Delete). 검증된 레시피는 `STEP0_IME_SPIKE.md`에 박제, 스파이크 코드는 제거됨.
 
 **왜 먼저인가:** 이 계획 전체의 트리거 설계는 "지금 조합 중인가"를 알 수 있다는 가정 위에
 선다(단계 2). WinUI의 `RichEditBox`는 자체 edit context를 내부 관리하므로 이 신호가 공짜가
@@ -130,10 +135,16 @@ UserControl 경계** 안에서 짓는다(8절).
 
 ---
 
-## 단계 1 — 파서 계약 확장 & 원문 char range 토대 (엔진 리팩터)
+## 단계 1 — 파서 계약 확장 & 원문 char range 토대 (엔진 리팩터) — ✅ 구현 완료
 
 **왜 먼저인가:** 인라인·되돌리기·클릭 교정이 전부 이 계약 위에 선다. 검증의 무게를 *테스트
 가능한 파서*로 밀어, 수동 검증 영역을 IME·서식으로 좁힌다. **UI 변경 없음.**
+
+> **구현 메모(실제 채택):** char range는 **길이보존 마스킹**으로 확정(소비 span을 같은 길이
+> 공백으로 치환 → 모든 match index가 원문 기준). kind는 4종(`Date`/`Time`/`Recurrence`/`Someday`).
+> 종류별 분리는 공유 fragment를 캡처 그룹으로 감싸 얻는다(`Date`→`(?<date>)`, `Time`/`DayPart`→
+> `(?<time>)`, 반복→`(?<recur>)`) → `금요일 3시`가 날짜·시각 토큰으로 분리. 기존 회귀 + 신규
+> 토큰 테스트 그린.
 
 ### 1.1 토큰 계약 (additive — 기존 소비자 무영향)
 
@@ -209,7 +220,18 @@ public IReadOnlyList<QuickAddToken> Tokens { get; init; } = Array.Empty<QuickAdd
     range가 확장되는지 단언.
 
 **완료 기준:** 콘솔/유닛 레벨에서 원문 substring·char range·kind가 정확. UI 무변경. 기존 +
-신규 테스트 전부 green.
+신규 테스트 전부 green. ✅ 달성.
+
+> **후속 리팩터(현재 버그 아님 — 후순위):** 토큰 의미를 엔진의 `group→kind` 추론 대신 **룰이
+> 직접 반환**하도록 `RuleExtractionResult(bool Claimed, IReadOnlyList<QuickAddToken> Tokens)`로
+> 계약을 넓히면 더 견고하다(custom boost 룰이 자기 토큰을 설명 가능, group 의미 충돌·중첩 여지
+> 제거). 단 현재 구현은 ① declined-match에 토큰을 안 만들고 ② 공유 fragment라 group 의미가
+> 고정이며 ③ recur·time이 겹치지 않으므로 동작 문제는 없다 → **custom 룰에 의미 토큰을 실을 때**
+> 도입한다.
+>
+> **SemanticTokens(교정 단위) vs HighlightSpans(인접 병합 렌더 단위)** 분리도 개념은 건전하나,
+> **단일 1색 + 토큰 분리** 방침에선 토큰 사이 공백이 분리감을 주므로 병합이 거의 불필요 →
+> 색조 구분이나 연속 강조가 필요해질 때 재검토(저우선).
 
 ---
 
@@ -236,8 +258,21 @@ public IReadOnlyList<QuickAddToken> Tokens { get; init; } = Array.Empty<QuickAdd
   화면 전환) → `Document.SetText`로 pull.
 - `QuickAddIsEmpty`/placeholder 가시성/`AddCommand`가 계속 `QuickAddText`를 읽도록 유지.
 - Enter 커밋 핸들러 `QuickAdd_KeyDown`(`TaskListPage.xaml.cs:180`) 재배선.
-- **offset 함정 가드:** `GetText`가 붙이는 말미 `\r`, BMP 1:1(한글 안전)·서로게이트(이모지)
-  어긋남을 가드한다.
+
+### 2.2.1 raw 문자열·offset 규칙 (★정합 전제)
+
+토큰 offset은 **화면 원문** 기준인데 커밋이 trim된 문자열을 파싱하면 선행 공백만큼 offset이
+어긋난다. 따라서:
+
+- 파서에는 **화면에 표시된 raw 문자열을 그대로** 넘긴다(`QuickAddText.Trim()` 금지). 빈 입력은
+  **whitespace-only 여부만 별도로** 검사한다.
+- 제목 앞뒤 공백 정리는 **파서 최종 title 단계에서만** 한다(이미 `CollapseWhitespace(...).Trim()`
+  로 동작 → VM은 pre-trim만 멈추면 됨).
+- **token offset 단위 = UTF-16 code unit**(.NET string/regex 기준). RichEditBox document 위치가
+  이 단위와 일치하는지가 정합의 전제다.
+- RichEditBox 말미 `\r`은 **document bridge 경계에서만** 제거한다(파서엔 안 들어가게).
+- 회귀 테스트(단계 1)에 **토큰 앞 이모지(서로게이트)·결합 문자·ZWJ·선행/후행 공백**을 포함해
+  offset 정합을 고정한다.
 
 ### 2.3 RTF 부작용 차단
 
@@ -284,9 +319,11 @@ public IReadOnlyList<QuickAddToken> Tokens { get; init; } = Array.Empty<QuickAdd
 - **caret:** 재틴트 전 `Document.Selection.StartPosition/EndPosition` 저장, 후 복원.
 - **undo 오염:** full-reset의 서식 op가 Ctrl+Z 스택에 섞이지 않도록 undo 그룹으로 격리한다.
 
-> **kind별 색조:** 단계 1의 `QuickAddTokenKind`에 따라 날짜/시각/반복을 서로 다른 톤으로
-> 칠하고, 색약·하이컨트라스트를 위해 밑줄/굵기 등 색 외 신호를 병행한다(목표 2,
-> `DesignTokens.xaml`의 HighContrast 딕셔너리 반영).
+> **단일 액센트 1색(결정):** 날짜/시각/반복을 색으로 구분하지 않고 **하나의 액센트 색**으로
+> 칠한다. 토큰은 종류별로 분리돼 있어(단계 1) 색이 같아도 클릭 교정은 토큰 단위로 동작하고,
+> 토큰 사이 공백이 자연히 분리감을 준다. `QuickAddTokenKind`는 색이 아니라 팝오버 옵션
+> 선택용 메타데이터다. 색약·하이컨트라스트 대비 밑줄/굵기 등 색 외 신호를 병행한다
+> (`DesignTokens.xaml`의 HighContrast 딕셔너리).
 
 **완료 기준(수동):**
 - 한 글자씩 지울 때 액센트가 정확히 취소되고 인접 토큰으로 전이되지 않음.
@@ -303,22 +340,44 @@ public IReadOnlyList<QuickAddToken> Tokens { get; init; } = Array.Empty<QuickAdd
 날짜로 빨려간다. false positive를 커밋 전에 잡는 것이 이 기능의 핵심 가치이므로, 에디터가
 억제 상태를 들어야 한다(목표 6).
 
-### 4.1 상태
+### 4.1 두 상태를 분리한다 (★핵심)
 
-- 에디터가 `List<{ AnchorText, ApproxStart, Decision }>` 형태의 override를 보유.
-- **앵커는 char offset이 아니라 안정 키**(원문 substring + 위치 근접)로 잡는다 — offset은
-  매 발화 변하므로(전이 문제와 동형). 해당 텍스트가 사라지면 그 override도 폐기.
+억제를 "그 span을 공백으로 만든 문자열을 파싱"으로 구현하면 **안 된다** — 블랭킹하면 그 단어가
+**최종 제목에서도 사라진다**(`금요일 회의`에서 `금요일` 되돌리기 → 제목이 "회의"가 됨, 원하는
+건 "금요일 회의"). 파서는 불변 원문과 두 종류의 상태를 함께 다룬다:
 
-### 4.2 적용
+- `recognitionExcluded`: 룰이 **인식하면 안 되는** 구간(되돌린 span ∪ 이미 소비된 span).
+- `consumedFromTitle`: 실제 인식 성공으로 **제목에서 제거할** 구간.
 
-- **재파싱 입력 마스킹(우선 채택):** override가 "이 span은 제목"이라 하면, 재파싱 입력에서
-  그 span을 파서가 못 보게 가린다. 토큰이 안 생기므로 색칠도 안 되고, `When`/`Recurrence`
-  재계산까지 자동으로 일관되게 반영된다.
-- **커밋도 동일 override 적용:** 되돌린 단어가 `Title`에 남도록 `AddAsync` 경로에 반영한다
-  (4.3 참고).
+**되돌린 span은 `recognitionExcluded`에만 넣는다.** 최종 제목 = 원문 − `consumedFromTitle`
+(되돌린 span은 제목에 남는다). 단계 1의 길이보존 마스킹 구조가 이 분리를 그대로 받는다 —
+룰에게는 excluded를 블랭킹한 뷰를 주되, **제목은 consumed만 제거한 별도 경로**로 만든다(현재는
+둘이 동일해 conflate돼 있으므로 여기서 갈라야 한다).
 
-**완료 기준(수동):** `금요일` 되돌리기 후 계속 타이핑해도 다시 날짜로 빨려가지 않음. 되돌린
-단어가 커밋 시 제목에 남음.
+### 4.2 파서 계약 확장
+
+```csharp
+ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId,
+                     IReadOnlyList<TextSpan> suppressedSpans);   // TextSpan = (int Start, int Length)
+```
+
+- 억제 span은 인식에서 제외하되 제목엔 남긴다(4.1). 토큰도 안 나오니 색칠도 안 된다.
+- `When`/`Recurrence` 재계산까지 자동으로 일관되게 반영된다(후필터가 아니라 입력 제외라서).
+- 기존 3-인자 `Parse`는 빈 `suppressedSpans` 오버로드로 유지(호환).
+
+### 4.3 span 추적은 결정적으로 (fuzzy 금지)
+
+`AnchorText + ApproxStart` fuzzy 매칭은 중복 단어(`회의 … 회의`, `3시 … 3시`)에서 모호하다.
+대신 **편집 delta로 span을 이동**한다(에디터 마커 추적과 동형):
+
+- 발화마다 이전/현재 텍스트의 편집 구간(단일 연속 편집 가정)을 계산해, 억제 span의 시작/끝을
+  그 delta로 민다.
+- **span 내부가 수정되면 그 억제를 폐기**한다(사용자가 그 단어를 고쳤다는 뜻). 텍스트가
+  사라져도 폐기.
+- offset 단위는 UTF-16 code unit(§2.2 참조).
+
+**완료 기준(수동):** `금요일` 되돌리기 후 계속 타이핑해도 다시 날짜로 안 빨려감. 되돌린 단어가
+커밋 시 제목에 남음. 중복 단어에서 엉뚱한 span이 억제되지 않음.
 
 ---
 
@@ -335,20 +394,35 @@ public IReadOnlyList<QuickAddToken> Tokens { get; init; } = Array.Empty<QuickAdd
   그리고 **항상 "원문으로 되돌리기"**(토큰의 `SourceText` 사용)를 고정석으로 둔다.
 - 치환 후 **재파싱 → range 재계산 → caret 재배치.** 되돌리기 선택은 단계 4의 override를 등록.
 
-### 5.2 커밋이 라이브(교정 반영) 파스를 소비
+### 5.2 커밋은 저장 직전 재파싱한다 (라이브 파스를 저장 진실로 쓰지 않음)
 
-현재 커밋은 raw 텍스트를 새로 `Parse`한다(`TaskListViewModel.cs:260`). 인라인 표시용 파스와
-클릭 교정 결과가 이미 있는데 Enter 때 raw를 재파싱하면 **팝오버 교정과 override가 버려진다.**
+> ⚠️ **원안 정정:** 초안은 "커밋이 라이브 파스를 소비"였으나, 이는 자정 경계·bare time
+> 롤오버·timezone/설정 변경에서 **결과가 낡는다**(파서는 `now` 의존). 라이브 파스는 표시용
+> 캐시로 강등한다.
 
-- 빠른 입력 컨트롤이 **현재 표시 중인 `ParsedQuickAdd`(교정·억제 반영본)** 를 보유한다.
-- 커밋은 raw 재파싱 대신 이 라이브 파스를 소비한다(텍스트가 마지막 파스 이후 바뀌었으면
-  override를 적용해 한 번 더 파스해 동기화).
-- VM 진입점은 plain string Parse 대신 `ParsedQuickAdd`를 받는 **오버로드를 추가**하되, 기존
-  string 경로(`AddAsync`)도 남겨 호환을 유지한다. `AddAsync`의 후처리(종일 변환, 반복 앵커
-  드롭 등 `TaskListViewModel.cs:265~280`)는 그대로 재사용.
+현재 `AddAsync`는 이미 커밋 시점에 raw를 재파싱하므로(`TaskListViewModel.cs:260`) 그 **신선도를
+유지**하되, 억제·교정을 함께 실어 재파싱이 그걸 존중하게 한다. 컨트롤은 완성된 `ParsedQuickAdd`
+대신 다음을 VM에 넘긴다:
+
+```csharp
+public sealed record QuickAddSubmission(
+    string RawText,
+    IReadOnlyList<TextSpan> SuppressedSpans,
+    IReadOnlyList<ExplicitCorrection> Corrections,
+    long DocumentVersion);
+```
+
+- VM은 저장 직전 **현재 clock/tz로 재파싱**(4.2의 `suppressedSpans` 적용)하고 기존
+  `QuickAddContext.Apply` 후처리(종일 변환·반복 앵커 드롭, `TaskListViewModel.cs:265~280`)를
+  그대로 재사용한다.
+- **라이브 파스는 표시용 캐시일 뿐 저장의 진실이 아니다.**
+- `Corrections`(`ExplicitCorrection`)는 **텍스트로 표현 안 되는 교정만** 담는다(예: bare `3시`를
+  15시로 확정, scheduled↔deadline 토글). 팝오버 교정이 전부 텍스트 치환이면 재파싱이 알아서
+  잡으니 **MVP에선 비워둬도 된다** — 비텍스트 교정을 도입할 때 채운다.
+- `DocumentVersion`은 비동기 파스 정합성/스테일 감지용.
 
 **완료 기준(수동):** 토큰 클릭 → 팝오버 → 대안/되돌리기가 텍스트·파싱·caret을 일관되게 갱신.
-교정 후 Enter 시 교정 결과가 커밋에 반영됨.
+교정 후 Enter 시 교정 결과가 커밋에 반영되고, 자정/타임존 변화에도 저장 결과가 최신.
 
 ---
 
@@ -383,8 +457,9 @@ public IReadOnlyList<QuickAddToken> Tokens { get; init; } = Array.Empty<QuickAdd
 | 파서 계약·토큰 range·kind | 엔진 리팩터, 회귀 깨짐 | ✅ 단위 테스트 (단계 1) | — |
 | RichEditBox ↔ VM 동기화 | TwoWay Text 상실 | 부분 | ✅ 입력/커밋 |
 | 재틴트 번짐/전이/깜빡임/caret | 서식 켜는 순간 발생 | ❌ | ✅ 삭제·수정·복합 입력 |
-| 되돌리기 억제 지속 | stateless 재흡수 | 부분(계약 후필터 테스트) | ✅ 입력 지속 시나리오 |
-| 커밋이 라이브 파스 소비 | 교정 유실 | 부분 | ✅ 교정 후 커밋 |
+| 되돌리기 억제(인식제외≠제목제거) | stateless 재흡수, span 추적 모호 | 부분(suppressedSpans 파서 테스트) | ✅ 입력 지속·중복 단어 |
+| 커밋 시 재파싱(억제·교정 반영) | 라이브 파스 staleness | 부분 | ✅ 교정·자정/타임존 후 커밋 |
+| offset 정합(UTF-16/이모지/ZWJ) | RichEdit 위치 ↔ .NET index 불일치 | ✅ 단위 테스트(단계 1) | ✅ 이모지/결합문자 입력 |
 | 클릭 수정 | 좌표→토큰 역매핑 | ❌ | ✅ 팝오버 상호작용 |
 
 ---

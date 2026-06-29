@@ -785,4 +785,35 @@ public sealed class KoreanDateParserTests
         var r = Parse("프로젝트 회고 정리");
         Assert.Empty(r.Tokens);
     }
+
+    // Token offsets are UTF-16 code units (so they line up with .NET string indexing and the editor
+    // bridge). Surrogate-pair emoji, combining marks, and ZWJ sequences must shift offsets by their
+    // code-unit width, and the parser must receive the RAW string (offsets relative to it).
+
+    [Theory]
+    [InlineData("\U0001F389 내일 파티", 3)]                 // 🎉 = 2 UTF-16 code units, then a space
+    [InlineData("\U0001F389\U0001F389 내일", 5)]            // two emoji = 4 code units, then a space
+    [InlineData("é 내일 회의", 3)]                    // "é" = e + combining acute (2 code units)
+    [InlineData("\U0001F469‍\U0001F4BB 내일", 6)]      // 👩‍💻 ZWJ sequence = 5 code units, then a space
+    [InlineData("  내일 장보기", 2)]                         // leading whitespace — offsets stay raw-relative
+    public void Tokens_OffsetsAreUtf16_AcrossEmojiCombiningZwjAndSpace(string input, int expectedStart)
+    {
+        var r = Parse(input);
+        var t = Assert.Single(r.Tokens);
+        Assert.Equal("내일", t.Text);
+        Assert.Equal(expectedStart, t.Start);
+        Assert.Equal("내일", input.Substring(t.Start, t.Length));
+    }
+
+    [Fact]
+    public void Tokens_RawLeadingAndTrailingSpace_OffsetsRelativeToRaw_TitleStillTrimmed()
+    {
+        // The parser is given the raw (untrimmed) string so token offsets match the visible text; only
+        // the final title is trimmed.
+        var r = Parse("  내일 장보기  ");
+        var t = Assert.Single(r.Tokens);
+        Assert.Equal(2, t.Start);
+        Assert.Equal("내일", t.Text);
+        Assert.Equal("장보기", r.Title);
+    }
 }
