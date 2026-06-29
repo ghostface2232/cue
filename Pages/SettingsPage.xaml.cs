@@ -64,6 +64,7 @@ public sealed partial class SettingsPage : Page
         PopulateFocusModes();
         ReloadCustomDateRows();
         AutoAfternoonSwitch.IsOn = _preferences.AutoAfternoonForBareOneToSix;
+        KeepCompletedSwitch.IsOn = _preferences.KeepCompletedForToday;
         VersionText.Text = $"버전 {AppVersion()}";
         ApplySelectedSection();
         _loading = false;
@@ -287,6 +288,15 @@ public sealed partial class SettingsPage : Page
         if (_loading)
             return;
         _preferences.AutoAfternoonForBareOneToSix = AutoAfternoonSwitch.IsOn;
+    }
+
+    private void KeepCompletedSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+            return;
+        // The active lists pick this up the next time they load — returning from Settings recreates the
+        // list page (and its view model), which reads the preference fresh.
+        _preferences.KeepCompletedForToday = KeepCompletedSwitch.IsOn;
     }
 
     private void AddCustomDate_Click(object sender, RoutedEventArgs e)
