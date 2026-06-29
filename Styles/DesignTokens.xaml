@@ -64,10 +64,10 @@
             <!-- Dark counterpart of the deepen-on-hover selection (white overlay). See Light note. -->
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#1DFFFFFF" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#28FFFFFF" />
-            <!-- Dark counterpart of the lifted-card surface: an elevated grey above the #202020 base that
-                 lightens further on hover (see Light note). -->
-            <Color x:Key="CueCardLiftColor">#383838</Color>
-            <Color x:Key="CueCardLiftHoverColor">#454545</Color>
+            <!-- Dark timeline-card surface: a deep grey, kept just above the #202020 base so the 1px card
+                 stroke still reads it as an elevated card, and lightening a touch on hover (see Light note). -->
+            <Color x:Key="CueCardLiftColor">#2C2C2C</Color>
+            <Color x:Key="CueCardLiftHoverColor">#383838</Color>
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
