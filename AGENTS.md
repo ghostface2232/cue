@@ -10,7 +10,7 @@ Foundation phase. The app is single-device and local-first right now. Multi-devi
  
 ## Tech stack
  
-- WinUI (Windows App SDK 2.0). This is a native UI framework, not a webview wrapper. Use Fluent Design, Mica/Acrylic materials, and native composition animations.
+- WinUI (Windows App SDK 2.2). This is a native UI framework, not a webview wrapper. Use Fluent Design, Mica/Acrylic materials, and native composition animations.
 - C# on .NET 10 (LTS, supported through 2028-11-10). Target framework moniker is of the form `net10.0-windows10.0.26100.0`.
 - MVVM via `CommunityToolkit.Mvvm` (use the source generators: `[ObservableProperty]`, `[RelayCommand]`).
 - Persistence source of truth: one JSON file per record, serialized with `System.Text.Json`.
