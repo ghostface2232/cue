@@ -122,9 +122,11 @@ internal static class Korean
     /// <summary>A Korean weekday token: long form ("금요일") or colloquial short form ("금욜").</summary>
     public const string WeekdayToken = @"[월화수목금토일](?:요일|욜)";
 
-    /// <summary>A date expression. Alternatives are ordered most-specific first.</summary>
+    /// <summary>A date expression. Alternatives are ordered most-specific first. The whole expression is
+    /// captured as <c>date</c> so a token can be located even though the inner groups capture only the
+    /// variable parts (e.g. "다음 주 금요일" — <c>nwwd</c> captures only "금").</summary>
     public const string Date =
-        @"(?:" +
+        @"(?<date>" +
         @"(?<rel>오늘|내일모레|낼모레|모레|글피|내일|낼|이따)" +
         @"|(?<weekend>이번\s*주말|주말)" +
         @"|(?:다음\s*달|담\s*달)\s*(?<nmdom>\d{1,2})\s*일" +
@@ -142,12 +144,14 @@ internal static class Korean
         @"|(?<domonly>\d{1,2})\s*일" +
         @")";
 
-    /// <summary>A clock time, optionally with a meridiem/part-of-day prefix.</summary>
+    /// <summary>A clock time, optionally with a meridiem/part-of-day prefix. Wrapped as <c>time</c> so the
+    /// whole clock expression can be located as one token.</summary>
     public const string Time =
-        @"(?:(?<mer>오전|오후|새벽|아침|저녁|밤|점심)\s*)?(?<h>\d{1,2}|" + NativeHour + @")\s*시(?:\s*(?<min>\d{1,2})\s*분|\s*(?<half>반))?";
+        @"(?<time>(?:(?<mer>오전|오후|새벽|아침|저녁|밤|점심)\s*)?(?<h>\d{1,2}|" + NativeHour + @")\s*시(?:\s*(?<min>\d{1,2})\s*분|\s*(?<half>반))?)";
 
-    /// <summary>A bare part-of-day with no clock ("저녁", "점심때", "오전").</summary>
-    public const string DayPart = @"(?<daypart>새벽|아침|점심|오전|오후|저녁|밤)(?:에|때)?";
+    /// <summary>A bare part-of-day with no clock ("저녁", "점심때", "오전"). Also wrapped as <c>time</c>, so a
+    /// bare day-part is located the same way as a clock time.</summary>
+    public const string DayPart = @"(?<time>(?<daypart>새벽|아침|점심|오전|오후|저녁|밤)(?:에|때)?)";
 
     /// <summary>The largest valid day for a month (leap-permissive for February).</summary>
     public static int MaxDayOfMonth(int month) => month switch

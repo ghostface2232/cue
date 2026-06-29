@@ -694,4 +694,95 @@ public sealed class KoreanDateParserTests
         Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
         Assert.Null(r.Recurrence);
     }
+
+    // Tokens (inline-highlight contract): each recognized span is located in the ORIGINAL input so the
+    // quick-add box can accent exactly those chars and offer per-token correction.
+
+    [Theory]
+    [InlineData("내일 장보기")]
+    [InlineData("금요일에 미용실 가기")]
+    [InlineData("3월 15일 동창 모임 참석")]
+    [InlineData("내일 오후 3시 회의 준비")]
+    [InlineData("매주 금요일 팀 회의")]
+    [InlineData("다음 주 금요일 오후 3시 보고서")]
+    [InlineData("언젠가 책 읽기")]
+    [InlineData("보고서 금요일까지 끝내기")]
+    public void Tokens_PointAtTheirOwnSubstring_AndDoNotOverlap(string input)
+    {
+        var r = Parse(input);
+        Assert.NotEmpty(r.Tokens);
+        foreach (var t in r.Tokens)
+        {
+            Assert.True(t.Start >= 0 && t.Start + t.Length <= input.Length);
+            Assert.Equal(input.Substring(t.Start, t.Length), t.Text);
+        }
+        for (var i = 1; i < r.Tokens.Count; i++)
+            Assert.True(r.Tokens[i].Start >= r.Tokens[i - 1].Start + r.Tokens[i - 1].Length);
+    }
+
+    [Fact]
+    public void Tokens_SplitDateAndTimeIntoSeparateUnits()
+    {
+        var r = Parse("금요일 3시 회의");
+        Assert.Equal(2, r.Tokens.Count);
+        Assert.Equal(QuickAddTokenKind.Date, r.Tokens[0].Kind);
+        Assert.Equal("금요일", r.Tokens[0].Text);
+        Assert.Equal(QuickAddTokenKind.Time, r.Tokens[1].Kind);
+        Assert.Equal("3시", r.Tokens[1].Text);
+    }
+
+    [Fact]
+    public void Tokens_DatePhraseIsOneToken_TimeIsAnother()
+    {
+        var r = Parse("다음 주 금요일 오후 3시 보고서");
+        Assert.Equal(2, r.Tokens.Count);
+        Assert.Equal(QuickAddTokenKind.Date, r.Tokens[0].Kind);
+        Assert.Equal("다음 주 금요일", r.Tokens[0].Text);
+        Assert.Equal(QuickAddTokenKind.Time, r.Tokens[1].Kind);
+        Assert.Equal("오후 3시", r.Tokens[1].Text);
+    }
+
+    [Fact]
+    public void Tokens_BareWeekday_IsDateKind()
+    {
+        var r = Parse("금요일 회의");
+        var t = Assert.Single(r.Tokens);
+        Assert.Equal(QuickAddTokenKind.Date, t.Kind);
+        Assert.Equal("금요일", t.Text);
+    }
+
+    [Fact]
+    public void Tokens_WeekdayWithMada_BecomesOneRecurrenceToken()
+    {
+        // 금요일 → 금요일마다: the kind flips from Date (one-off) to Recurrence, covering the 마다 too.
+        var r = Parse("금요일마다 회의");
+        var t = Assert.Single(r.Tokens);
+        Assert.Equal(QuickAddTokenKind.Recurrence, t.Kind);
+        Assert.Equal("금요일마다", t.Text);
+    }
+
+    [Fact]
+    public void Tokens_Someday_IsSomedayKind()
+    {
+        var r = Parse("언젠가 책 읽기");
+        var t = Assert.Single(r.Tokens);
+        Assert.Equal(QuickAddTokenKind.Someday, t.Kind);
+        Assert.Equal("언젠가", t.Text);
+    }
+
+    [Fact]
+    public void Tokens_GlueAvoidance_EmitsNoFalseToken()
+    {
+        // "내일로" must not yield an 내일 token (RightEdge blocks the match), so nothing is highlighted.
+        var r = Parse("내일로 가기");
+        Assert.Empty(r.Tokens);
+        Assert.Equal("내일로 가기", r.Title);
+    }
+
+    [Fact]
+    public void Tokens_AreEmptyWhenNothingRecognized()
+    {
+        var r = Parse("프로젝트 회고 정리");
+        Assert.Empty(r.Tokens);
+    }
 }

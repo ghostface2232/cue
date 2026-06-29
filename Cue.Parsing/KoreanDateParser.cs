@@ -65,13 +65,14 @@ public sealed class KoreanDateParser : IDateParser
         {
             var context = new ParseContext(now, timeZoneId, _options);
             var result = new QuickAddResult();
+            var tokens = new List<QuickAddToken>();
 
             var work = input;
             foreach (var rule in _rules)
-                work = Apply(rule, work, context, result);
+                work = Apply(rule, work, input, context, result, tokens);
 
             if (!result.WhenAssigned)
-                work = LibraryFallback(work, context, result);
+                work = LibraryFallback(work, input, context, result, tokens);
 
             if (!result.WhenAssigned && result.Recurrence is { } recurrence)
                 result.TrySetWhen(ScheduledWhen.On(recurrence.Anchor), hasTime: result.RecurrenceAnchorHasTime);
@@ -80,6 +81,8 @@ public sealed class KoreanDateParser : IDateParser
             if (title.Length == 0)
                 title = input.Trim();
 
+            tokens.Sort((a, b) => a.Start.CompareTo(b.Start));
+
             return new ParsedQuickAdd(
                 title,
                 result.WhenAssigned ? result.When : ScheduledWhen.Unscheduled,
@@ -87,6 +90,7 @@ public sealed class KoreanDateParser : IDateParser
             {
                 WhenAssigned = result.WhenAssigned,
                 WhenHasTime = result.WhenHasTime,
+                Tokens = tokens,
             };
         }
         catch
@@ -96,7 +100,7 @@ public sealed class KoreanDateParser : IDateParser
         }
     }
 
-    private static string Apply(IQuickAddRule rule, string work, ParseContext context, QuickAddResult result)
+    private static string Apply(IQuickAddRule rule, string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens)
     {
         try
         {
@@ -104,10 +108,13 @@ public sealed class KoreanDateParser : IDateParser
             var guard = 0;
             while (match.Success && guard++ < 64)
             {
-                if (rule.Extract(match, context, result))
+                if (match.Length > 0 && rule.Extract(match, context, result))
                 {
-                    // Strip the recognized span, leaving a space so neighbouring words don't fuse.
-                    work = work.Remove(match.Index, match.Length).Insert(match.Index, " ");
+                    AddTokens(tokens, match, rule.TokenKind, input);
+                    // Mask the recognized span with same-length spaces. Length-preserving so every
+                    // match index stays aligned to the ORIGINAL input (so token ranges are exact), and
+                    // the spaces still keep neighbouring words from fusing in the title.
+                    work = Mask(work, match.Index, match.Length);
                     match = rule.Pattern.Match(work);
                 }
                 else
@@ -124,11 +131,44 @@ public sealed class KoreanDateParser : IDateParser
         return work;
     }
 
+    /// <summary>Replaces <paramref name="length"/> chars at <paramref name="index"/> with spaces, keeping
+    /// the string length (and therefore all original offsets) intact.</summary>
+    private static string Mask(string work, int index, int length)
+        => string.Concat(work.AsSpan(0, index), new string(' ', length), work.AsSpan(index + length));
+
+    /// <summary>
+    /// Emits tokens for a claimed match. A match that carries the shared <c>date</c>/<c>time</c>/
+    /// <c>recur</c>/<c>custom</c> capture groups is split into one token per present group (so a combined
+    /// "금요일 3시" yields a separate date token and time token, each independently editable). A match with
+    /// none of those groups (e.g. "언젠가", "3시간 후", "3일 안에") becomes a single token of the rule's
+    /// <see cref="IQuickAddRule.TokenKind"/>.
+    /// </summary>
+    private static void AddTokens(List<QuickAddToken> tokens, Match match, QuickAddTokenKind defaultKind, string input)
+    {
+        var any = false;
+        Emit("recur", QuickAddTokenKind.Recurrence);
+        Emit("date", QuickAddTokenKind.Date);
+        Emit("custom", QuickAddTokenKind.Date);
+        Emit("time", QuickAddTokenKind.Time);
+        if (!any)
+            tokens.Add(new QuickAddToken(defaultKind, match.Index, match.Length, input.Substring(match.Index, match.Length)));
+
+        void Emit(string group, QuickAddTokenKind kind)
+        {
+            var g = match.Groups[group];
+            if (g.Success && g.Length > 0)
+            {
+                tokens.Add(new QuickAddToken(kind, g.Index, g.Length, input.Substring(g.Index, g.Length)));
+                any = true;
+            }
+        }
+    }
+
     /// <summary>
     /// Last-resort recognition via the library. Defensive throughout: any shape it returns that we
     /// don't understand is ignored, and it only ever fills an unset When.
     /// </summary>
-    private string LibraryFallback(string work, ParseContext context, QuickAddResult result)
+    private string LibraryFallback(string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens)
     {
         try
         {
@@ -156,7 +196,12 @@ public sealed class KoreanDateParser : IDateParser
                     {
                         var at = work.IndexOf(r.Text, StringComparison.Ordinal);
                         if (at >= 0)
-                            work = work.Remove(at, r.Text.Length).Insert(at, " ");
+                        {
+                            tokens.Add(new QuickAddToken(
+                                hasTime ? QuickAddTokenKind.Time : QuickAddTokenKind.Date,
+                                at, r.Text.Length, input.Substring(at, r.Text.Length)));
+                            work = Mask(work, at, r.Text.Length);
+                        }
                     }
                     return work;
                 }
