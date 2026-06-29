@@ -481,81 +481,93 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     // in place. Open-task counts (badges) likewise exclude completed — see GetOpenTaskCounts*.
     // The home "모든 할 일" (AllTasks) list spans every group — no group filter — so a task in a group
     // still surfaces here. Each row carries its embedded checklist for the nested rows under it.
-    public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " " +
             "ORDER BY t.sort_order;",
-            _ => { }, cancellationToken);
+            cmd => BindCompletedTodayWindow(cmd, keepCompletedToday), cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " " +
             "AND t.group_id = $group ORDER BY t.sort_order;",
-            cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
+            cmd => { Bind(cmd, "$group", taskGroupId.ToString()); BindCompletedTodayWindow(cmd, keepCompletedToday); }, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
             SelectRows +
             "INNER JOIN task_tags tt ON tt.task_id = t.id " +
-            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " " +
             "ORDER BY t.sort_order;",
-            cmd => Bind(cmd, "$tag", tagId.ToString()), cancellationToken);
+            cmd => { Bind(cmd, "$tag", tagId.ToString()); BindCompletedTodayWindow(cmd, keepCompletedToday); }, cancellationToken);
 
     // The completed companions of the two classification lists above: a page of the rows of a group's /
     // tag's collapsible "완료한 일" section, ordered most-recently-completed first. The section pages its
     // rows in (it opens showing only its count), so the LIMIT/OFFSET window narrows what is realized; the
     // default window returns the whole list. The matching GetCompletedCount* answers the header total.
-    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
             SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            (excludeCompletedToday ? "AND NOT " + CompletedTodayPredicate + " " : "") +
             "AND t.group_id = $group ORDER BY t.completed_at DESC LIMIT $limit OFFSET $offset;",
-            cmd => { Bind(cmd, "$group", taskGroupId.ToString()); BindPage(cmd, limit, offset); }, cancellationToken);
+            cmd => { Bind(cmd, "$group", taskGroupId.ToString()); BindPage(cmd, limit, offset); BindCompletedTodayWindow(cmd, excludeCompletedToday); }, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
             SelectRows +
             "INNER JOIN task_tags tt ON tt.task_id = t.id " +
             "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            (excludeCompletedToday ? "AND NOT " + CompletedTodayPredicate + " " : "") +
             "ORDER BY t.completed_at DESC LIMIT $limit OFFSET $offset;",
-            cmd => { Bind(cmd, "$tag", tagId.ToString()); BindPage(cmd, limit, offset); }, cancellationToken);
+            cmd => { Bind(cmd, "$tag", tagId.ToString()); BindPage(cmd, limit, offset); BindCompletedTodayWindow(cmd, excludeCompletedToday); }, cancellationToken);
 
-    public Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+    public Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryScalarAsync(
-            "SELECT COUNT(*) FROM tasks " +
-            "WHERE deleted_at IS NULL AND completed_at IS NOT NULL AND group_id = $group;",
-            cmd => Bind(cmd, "$group", taskGroupId.ToString()), cancellationToken);
+            "SELECT COUNT(*) FROM tasks t " +
+            "WHERE t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            (excludeCompletedToday ? "AND NOT " + CompletedTodayPredicate + " " : "") +
+            "AND t.group_id = $group;",
+            cmd => { Bind(cmd, "$group", taskGroupId.ToString()); BindCompletedTodayWindow(cmd, excludeCompletedToday); }, cancellationToken);
 
-    public Task<int> GetCompletedCountByTagAsync(Guid tagId, CancellationToken cancellationToken = default)
+    public Task<int> GetCompletedCountByTagAsync(Guid tagId, bool excludeCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryScalarAsync(
             "SELECT COUNT(*) FROM tasks t " +
             "INNER JOIN task_tags tt ON tt.task_id = t.id " +
-            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NOT NULL;",
-            cmd => Bind(cmd, "$tag", tagId.ToString()), cancellationToken);
+            "WHERE tt.tag_id = $tag AND t.deleted_at IS NULL AND t.completed_at IS NOT NULL " +
+            (excludeCompletedToday ? "AND NOT " + CompletedTodayPredicate + " " : "") + ";",
+            cmd => { Bind(cmd, "$tag", tagId.ToString()); BindCompletedTodayWindow(cmd, excludeCompletedToday); }, cancellationToken);
 
     // The 그룹 없음 / 태그 없음 lists re-create the quick-capture inbox: the home list spans every group,
     // so unfiled captures get lost among already-sorted work — these narrow it to just what still needs
     // filing. group_id IS NULL is the unfiled-group test; the NOT IN sub-select is the no-tag test.
-    public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL AND t.group_id IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " AND t.group_id IS NULL " +
             "ORDER BY t.sort_order;",
-            _ => { }, cancellationToken);
+            cmd => BindCompletedTodayWindow(cmd, keepCompletedToday), cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " " +
             "AND t.id NOT IN (SELECT task_id FROM task_tags) " +
             "ORDER BY t.sort_order;",
-            _ => { }, cancellationToken);
+            cmd => BindCompletedTodayWindow(cmd, keepCompletedToday), cancellationToken);
 
     // Time axis (computed against the current day)
 
-    public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(CancellationToken cancellationToken = default)
-        => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
-            "AND t.when_kind = 'OnDate' AND t.when_date IS NOT NULL AND t.when_date <= $today " +
+    public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+    {
+        // Open work actionable today: a When date today-or-earlier (overdue rolls forward). When keeping
+        // completed work in place, the list also admits anything completed today regardless of its When —
+        // matching exactly the set the "오늘 완료한 일" section would otherwise show (including a completed
+        // unscheduled or future-dated task) — so a finished row lingers dimmed where it sat until rollover.
+        const string due = "(t.completed_at IS NULL AND t.when_kind = 'OnDate' AND t.when_date IS NOT NULL AND t.when_date <= $today)";
+        var where = keepCompletedToday ? due + " OR " + CompletedTodayPredicate : due;
+        return QueryAsync(
+            SelectRows + "WHERE t.deleted_at IS NULL AND (" + where + ") " +
             "ORDER BY t.when_date, t.sort_order;",
-            cmd => Bind(cmd, "$today", Today()), cancellationToken);
+            cmd => { Bind(cmd, "$today", Today()); BindCompletedTodayWindow(cmd, keepCompletedToday); }, cancellationToken);
+    }
 
     // The Today view's "오늘 완료한 일" section: anything whose completion instant falls within the
     // current local day, newest first. The local day is converted to a UTC [start, end) window and
@@ -582,18 +594,18 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             cmd => { Bind(cmd, "$start", start); Bind(cmd, "$end", end); }, cancellationToken);
     }
 
-    public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " " +
             "AND t.when_kind = 'OnDate' AND t.when_date > $today " +
             "ORDER BY t.when_date, t.sort_order;",
-            cmd => Bind(cmd, "$today", Today()), cancellationToken);
+            cmd => { Bind(cmd, "$today", Today()); BindCompletedTodayWindow(cmd, keepCompletedToday); }, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            SelectRows + "WHERE t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " " +
             "AND t.when_kind = 'Unscheduled' ORDER BY t.sort_order;",
-            _ => { }, cancellationToken);
+            cmd => BindCompletedTodayWindow(cmd, keepCompletedToday), cancellationToken);
 
     public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
         => QueryAsync(
@@ -601,14 +613,15 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "ORDER BY t.completed_at DESC;",
             _ => { }, cancellationToken);
 
-    public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
         => QueryAsync(
             // Every open active task, grouped by priority. Unprioritized tasks (priority 0) are kept and
             // sorted last (the "없음" bucket) via "t.priority = 0" ordering ahead of the priority key.
-            // Completed tasks are excluded — the 중요도 view is a lens on open ranked work.
-            SelectRows + "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL " +
+            // Completed tasks are excluded — the 중요도 view is a lens on ranked work — unless the keep-in-place
+            // preference is on, in which case work completed today lingers dimmed in its priority bucket.
+            SelectRows + "WHERE t.deleted_at IS NULL AND " + OpenOrCompletedTodayClause(keepCompletedToday) + " " +
             "ORDER BY t.priority = 0, t.priority, t.sort_order;",
-            _ => { }, cancellationToken);
+            cmd => BindCompletedTodayWindow(cmd, keepCompletedToday), cancellationToken);
 
     // Recurrence history (the detail-panel timeline)
 
@@ -864,6 +877,30 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     {
         Bind(cmd, "$limit", limit);
         Bind(cmd, "$offset", offset);
+    }
+
+    // The completion predicate for an active list. Open-only by default; when keepCompletedToday is on the
+    // predicate also admits tasks completed within the current local day, so a just-finished task lingers
+    // dimmed in its place until the day rolls over (the "완료한 일 당일 표시" preference). Pairs with
+    // BindCompletedTodayWindow for the $cstart/$cend bindings the keep-on form references.
+    private static string OpenOrCompletedTodayClause(bool keepCompletedToday)
+        => keepCompletedToday
+            ? "(t.completed_at IS NULL OR (t.completed_at >= $cstart AND t.completed_at < $cend))"
+            : "t.completed_at IS NULL";
+
+    // The "this task was completed within the current local day" test, as a SQL fragment over completed_at.
+    // Used both to admit completed-today rows into an active list and (negated) to keep them out of a
+    // "완료한 일" section so a kept-in-place row is never also listed there. Needs the $cstart/$cend window.
+    private const string CompletedTodayPredicate = "(t.completed_at >= $cstart AND t.completed_at < $cend)";
+
+    // Binds the [today-start, tomorrow-start) UTC window referenced by the completed-today predicates. A
+    // no-op when the caller isn't using one, so a query that never mentions $cstart/$cend binds nothing.
+    private void BindCompletedTodayWindow(SqliteCommand cmd, bool needsWindow)
+    {
+        if (!needsWindow) return;
+        var (start, end) = TodayUtcRange();
+        Bind(cmd, "$cstart", start);
+        Bind(cmd, "$cend", end);
     }
 
     public async ValueTask DisposeAsync()
