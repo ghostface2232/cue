@@ -432,7 +432,7 @@
             <!-- Global sort picker (right of the title). One choice, saved app-wide and reflected on every
                  standard list; hidden on the 중요도 / 완료한 일 views, which carry their own ordering. The
                  subtle transparent button echoes the restrained header look — secondary text, no fill at
-                 rest. Picking 자유 배치 re-enables drag-to-reorder. -->
+                 rest. -->
             <DropDownButton
                 x:Name="SortButton"
                 Grid.Column="1"
@@ -450,7 +450,6 @@
                 </StackPanel>
                 <DropDownButton.Flyout>
                     <MenuFlyout Placement="BottomEdgeAlignedRight">
-                        <RadioMenuFlyoutItem Tag="Manual" Text="자유 배치" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortManual, Mode=OneWay}" />
                         <RadioMenuFlyoutItem Tag="Date" Text="날짜순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByDate, Mode=OneWay}" />
                         <RadioMenuFlyoutItem Tag="Name" Text="이름순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByName, Mode=OneWay}" />
                         <RadioMenuFlyoutItem Tag="Priority" Text="중요도순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByPriority, Mode=OneWay}" />
@@ -496,7 +495,7 @@
                             ElementPrepared="TaskRepeater_ElementPrepared"
                             ItemTemplate="{StaticResource TaskRowTemplate}"
                             ItemsSource="{x:Bind ViewModel.Tasks, Mode=OneWay}"
-                            Loaded="ReorderRepeater_Loaded" />
+                            Loaded="TaskRepeater_Loaded" />
 
                         <!-- Collapsible "완료한 일" section (Today / group / tag). Hidden entirely when there
                              is nothing completed; starts collapsed. The header reuses the priority/sidebar
@@ -620,7 +619,7 @@
                                     ElementPrepared="TaskRepeater_ElementPrepared"
                                     ItemTemplate="{StaticResource TaskRowTemplate}"
                                     ItemsSource="{x:Bind Tasks}"
-                                    Loaded="ReorderRepeater_Loaded"
+                                    Loaded="TaskRepeater_Loaded"
                                     Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </DataTemplate>

@@ -7,13 +7,12 @@ namespace Cue.ViewModels;
 /// <summary>
 /// Orders an open task-row projection for display per the global <see cref="TaskSortMode"/>. Shared by every
 /// surface that honours the choice — the standard list, each 중요도 section, and each 타임라인 week column — so
-/// one rule drives them all: 자유 배치 keeps the index's stored-rank order, while the computed modes layer a
-/// date / name / priority ordering over it, each falling back to the stored rank as a stable tiebreaker.
+/// one rule drives them all: a date / name / priority ordering, each falling back to the stored fractional
+/// rank (the order tasks were added) as a stable tiebreaker.
 /// </summary>
 /// <remarks>
 /// Used to order rows <i>within</i> a fixed grouping too: the 중요도 buckets and the timeline's week columns
-/// keep their structure, and this only sets the order of the rows inside each. A computed sort never touches
-/// the persisted ranks, so 자유 배치 always restores the hand-arranged order exactly.
+/// keep their structure, and this only sets the order of the rows inside each.
 /// </remarks>
 public static class TaskListOrdering
 {
@@ -38,9 +37,8 @@ public static class TaskListOrdering
                 .ThenBy(i => i.Priority)
                 .ThenBy(i => i.SortOrder, StringComparer.Ordinal)
                 .ToList(),
-            // 자유 배치: the stored fractional rank, the same ordinal/byte order SQLite's BINARY collation
-            // sorts by. The flat list already arrives in this order, but the timeline arrives date-then-rank,
-            // so sort explicitly here too — that is what makes a manual move reorder a timeline week column.
+            // Defensive fallback for any unmapped mode: the stored fractional rank (the order tasks were
+            // added), the same ordinal/byte order SQLite's BINARY collation sorts by.
             _ => items
                 .OrderBy(i => i.SortOrder, StringComparer.Ordinal)
                 .ToList(),

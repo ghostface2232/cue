@@ -357,9 +357,9 @@ public partial class WeeklyTimelineViewModel : ObservableObject
         var items = await _index.GetTimelineRowsAsync(_rangeStart, _rangeEnd);
 
         // The columns (ISO weeks) are fixed, but the order of cards *within* a week follows the global sort
-        // (자유 배치 / 날짜순 / 이름순 / 중요도순) — the same preference the lists use. Reordering the flat result
-        // sets the band-packing encounter order below, so within each week column the cards stack in that order.
-        items = TaskListOrdering.Apply(items, _listPreferences?.SortMode ?? TaskSortMode.Manual);
+        // (날짜순 / 이름순 / 중요도순) — the same preference the lists use. Reordering the flat result sets the
+        // band-packing encounter order below, so within each week column the cards stack in that order.
+        items = TaskListOrdering.Apply(items, _listPreferences?.SortMode ?? TaskSortMode.Date);
 
         // Pack into bands: each task drops into the next free band of its own week column, so tasks in
         // different weeks share a band (stack from band 0) instead of every task taking its own row. Within a

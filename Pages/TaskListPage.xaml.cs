@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using Microsoft.UI.Composition;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
@@ -47,7 +46,6 @@ public sealed partial class TaskListPage : Page
     private readonly INavDataChangeNotifier _navNotifier;
     private readonly AppPreferences _preferences;
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
-    private readonly ConditionalWeakTable<ItemsRepeater, ReorderSurface> _reorderSurfaces = new();
     // Task-row repeaters (the open list + each priority section), used to locate a row's realized
     // container for the post-completion fold. Completed/Logbook repeaters are not registered — their
     // rows can't enter the acknowledgement flow.
@@ -63,10 +61,6 @@ public sealed partial class TaskListPage : Page
     private bool _detailOverlay;
     private bool _listCompact;
     private bool _detailResizable;
-
-    // Set while a drag-reorder commits, so the row that moves in the bound collection does not also
-    // play the list's entrance animation on top of the drop settle.
-    private bool _suppressItemEntrance;
 
     // Set when the detail panel opens a recurring task, so the recurrence timeline scrolls to its live
     // head (next / 종료) pip once the strip lays out — showing the recent cycles and the next by default.
@@ -911,21 +905,14 @@ public sealed partial class TaskListPage : Page
     }
 
     /// <summary>
-    /// Attaches the drag-to-reorder surface to a task <see cref="ItemsRepeater"/> the first time it
-    /// loads. The surface is layout-agnostic, so the same wiring serves the standard list and each
-    /// group section's repeater.
+    /// Registers a task <see cref="ItemsRepeater"/> the first time it loads so a completed row can find
+    /// its realized container for the post-completion fold. Serves the standard list and each priority
+    /// section's repeater.
     /// </summary>
-    private void ReorderRepeater_Loaded(object sender, RoutedEventArgs e)
+    private void TaskRepeater_Loaded(object sender, RoutedEventArgs e)
     {
-        if (sender is not ItemsRepeater repeater || _reorderSurfaces.TryGetValue(repeater, out _)) return;
-        if (!_taskRepeaters.Contains(repeater)) _taskRepeaters.Add(repeater);
-        var surface = ReorderSurface.Attach(
-            repeater,
-            (items, movedId) => ViewModel.PersistReorderAsync(items, movedId),
-            _animationsEnabled,
-            suppress => _suppressItemEntrance = suppress,
-            () => ViewModel.CanReorder);
-        _reorderSurfaces.Add(repeater, surface);
+        if (sender is ItemsRepeater repeater && !_taskRepeaters.Contains(repeater))
+            _taskRepeaters.Add(repeater);
     }
 
     /// <summary>Applies a sort choice from the header dropdown. The selected option carries its
@@ -938,7 +925,7 @@ public sealed partial class TaskListPage : Page
 
     private void TaskRepeater_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
     {
-        if (_suppressItemEntrance || !_animationsEnabled || args.Element is not UIElement element) return;
+        if (!_animationsEnabled || args.Element is not UIElement element) return;
         var visual = ElementCompositionPreview.GetElementVisual(element);
         visual.StopAnimation("Opacity");
         visual.StopAnimation("Scale");

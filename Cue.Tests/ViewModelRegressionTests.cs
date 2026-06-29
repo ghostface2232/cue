@@ -2282,6 +2282,7 @@ public sealed class ViewModelRegressionTests
     {
         public bool KeepCompletedForToday { get; } = keepCompletedForToday;
         public bool ShowWeekNumber { get; } = showWeekNumber;
+        public TaskSortMode SortMode { get; set; } = TaskSortMode.Date;
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider

@@ -75,7 +75,6 @@ public partial class TaskListViewModel : ObservableObject
     private bool ShowWeekNumber => _listPreferences?.ShowWeekNumber ?? false;
 
     // Serializes reorder persists so a fast run of drops can't interleave their rank writes.
-    private readonly SemaphoreSlim _reorderGate = new(1, 1);
 
     // Serializes completion toggles so concurrent/rapid checks can't reorder their saves.
     private readonly SemaphoreSlim _toggleGate = new(1, 1);
@@ -200,31 +199,22 @@ public partial class TaskListViewModel : ObservableObject
     /// dropdown's label, its checked option, and whether drag-reorder is live.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SortModeLabel))]
-    [NotifyPropertyChangedFor(nameof(IsSortManual))]
     [NotifyPropertyChangedFor(nameof(IsSortByDate))]
     [NotifyPropertyChangedFor(nameof(IsSortByName))]
     [NotifyPropertyChangedFor(nameof(IsSortByPriority))]
-    [NotifyPropertyChangedFor(nameof(CanReorder))]
     public partial TaskSortMode SortMode { get; set; }
 
     /// <summary>The sort dropdown shows only on standard (flat) lists — the 중요도 / 완료한 일 views carry
     /// their own intrinsic ordering.</summary>
     public bool CanChooseSort => IsStandardList;
 
-    /// <summary>Drag-to-reorder is live only in 자유 배치 (the hand-arranged order) — a computed sort owns the
-    /// order in the other modes, so dragging is off there. This holds wherever a reorder surface is wired:
-    /// the standard list and each 중요도 section (whose within-section order is the same global manual rank).</summary>
-    public bool CanReorder => SortMode == TaskSortMode.Manual;
-
     public string SortModeLabel => SortMode switch
     {
-        TaskSortMode.Date => "날짜순",
         TaskSortMode.Name => "이름순",
         TaskSortMode.Priority => "중요도순",
-        _ => "자유 배치",
+        _ => "날짜순",
     };
 
-    public bool IsSortManual => SortMode == TaskSortMode.Manual;
     public bool IsSortByDate => SortMode == TaskSortMode.Date;
     public bool IsSortByName => SortMode == TaskSortMode.Name;
     public bool IsSortByPriority => SortMode == TaskSortMode.Priority;
@@ -259,7 +249,7 @@ public partial class TaskListViewModel : ObservableObject
         _timeZone = zone;
         _navNotifier = navNotifier;
         _listPreferences = listPreferences;
-        SortMode = _listPreferences?.SortMode ?? TaskSortMode.Manual;
+        SortMode = _listPreferences?.SortMode ?? TaskSortMode.Date;
 
         Title = "모든 할 일";
         QuickAddText = string.Empty;
@@ -341,8 +331,7 @@ public partial class TaskListViewModel : ObservableObject
     }
 
     /// <summary>Applies a new global sort from the list header: persists the choice app-wide, then reloads
-    /// so the open rows reorder. A computed sort leaves the stored ranks alone, so switching back to
-    /// 자유 배치 restores the hand-arranged order. No-op if the mode is unchanged.</summary>
+    /// so the open rows reorder. No-op if the mode is unchanged.</summary>
     [RelayCommand]
     public async Task SetSortModeAsync(TaskSortMode mode)
     {
@@ -353,8 +342,8 @@ public partial class TaskListViewModel : ObservableObject
     }
 
     /// <summary>Orders an open result for display per the active <see cref="SortMode"/> — used for the flat
-    /// list and within each 중요도 section. The index already returns rows in 자유 배치 (stored rank) order, so
-    /// that mode passes through untouched; see <see cref="TaskListOrdering"/> for the computed modes.</summary>
+    /// list and within each 중요도 section. The index returns rows in stored-rank order; this layers the
+    /// chosen date / name / priority ordering over it (see <see cref="TaskListOrdering"/>).</summary>
     private IReadOnlyList<TaskListItem> OrderForDisplay(IReadOnlyList<TaskListItem> items)
         => TaskListOrdering.Apply(items, SortMode);
 
@@ -608,35 +597,6 @@ public partial class TaskListViewModel : ObservableObject
         SyncCompletedSection([]);
     }
 
-    /// <summary>
-    /// Commits a drag-reorder inside one list. The row has already been moved optimistically in
-    /// <paramref name="list"/> (the reorder surface drives the visuals); here we persist the moved
-    /// row's new rank through the rank service, which writes <i>only</i> that record — except for the
-    /// rare rebalance. Each row's <see cref="TaskRowViewModel.SortOrder"/> is refreshed to the
-    /// returned ranks so a following drag computes against current keys. A failed save reloads the
-    /// list from the index, snapping it back to the persisted truth.
-    /// </summary>
-    public async Task PersistReorderAsync(ObservableCollection<TaskRowViewModel> list, Guid movedId)
-    {
-        await _reorderGate.WaitAsync();
-        try
-        {
-            var ordered = list.Select(row => new RankedItem(row.Id, row.SortOrder)).ToList();
-            var result = await _reorder.MoveAsync<TaskItem>(movedId, ordered);
-            foreach (var row in list)
-                if (result.ChangedRanks.TryGetValue(row.Id, out var rank))
-                    row.SortOrder = rank;
-        }
-        catch
-        {
-            await LoadAsync();
-        }
-        finally
-        {
-            _reorderGate.Release();
-        }
-    }
-
     /// <summary>Every task row's current rank across the visible lists — the basis for an append rank.</summary>
     private IEnumerable<string?> VisibleRowRanks()
     {
@@ -852,7 +812,7 @@ public partial class TaskListViewModel : ObservableObject
                 else PrioritySections.Insert(i, new PrioritySectionViewModel(name));
             }
             // The priority grouping is fixed, but rows *within* a section follow the global sort (날짜순 /
-            // 이름순 / 자유 배치); 중요도순 collapses to the stored-rank tiebreaker since a section is one priority.
+            // 이름순); 중요도순 collapses to the stored-rank tiebreaker since a section is one priority.
             SyncRows(PrioritySections[i].Tasks, OrderForDisplay(bucket));
         }
     }

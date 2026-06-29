@@ -518,7 +518,7 @@ The group/tag/priority chips share a fixed squircle radius `{rounded.chip}` (8) 
 - **Detail-panel entrance:** Composition `Translation` (28→0) + `Opacity`, slide-in over ~350ms on the signature cubic-bezier `(0.1,0.9)(0.2,1.0)`, run on the compositor thread.
 - **Detail-panel close:** the reverse — `Translation` (0→24) + `Opacity` fade out, faster (~180ms slide / ~160ms fade) on an accelerating ease `(0.4,0)(1,1)`. The actual close is deferred ~170ms so the panel animates out before it is removed.
 - **Page transition:** subtle `Opacity` + `Scale` settle (≈0.99→1.0) on navigation.
-- **List reposition:** rows carry `RepositionThemeTransition`. To avoid virtualization conflicts, motion is attached **only to realized containers** (`ElementPrepared` / `ElementClearing`); Storyboards are never keyed to virtual items. Drag-reorder surfaces use their own motion with default transitions off.
+- **List reposition:** rows carry `RepositionThemeTransition`. To avoid virtualization conflicts, motion is attached **only to realized containers** (`ElementPrepared` / `ElementClearing`); Storyboards are never keyed to virtual items.
 - **Cross-cutting:** for virtualized rows, prefer Composition implicit animations over Storyboards. `ConnectedAnimation` is not used.
 - **Respect reduced motion.** Motion is gated on the system `UISettings.AnimationsEnabled`; when off, transitions are skipped and the end state is applied directly (e.g. the detail panel closes immediately rather than animating out).
 

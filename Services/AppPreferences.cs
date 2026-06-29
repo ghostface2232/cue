@@ -108,11 +108,11 @@ public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences
     }
 
     /// <summary>The global ordering applied to standard task lists — set once from any list's header and
-    /// reflected on every list. Defaults to <see cref="Cue.ViewModels.TaskSortMode.Manual"/> (the
-    /// drag-arranged order), the app's original behavior.</summary>
+    /// reflected on every list. Defaults to <see cref="Cue.ViewModels.TaskSortMode.Date"/> (날짜순). A value
+    /// persisted by an older build (e.g. the removed "Manual" mode) fails to parse and falls back here too.</summary>
     public Cue.ViewModels.TaskSortMode SortMode
     {
-        get => EnumValue(nameof(SortMode), Cue.ViewModels.TaskSortMode.Manual);
+        get => EnumValue(nameof(SortMode), Cue.ViewModels.TaskSortMode.Date);
         set => Set(nameof(SortMode), value.ToString());
     }
 
