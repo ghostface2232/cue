@@ -80,6 +80,17 @@ public sealed class WeekNumberRuleTests
         Assert.Equal(DayOfWeek.Monday, WhenDate(r.When).DayOfWeek);
     }
 
+    [Fact]
+    public void WeekWithImpossibleClock_IsDeclinedWithoutConsumingTheInput()
+    {
+        var r = Parse("W27 24시 회의");
+
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.False(r.WhenAssigned);
+        Assert.Equal("W27 24시 회의", r.Title);
+        Assert.Empty(r.Tokens);
+    }
+
     // The guards: relative / duration / anniversary forms must NOT be read as a week number.
 
     [Fact]

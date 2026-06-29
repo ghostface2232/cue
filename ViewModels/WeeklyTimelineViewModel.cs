@@ -189,7 +189,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     /// <summary>Moves a task into a group (or to the Cue home when null), then reloads. A no-op if unchanged.</summary>
     public async Task MoveTaskToTaskGroupAsync(Guid taskId, Guid? taskGroupId)
     {
-        var moved = await _store.MutateAsync<TaskItem>(taskId, task =>
+        var moved = await MutateFromCardAsync(taskId, task =>
         {
             if (task.TaskGroupId == taskGroupId) return false;
             task.TaskGroupId = taskGroupId;
@@ -206,7 +206,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     /// leaving its other tags in place, then reloads.</summary>
     public async Task ToggleTaskTagAsync(Guid taskId, Guid tagId)
     {
-        var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
+        var changed = await MutateFromCardAsync(taskId, task =>
         {
             if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
             return true;
@@ -221,7 +221,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     /// <summary>Removes a single <paramref name="tagId"/> from the task, then reloads. A no-op if absent.</summary>
     public async Task RemoveTaskTagAsync(Guid taskId, Guid tagId)
     {
-        var changed = await _store.MutateAsync<TaskItem>(taskId, task => task.TagIds.Remove(tagId));
+        var changed = await MutateFromCardAsync(taskId, task => task.TagIds.Remove(tagId));
         if (changed is not null)
         {
             await ReloadRowsAsync();
@@ -232,7 +232,7 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     /// <summary>Removes every tag from the task, then reloads. A no-op if it had none.</summary>
     public async Task ClearTaskTagsAsync(Guid taskId)
     {
-        var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
+        var changed = await MutateFromCardAsync(taskId, task =>
         {
             if (task.TagIds.Count == 0) return false;
             task.TagIds.Clear();
@@ -250,8 +250,30 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     {
         var trimmed = title.Trim();
         if (trimmed.Length == 0) return;
-        var renamed = await _store.MutateAsync<TaskItem>(taskId, task => { task.Title = trimmed; return true; });
+        var renamed = await MutateFromCardAsync(taskId, task =>
+        {
+            if (task.Title == trimmed) return false;
+            task.Title = trimmed;
+            return true;
+        });
         if (renamed is not null) await ReloadRowsAsync();
+    }
+
+    /// <summary>
+    /// Applies a card context-menu edit without letting an already-open detail panel overwrite it later.
+    /// The panel owns a whole metadata snapshot, so its pending text/selection edits must land first; after
+    /// the card mutation wins, re-open the same task to replace the panel's snapshot with the new record.
+    /// </summary>
+    private async Task<TaskItem?> MutateFromCardAsync(Guid taskId, Func<TaskItem, bool> mutate)
+    {
+        var refreshDetail = Detail.IsOpen && Detail.CurrentTaskId == taskId;
+        if (refreshDetail)
+            await Detail.FlushAsync();
+
+        var changed = await _store.MutateAsync(taskId, mutate);
+        if (changed is not null && refreshDetail)
+            await Detail.OpenAsync(taskId);
+        return changed;
     }
 
     /// <summary>Ends a recurring series (반복 종료): completes it to the Logbook, closes the detail panel if

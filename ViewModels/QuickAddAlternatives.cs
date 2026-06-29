@@ -27,7 +27,7 @@ public static class QuickAddAlternatives
     /// Recurrence keeps the weekday across a frequency swap. Anything else gets nothing.</summary>
     public static IReadOnlyList<QuickAddAlternative> For(QuickAddToken token, QuickAddPreview preview) => token.Kind switch
     {
-        QuickAddTokenKind.Date when WeekdayChar.Match(token.Text) is { Success: true } m => WeekdayDate(token.Text, m.Value[0]),
+        QuickAddTokenKind.Date when WeekdayChar.Match(token.Text) is { Success: true } m => WeekdayDate(token.Text, m.Value[0], preview),
         QuickAddTokenKind.Date => new[]
         {
             new QuickAddAlternative("오늘", "오늘"),
@@ -45,8 +45,11 @@ public static class QuickAddAlternatives
     /// 주). Offers the adjacent weekdays (전/후) <i>in the same week</i>, then the same weekday in the two
     /// <i>other</i> weeks (so the current week isn't re-suggested). "이번 주" replaces to a bare "{요일}" —
     /// the parser doesn't consume a literal "이번 주" prefix, and bare already means the upcoming one.</summary>
-    private static IReadOnlyList<QuickAddAlternative> WeekdayDate(string tokenText, char wd)
+    private static IReadOnlyList<QuickAddAlternative> WeekdayDate(string tokenText, char wd, QuickAddPreview preview)
     {
+        if (preview is { Date: { } resolved, Today: { } today })
+            return ResolvedWeekdayDate(resolved, today, wd);
+
         var week = WeekOffset(tokenText);
         var d = WeekOrder.IndexOf(wd);
 
@@ -57,6 +60,38 @@ public static class QuickAddAlternatives
             if (w != week)
                 list.Add(WeekShiftOption(w, wd)); // same weekday, the other two weeks
         return list;
+    }
+
+    /// <summary>
+    /// Generates alternatives from the date the parser actually resolved, rather than inferring the week
+    /// from the token's prefix. A bare weekday changes meaning after that weekday passes; using the resolved
+    /// day keeps "하루 전/뒤" at exactly ±1 calendar day across today and week boundaries.
+    /// </summary>
+    private static IReadOnlyList<QuickAddAlternative> ResolvedWeekdayDate(DateOnly resolved, DateOnly today, char wd)
+    {
+        var weekdayIndex = WeekOrder.IndexOf(wd);
+        var list = new List<QuickAddAlternative>();
+        AddResolvedNeighbor(list, "하루 전", resolved.AddDays(-1), today);
+        AddResolvedNeighbor(list, "하루 뒤", resolved.AddDays(1), today);
+
+        var monday = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+        for (var week = 0; week <= 2; week++)
+        {
+            var candidate = monday.AddDays(week * 7 + weekdayIndex);
+            if (candidate < today || candidate == resolved)
+                continue;
+            list.Add(WeekShiftOption(week, wd));
+        }
+        return list;
+    }
+
+    private static void AddResolvedNeighbor(List<QuickAddAlternative> list, string prefix, DateOnly target, DateOnly today)
+    {
+        if (target < today)
+            return;
+        var weekday = WeekOrder[((int)target.DayOfWeek + 6) % 7];
+        var label = $"{prefix} · {target.Month}월 {target.Day}일 ({weekday})";
+        list.Add(new QuickAddAlternative(label, $"{target.Month}월 {target.Day}일"));
     }
 
     /// <summary>Adds the calendar-day neighbor (±1 day) as a week-aware weekday option, prefixing the label

@@ -1288,6 +1288,12 @@ public sealed partial class MainWindow : Window
             taskListPage.CommitFocusedTextBox();
             flushTask = taskListPage.FlushDetailAsync();
         }
+        else if (NavFrame.Content is WeeklyTimelinePage timelinePage && timelinePage.DetailViewModel is { } timelineDetail && timelineDetail.IsOpen)
+        {
+            hasOpenDetail = true;
+            timelinePage.CommitFocusedTextBox();
+            flushTask = timelinePage.FlushDetailAsync();
+        }
 
         if (!hasOpenDetail)
         {

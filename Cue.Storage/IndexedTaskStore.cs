@@ -96,7 +96,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var record = await _files.GetAsync<T>(id, cancellationToken).ConfigureAwait(false);
+            var record = await ReadExistingForMutationAsync<T>(id, cancellationToken).ConfigureAwait(false);
             if (record is null || record.IsDeleted) return null;
             if (!mutate(record)) return null;
             await SaveCoreAsync(record, cancellationToken).ConfigureAwait(false);
@@ -126,7 +126,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     private sealed class GatedScope(IndexedTaskStore store) : ITaskMutationScope
     {
         public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
-            => store._files.GetAsync<T>(id, cancellationToken);
+            => store.ReadExistingForMutationAsync<T>(id, cancellationToken);
 
         public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
             => store.SaveCoreAsync(record, cancellationToken);
@@ -134,7 +134,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     private async Task SaveCoreAsync<T>(T record, CancellationToken cancellationToken) where T : RecordBase
     {
-        var existing = await _files.GetAsync<T>(record.Id, cancellationToken).ConfigureAwait(false);
+        // Absent and unreadable are materially different here. An unreadable file may be a tombstone;
+        // treating it as absent lets a stale live snapshot overwrite the deletion and resurrect the record.
+        var existing = await ReadExistingForMutationAsync<T>(record.Id, cancellationToken).ConfigureAwait(false);
         if (existing?.IsDeleted == true && !record.IsDeleted)
             throw new InvalidOperationException($"A deleted {typeof(T).Name} cannot be restored through SaveAsync.");
 
@@ -168,6 +170,27 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             task.TagIds = retainedTags;
         }
     }
+
+    private async Task<T?> ReadExistingForMutationAsync<T>(Guid id, CancellationToken cancellationToken)
+        where T : RecordBase
+    {
+        if (_files is not FileTaskStore fileStore)
+            return await _files.GetAsync<T>(id, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return await fileStore.ReadForReferenceValidationAsync<T>(id, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private Task<IReadOnlyList<TaskItem>> ReadAllTasksForContainerMutationAsync(CancellationToken cancellationToken)
+        => _files is FileTaskStore fileStore
+            ? fileStore.ReadAllForMutationAsync<TaskItem>(cancellationToken)
+            : _files.GetAllAsync<TaskItem>(cancellationToken);
 
     private async Task<ReferenceReadResult<T>> ReadReferenceAsync<T>(Guid id, CancellationToken cancellationToken)
         where T : RecordBase
@@ -286,10 +309,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         // Least-destructive default ("그룹만 제거"): preserve user work by ungrouping every live task
         // (clear TaskGroupId) rather than cascading task tombstones. The task stays visible in the home
         // "모든 할 일" (AllTasks) list. With sections gone the reparent is a single step.
-        foreach (var taskId in await _index.GetTaskIdsByTaskGroupAsync(taskGroupId, cancellationToken).ConfigureAwait(false))
+        var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var task in tasks.Where(task => !task.IsDeleted && task.TaskGroupId == taskGroupId))
         {
-            var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
-            if (task is null || task.TaskGroupId != taskGroupId) continue;
             task.TaskGroupId = null;
             await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
@@ -302,8 +324,9 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         // Opt-in destructive deletion: tombstone every task filed under the group (open and completed)
         // before the group itself. Idempotent — already-tombstoned tasks are excluded by the index
         // query, so a resumed crash re-runs cleanly.
-        foreach (var taskId in await _index.GetTaskIdsByTaskGroupAsync(taskGroupId, cancellationToken).ConfigureAwait(false))
-            await SoftDeleteAndReflectAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
+        var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var task in tasks.Where(task => !task.IsDeleted && task.TaskGroupId == taskGroupId))
+            await SoftDeleteAndReflectAsync<TaskItem>(task.Id, cancellationToken).ConfigureAwait(false);
 
         await SoftDeleteAndReflectAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
     }
@@ -312,10 +335,10 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     {
         // Tags are cross-cutting metadata. Delete only the tag record and remove its references;
         // never delete or relocate a task merely because one of its tags was removed.
-        foreach (var taskId in await _index.GetTaskIdsByTagAsync(tagId, cancellationToken).ConfigureAwait(false))
+        var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var task in tasks.Where(task => !task.IsDeleted && task.TagIds.Contains(tagId)))
         {
-            var task = await _files.GetAsync<TaskItem>(taskId, cancellationToken).ConfigureAwait(false);
-            if (task is null || task.TagIds.RemoveAll(id => id == tagId) == 0) continue;
+            if (task.TagIds.RemoveAll(id => id == tagId) == 0) continue;
             await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
         }
 

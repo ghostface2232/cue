@@ -269,6 +269,57 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StaleSaveCannotOverwriteAnUnreadableTombstone()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var task = new TaskItem { Title = "삭제 전" };
+        await store.SaveAsync(task);
+        var stale = await store.GetAsync<TaskItem>(task.Id);
+        await store.DeleteAsync<TaskItem>(task.Id);
+
+        var path = Path.Combine(root, "tasks", task.Id + ".json");
+        const string unreadablePayload = "{not-json";
+        await File.WriteAllTextAsync(path, unreadablePayload);
+        stale!.Title = "부활 시도";
+
+        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() => store.SaveAsync(stale));
+        Assert.Equal(unreadablePayload, await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task CascadeDeletionStaysPendingWhileAChildIsUnreadable_ThenResumes()
+    {
+        var root = NewRoot();
+        var options = new FileTaskStoreOptions { RootPath = root, IndexPath = Path.Combine(root, "index.db") };
+        var project = new TaskGroup { Name = "잠긴 그룹" };
+        var task = new TaskItem { Title = "잠긴 작업", TaskGroupId = project.Id };
+        await using (var seed = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
+        {
+            await seed.SaveAsync(project);
+            await seed.SaveAsync(task);
+        }
+
+        var taskPath = Path.Combine(root, "tasks", task.Id + ".json");
+        await using (var locked = new FileStream(taskPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        await using (var store = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
+        {
+            await Assert.ThrowsAsync<IOException>(() =>
+                store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks));
+            Assert.False((await store.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+
+            var journalPath = Assert.Single(Directory.EnumerateFiles(Path.Combine(root, "meta", "operations"), "*.json"));
+            Assert.Contains("\"isCompleted\": false", await File.ReadAllTextAsync(journalPath));
+        }
+
+        await using var recovered = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc);
+        Assert.True((await recovered.GetAsync<TaskItem>(task.Id))!.IsDeleted);
+        Assert.True((await recovered.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+        var completedJournal = Assert.Single(Directory.EnumerateFiles(Path.Combine(root, "meta", "operations"), "*.json"));
+        Assert.Contains("\"isCompleted\": true", await File.ReadAllTextAsync(completedJournal));
+    }
+
+    [Fact]
     public async Task DeleteTask_IsAPlainSoftDelete_WithItsEmbeddedChecklist()
     {
         var root = NewRoot();

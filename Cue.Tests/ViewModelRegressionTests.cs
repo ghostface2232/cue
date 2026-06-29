@@ -1970,6 +1970,50 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task WeeklyContextMutationRefreshesOpenDetailInsteadOfRestoringItsStaleSnapshot()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var first = new TaskGroup { Name = "A" };
+        var second = new TaskGroup { Name = "B" };
+        await store.SaveAsync(first);
+        await store.SaveAsync(second);
+        var task = new TaskItem
+        {
+            Title = "원래 제목",
+            TaskGroupId = first.Id,
+            When = ScheduledWhen.AllDay(ZonedDateTime.FromLocal(new DateTime(2026, 6, 24), "UTC")),
+        };
+        await store.SaveAsync(task);
+
+        var vm = new WeeklyTimelineViewModel(
+            store,
+            store,
+            new ReorderService(store),
+            new RecurringTaskService(store),
+            clock,
+            TimeZoneInfo.Utc,
+            new NavDataChangeNotifier(),
+            new SaveFailureCoordinator());
+        await vm.LoadAsync();
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.Title = "상세에서 편집"; // still pending when the card menu mutation starts
+
+        await vm.MoveTaskToTaskGroupAsync(task.Id, second.Id);
+
+        Assert.Equal("상세에서 편집", vm.Detail.Title);
+        Assert.Equal(second.Id, vm.Detail.SelectedTaskGroup?.Id);
+        await vm.Detail.FlushAsync(); // closing the panel must not restore group A
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal("상세에서 편집", saved!.Title);
+        Assert.Equal(second.Id, saved.TaskGroupId);
+    }
+
+    [Fact]
     public async Task QueuedAutoSave_PersistsSnapshot_NotLivePanelValuesChangedAfterward()
     {
         using var temp = new TempDirectory();

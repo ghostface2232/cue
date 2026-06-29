@@ -84,4 +84,24 @@ public sealed class QuickAddAlternativesTests
         Assert.Contains(alts, a => a.Replacement == "다다음 주 금요일");
         Assert.DoesNotContain(alts, a => a.Replacement == "금요일"); // the current week isn't re-offered
     }
+
+    [Fact]
+    public void BareWeekday_AfterThatDayPassed_UsesResolvedDateForTheNextDayAlternative()
+    {
+        var saturdayNow = new DateTimeOffset(2026, 6, 27, 9, 0, 0, TimeSpan.Zero);
+        var parser = new KoreanDateParser();
+        var original = parser.Parse("금요일 회의", saturdayNow, Tz);
+        var resolved = DateOnly.FromDateTime(original.When.Date!.Value.ToLocal().DateTime);
+        Assert.Equal(new DateOnly(2026, 7, 3), resolved);
+
+        var token = Assert.Single(original.Tokens, token => token.Kind == QuickAddTokenKind.Date);
+        var preview = new QuickAddPreview("7월 3일 (금)", null, null, null, resolved, new DateOnly(2026, 6, 27));
+        var later = Assert.Single(
+            QuickAddAlternatives.For(token, preview),
+            alternative => alternative.Label.StartsWith("하루 뒤", StringComparison.Ordinal));
+
+        var reparsed = parser.Parse($"{later.Replacement} 회의", saturdayNow, Tz);
+        var replacementDate = DateOnly.FromDateTime(reparsed.When.Date!.Value.ToLocal().DateTime);
+        Assert.Equal(resolved.AddDays(1), replacementDate);
+    }
 }

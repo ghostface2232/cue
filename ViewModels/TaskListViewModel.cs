@@ -172,7 +172,15 @@ public partial class TaskListViewModel : ObservableObject
             var dateText = local.ToString("M월 d일 (ddd)", KoreanCulture);
             var hasTime = parsed.WhenHasTime;
             var timeText = hasTime ? local.ToString("tt h:mm", KoreanCulture) : null;
-            return new QuickAddPreview(dateText, timeText, hasTime ? local.Hour : null, hasTime ? local.Minute : null);
+            var localDate = DateOnly.FromDateTime(local.DateTime);
+            var localNow = TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone);
+            return new QuickAddPreview(
+                dateText,
+                timeText,
+                hasTime ? local.Hour : null,
+                hasTime ? local.Minute : null,
+                localDate,
+                DateOnly.FromDateTime(localNow.DateTime));
         }
         catch
         {

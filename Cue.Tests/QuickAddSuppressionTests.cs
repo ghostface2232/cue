@@ -67,6 +67,21 @@ public sealed class QuickAddSuppressionTests
     }
 
     [Fact]
+    public void Suppressing_time_inside_a_deadline_keeps_that_exact_text_in_the_title()
+    {
+        const string input = "내일 3시까지 보고서";
+        var timeStart = input.IndexOf("3시", StringComparison.Ordinal);
+
+        var reverted = _parser.Parse(input, Now, Tz, Spans((timeStart, 2)));
+
+        Assert.True(reverted.WhenAssigned);
+        Assert.False(reverted.WhenHasTime);
+        Assert.Equal("3시 보고서", reverted.Title);
+        Assert.Contains(reverted.Tokens, token => token.Text == "내일");
+        Assert.DoesNotContain(reverted.Tokens, token => token.Text == "3시");
+    }
+
+    [Fact]
     public void Out_of_range_and_overlapping_spans_never_throw()
     {
         const string input = "내일 장보기";

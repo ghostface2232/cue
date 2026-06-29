@@ -86,6 +86,11 @@ public sealed partial class WeeklyTimelinePage : Page
     {
         _navNotifier.Changed -= OnNavDataChanged;
         ViewModel.Detail.PropertyChanged -= Detail_PropertyChanged;
+        if (ViewModel.Detail.IsOpen)
+        {
+            CommitFocusedTextBox();
+            ObserveFlushTask(ViewModel.Detail.FlushAsync());
+        }
         base.OnNavigatedFrom(e);
     }
 
@@ -1045,13 +1050,15 @@ public sealed partial class WeeklyTimelinePage : Page
     private void ClearWhen_Click(object sender, RoutedEventArgs e) => ViewModel.Detail.ClearWhen();
 
     private async void CloseDetail_Click(object sender, RoutedEventArgs e)
-        => await CloseDetailWithAnimationAsync();
+        => await RunSafelyAsync(CloseDetailWithAnimationAsync);
 
     private async Task CloseDetailWithAnimationAsync()
     {
-        // The panel autosaves as fields change, but a title/notes edit whose LostFocus hasn't fired yet
-        // needs a final flush so closing never drops an in-progress text edit.
-        await ViewModel.Detail.FlushAsync();
+        // Commit the focused editor, then observe the flush without allowing an exhausted save retry to
+        // escape an async-void UI event. The app-scoped failure coordinator keeps the unsaved work visible
+        // and retryable even after this panel closes.
+        CommitFocusedTextBox();
+        ObserveFlushTask(ViewModel.Detail.FlushAsync());
 
         if (!_animationsEnabled || _detailPanelVisual is null)
         {
@@ -1065,8 +1072,8 @@ public sealed partial class WeeklyTimelinePage : Page
     }
 
     // Title and notes are continuous-typing fields: they autosave on focus-out rather than per keystroke.
-    private async void DetailText_LostFocus(object sender, RoutedEventArgs e)
-        => await ViewModel.Detail.FlushAsync();
+    private void DetailText_LostFocus(object sender, RoutedEventArgs e)
+        => ObserveFlushTask(ViewModel.Detail.FlushAsync());
 
     // The title commits on Enter by blurring onto the scroll host (its LostFocus then flushes the save).
     private void DetailTitle_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -1234,5 +1241,25 @@ public sealed partial class WeeklyTimelinePage : Page
             ErrorInfoBar.Message = exception.Message;
             ErrorInfoBar.IsOpen = true;
         }
+    }
+
+    public bool IsDetailSaving => ViewModel?.Detail?.IsSaving ?? false;
+    public Task FlushDetailAsync() => ViewModel?.Detail?.FlushAsync() ?? Task.CompletedTask;
+    public TaskDetailViewModel? DetailViewModel => ViewModel?.Detail;
+
+    public void CommitFocusedTextBox()
+    {
+        if (XamlRoot is null) return;
+        if (FocusManager.GetFocusedElement(XamlRoot) is TextBox focusedTextBox)
+            focusedTextBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+    }
+
+    private static void ObserveFlushTask(Task task)
+    {
+        _ = task.ContinueWith(t =>
+        {
+            if (t.IsFaulted && t.Exception is { } exception)
+                _ = exception.Flatten();
+        }, TaskContinuationOptions.OnlyOnFaulted);
     }
 }

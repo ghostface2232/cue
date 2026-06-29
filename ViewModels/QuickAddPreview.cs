@@ -7,4 +7,10 @@ namespace Cue.ViewModels;
 /// token's relative alternatives (±1 hour, AM/PM flip). All fields are null when the line has no resolved
 /// date/time. Recurrence/someday headers reuse the token's own phrase, so they aren't carried here.
 /// </summary>
-public sealed record QuickAddPreview(string? DateText, string? TimeText, int? Hour, int? Minute);
+public sealed record QuickAddPreview(
+    string? DateText,
+    string? TimeText,
+    int? Hour,
+    int? Minute,
+    DateOnly? Date = null,
+    DateOnly? Today = null);

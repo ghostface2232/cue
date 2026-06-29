@@ -77,13 +77,14 @@ public sealed class KoreanDateParser : IDateParser
             // from the title. A suppressed span is therefore excluded from recognition yet kept in the
             // title (it was blanked for matching but never marked consumed).
             var consumed = new bool[input.Length];
-            var work = BlankSpans(input, suppressedSpans);
+            var suppressed = SpanMask(input.Length, suppressedSpans);
+            var work = BlankMasked(input, suppressed);
 
             foreach (var rule in _rules)
-                work = Apply(rule, work, input, context, result, tokens, consumed);
+                work = Apply(rule, work, input, context, result, tokens, consumed, suppressed);
 
             if (!result.WhenAssigned)
-                work = LibraryFallback(work, input, context, result, tokens, consumed);
+                work = LibraryFallback(work, input, context, result, tokens, consumed, suppressed);
 
             if (!result.WhenAssigned && result.Recurrence is { } recurrence)
                 result.TrySetWhen(ScheduledWhen.On(recurrence.Anchor), hasTime: result.RecurrenceAnchorHasTime);
@@ -111,7 +112,7 @@ public sealed class KoreanDateParser : IDateParser
         }
     }
 
-    private static string Apply(IQuickAddRule rule, string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens, bool[] consumed)
+    private static string Apply(IQuickAddRule rule, string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens, bool[] consumed, bool[] suppressed)
     {
         try
         {
@@ -122,7 +123,7 @@ public sealed class KoreanDateParser : IDateParser
                 if (match.Length > 0 && rule.Extract(match, context, result))
                 {
                     AddTokens(tokens, match, rule.TokenKind, input);
-                    MarkConsumed(consumed, match.Index, match.Length);
+                    MarkConsumed(consumed, suppressed, match.Index, match.Length);
                     // Mask the recognized span with same-length spaces. Length-preserving so every
                     // match index stays aligned to the ORIGINAL input (so token ranges are exact), and
                     // the spaces still keep neighbouring words from fusing in the title.
@@ -145,18 +146,25 @@ public sealed class KoreanDateParser : IDateParser
 
     /// <summary>Returns <paramref name="input"/> with each suppressed span replaced by same-length spaces
     /// (the recognition view). Length-preserving and bounds-clamped — bad spans degrade, never throw.</summary>
-    private static string BlankSpans(string input, IReadOnlyList<TextSpan> spans)
+    private static bool[] SpanMask(int length, IReadOnlyList<TextSpan> spans)
     {
-        if (spans.Count == 0)
-            return input;
-        var chars = input.ToCharArray();
+        var mask = new bool[length];
         foreach (var span in spans)
         {
-            var start = Math.Clamp(span.Start, 0, chars.Length);
-            var end = Math.Clamp(span.Start + span.Length, start, chars.Length);
+            var start = Math.Clamp(span.Start, 0, length);
+            var end = Math.Clamp(span.Start + span.Length, start, length);
             for (var i = start; i < end; i++)
-                chars[i] = ' ';
+                mask[i] = true;
         }
+        return mask;
+    }
+
+    private static string BlankMasked(string input, bool[] mask)
+    {
+        if (!mask.Contains(true)) return input;
+        var chars = input.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+            if (mask[i]) chars[i] = ' ';
         return new string(chars);
     }
 
@@ -171,12 +179,13 @@ public sealed class KoreanDateParser : IDateParser
         return new string(chars);
     }
 
-    private static void MarkConsumed(bool[] consumed, int index, int length)
+    private static void MarkConsumed(bool[] consumed, bool[] suppressed, int index, int length)
     {
         var start = Math.Clamp(index, 0, consumed.Length);
         var end = Math.Clamp(index + length, start, consumed.Length);
         for (var i = start; i < end; i++)
-            consumed[i] = true;
+            if (!suppressed[i])
+                consumed[i] = true;
     }
 
     /// <summary>Replaces <paramref name="length"/> chars at <paramref name="index"/> with spaces, keeping
@@ -216,7 +225,7 @@ public sealed class KoreanDateParser : IDateParser
     /// Last-resort recognition via the library. Defensive throughout: any shape it returns that we
     /// don't understand is ignored, and it only ever fills an unset When.
     /// </summary>
-    private string LibraryFallback(string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens, bool[] consumed)
+    private string LibraryFallback(string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens, bool[] consumed, bool[] suppressed)
     {
         try
         {
@@ -248,7 +257,7 @@ public sealed class KoreanDateParser : IDateParser
                             tokens.Add(new QuickAddToken(
                                 hasTime ? QuickAddTokenKind.Time : QuickAddTokenKind.Date,
                                 at, r.Text.Length, input.Substring(at, r.Text.Length)));
-                            MarkConsumed(consumed, at, r.Text.Length);
+                            MarkConsumed(consumed, suppressed, at, r.Text.Length);
                             work = Mask(work, at, r.Text.Length);
                         }
                     }

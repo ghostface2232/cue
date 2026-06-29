@@ -60,7 +60,9 @@ public sealed class WeekNumberRule : IQuickAddRule
         if (!context.TryWeekDate(week, weekday, out var date))
             return false;
 
-        Korean.TryResolveTime(match, out var hour, out var minute, out var hasTime, out var meridiemGiven);
+        var validTime = Korean.TryResolveTime(match, out var hour, out var minute, out var hasTime, out var meridiemGiven);
+        if (match.Groups["time"].Success && !validTime)
+            return false;
         if (hasTime)
             hour = context.DisambiguateBareHour(date, hour, minute, meridiemGiven);
 

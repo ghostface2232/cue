@@ -71,9 +71,30 @@ public sealed class FileTaskStore : ITaskStore
     internal async Task<T> ReadForReferenceValidationAsync<T>(Guid id, CancellationToken cancellationToken)
         where T : RecordBase
     {
-        var bytes = await File.ReadAllBytesAsync(PathFor(typeof(T), id), cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<T>(bytes, _json)
-            ?? throw new JsonException("The record payload deserialized to null.");
+        return await ReadRequiredAsync<T>(PathFor(typeof(T), id), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the complete partition for a mutation that must not silently skip any source record. Public
+    /// listings remain corruption-isolated, but a container deletion cannot be declared complete from a
+    /// partial view: an unreadable child aborts the journalled operation so it can resume later.
+    /// </summary>
+    internal async Task<IReadOnlyList<T>> ReadAllForMutationAsync<T>(CancellationToken cancellationToken)
+        where T : RecordBase
+    {
+        var dir = DirectoryFor(typeof(T));
+        if (!Directory.Exists(dir))
+            return Array.Empty<T>();
+
+        var records = new List<T>();
+        foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
+        {
+            if (!file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            records.Add(await ReadRequiredAsync<T>(file, cancellationToken).ConfigureAwait(false));
+        }
+        return records;
     }
 
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default)
@@ -115,9 +136,17 @@ public sealed class FileTaskStore : ITaskStore
     public async Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default)
         where T : RecordBase
     {
-        var record = await GetAsync<T>(id, cancellationToken).ConfigureAwait(false);
-        if (record is null)
-            return; // nothing to delete; idempotent
+        T record;
+        try
+        {
+            // Deletion may be idempotent for an absent file, but it must never silently succeed for an
+            // unreadable one: doing so would let a surrounding deletion saga complete without a tombstone.
+            record = await ReadForReferenceValidationAsync<T>(id, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return;
+        }
 
         // Soft delete: stamp the tombstone and re-save (which also bumps UpdatedAt). Never remove
         // the file — sync and index rebuild must still see the tombstone.
@@ -147,6 +176,14 @@ public sealed class FileTaskStore : ITaskStore
             System.Diagnostics.Debug.WriteLine($"[Cue] Skipping unreadable record file '{path}': {ex.Message}");
             return null;
         }
+    }
+
+    private async Task<T> ReadRequiredAsync<T>(string path, CancellationToken cancellationToken)
+        where T : RecordBase
+    {
+        var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        return JsonSerializer.Deserialize<T>(bytes, _json)
+            ?? throw new JsonException("The record payload deserialized to null.");
     }
 
     private static string FolderName(Type recordType) => recordType switch
