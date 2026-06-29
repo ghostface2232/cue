@@ -13,4 +13,12 @@ public interface IDateParser
     /// zone. On no/ambiguous match, returns the whole input as the title with empty scheduling.
     /// </summary>
     ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId);
+
+    /// <summary>
+    /// As <see cref="Parse(string, DateTimeOffset, string)"/>, but with <paramref name="suppressedSpans"/>
+    /// — original-text spans the user has reverted. Those spans are excluded from recognition (no token,
+    /// no scheduling) yet are <b>kept in the title</b>: reverting "금요일" in "금요일 회의" yields the
+    /// title "금요일 회의", not "회의". Step 4 of the inline-highlight plan.
+    /// </summary>
+    ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId, IReadOnlyList<TextSpan> suppressedSpans);
 }

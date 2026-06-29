@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- The quick-add input, encapsulated so the RichEditBox / IME / (later) inline-accent complexity
+     stays out of TaskListPage. Step 2: a RichEditBox with a manual VM text bridge, an IME composition
+     gate, and the same chrome as the old quick-add pill. Tinting (Step 3) and click-correct (Step 5)
+     are layered on later inside this same control. -->
+<UserControl
+    x:Class="Cue.Controls.OmniInputBox"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid>
+        <RichEditBox
+            x:Name="Box"
+            MinHeight="48"
+            Padding="46,11,14,11"
+            Background="{ThemeResource ControlFillColorDefaultBrush}"
+            BackgroundSizing="InnerBorderEdge"
+            BorderBrush="{ThemeResource CircleElevationBorderBrush}"
+            BorderThickness="1"
+            ContextFlyout="{x:Null}"
+            CornerRadius="24"
+            FontSize="15"
+            IsSpellCheckEnabled="False"
+            SelectionFlyout="{x:Null}">
+            <RichEditBox.Resources>
+                <!-- Same theme-split hover/focus tones the old quick-add TextBox used; RichEditBox reads
+                     the identical TextControl* resource keys. -->
+                <ResourceDictionary>
+                    <ResourceDictionary.ThemeDictionaries>
+                        <ResourceDictionary x:Key="Light">
+                            <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="ControlFillColorSecondaryBrush" />
+                            <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
+                            <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="CircleElevationBorderBrush" />
+                            <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
+                        </ResourceDictionary>
+                        <ResourceDictionary x:Key="Dark">
+                            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#12FFFFFF" />
+                            <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="ControlFillColorDefaultBrush" />
+                            <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="CircleElevationBorderBrush" />
+                            <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="AccentFillColorDefaultBrush" />
+                        </ResourceDictionary>
+                    </ResourceDictionary.ThemeDictionaries>
+                </ResourceDictionary>
+            </RichEditBox.Resources>
+        </RichEditBox>
+
+        <FontIcon
+            Margin="20,0,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Center"
+            FontSize="16"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Glyph="&#xE710;"
+            IsHitTestVisible="False" />
+
+        <!-- Custom placeholder (the group/tag name carries the accent), shown only while empty. Visibility
+             is driven from code so it tracks the live document, not just the bound Text. -->
+        <TextBlock
+            x:Name="Placeholder"
+            Margin="46,7,14,9"
+            VerticalAlignment="Center"
+            FontSize="15"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            IsHitTestVisible="False"
+            TextTrimming="CharacterEllipsis">
+            <Run Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Text="{x:Bind PlaceholderName, Mode=OneWay}" />
+            <Run Text="{x:Bind PlaceholderSuffix, Mode=OneWay}" />
+        </TextBlock>
+    </Grid>
+</UserControl>

@@ -20,6 +20,13 @@ public interface IQuickAddRule
     Regex Pattern { get; }
 
     /// <summary>
+    /// The token kind to tag a claimed match with when it carries no finer-grained <c>date</c>/
+    /// <c>time</c>/<c>recur</c> capture groups to split on (e.g. "언젠가", "3시간 후"). Defaults to
+    /// <see cref="QuickAddTokenKind.Date"/>; rules whose whole match is a time or someday marker override it.
+    /// </summary>
+    QuickAddTokenKind TokenKind => QuickAddTokenKind.Date;
+
+    /// <summary>
     /// Resolves <paramref name="match"/> into <paramref name="result"/>. Returns <c>true</c> if it
     /// claimed the match (the engine then removes that span from the title), or <c>false</c> to
     /// decline it (e.g. the slot is already filled, or the match is a false positive), leaving the

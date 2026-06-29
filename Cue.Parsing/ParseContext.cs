@@ -85,12 +85,16 @@ public sealed class ParseContext
     }
 
     /// <summary>That weekday in the following ISO week (weeks start Monday).</summary>
-    public DateOnly NextWeekWeekday(DayOfWeek target)
+    public DateOnly NextWeekWeekday(DayOfWeek target) => WeekdayInWeeksAhead(target, 1);
+
+    /// <summary>That weekday in the ISO week <paramref name="weeksAhead"/> weeks from now (weeks start
+    /// Monday). 1 = next week ("다음 주 금요일"), 2 = the week after ("다다음 주 금요일").</summary>
+    public DateOnly WeekdayInWeeksAhead(DayOfWeek target, int weeksAhead)
     {
         var backToMonday = ((int)Today.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        var nextMonday = Today.AddDays(-backToMonday).AddDays(7);
+        var monday = Today.AddDays(-backToMonday).AddDays(7 * weeksAhead);
         var forward = ((int)target - (int)DayOfWeek.Monday + 7) % 7;
-        return nextMonday.AddDays(forward);
+        return monday.AddDays(forward);
     }
 
     /// <summary>

@@ -57,6 +57,9 @@ public sealed class KoreanDateParser : IDateParser
     };
 
     public ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId)
+        => Parse(input, now, timeZoneId, Array.Empty<TextSpan>());
+
+    public ParsedQuickAdd Parse(string input, DateTimeOffset now, string timeZoneId, IReadOnlyList<TextSpan> suppressedSpans)
     {
         if (string.IsNullOrWhiteSpace(input))
             return ParsedQuickAdd.TitleOnly(input ?? string.Empty);
@@ -65,20 +68,31 @@ public sealed class KoreanDateParser : IDateParser
         {
             var context = new ParseContext(now, timeZoneId, _options);
             var result = new QuickAddResult();
+            var tokens = new List<QuickAddToken>();
 
-            var work = input;
+            // Two separate states (step 4.1). The recognition view is the original with the suppressed
+            // (reverted) spans blanked, so a rule can never re-recognize a span the user reverted; it is
+            // length-preserving, so every Match.Index stays an original-text offset. The consumed mask
+            // records only the positions an applied rule actually claimed — and ONLY those are removed
+            // from the title. A suppressed span is therefore excluded from recognition yet kept in the
+            // title (it was blanked for matching but never marked consumed).
+            var consumed = new bool[input.Length];
+            var work = BlankSpans(input, suppressedSpans);
+
             foreach (var rule in _rules)
-                work = Apply(rule, work, context, result);
+                work = Apply(rule, work, input, context, result, tokens, consumed);
 
             if (!result.WhenAssigned)
-                work = LibraryFallback(work, context, result);
+                work = LibraryFallback(work, input, context, result, tokens, consumed);
 
             if (!result.WhenAssigned && result.Recurrence is { } recurrence)
                 result.TrySetWhen(ScheduledWhen.On(recurrence.Anchor), hasTime: result.RecurrenceAnchorHasTime);
 
-            var title = CollapseWhitespace(work);
+            var title = CollapseWhitespace(BlankConsumed(input, consumed));
             if (title.Length == 0)
                 title = input.Trim();
+
+            tokens.Sort((a, b) => a.Start.CompareTo(b.Start));
 
             return new ParsedQuickAdd(
                 title,
@@ -87,6 +101,7 @@ public sealed class KoreanDateParser : IDateParser
             {
                 WhenAssigned = result.WhenAssigned,
                 WhenHasTime = result.WhenHasTime,
+                Tokens = tokens,
             };
         }
         catch
@@ -96,7 +111,7 @@ public sealed class KoreanDateParser : IDateParser
         }
     }
 
-    private static string Apply(IQuickAddRule rule, string work, ParseContext context, QuickAddResult result)
+    private static string Apply(IQuickAddRule rule, string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens, bool[] consumed)
     {
         try
         {
@@ -104,10 +119,14 @@ public sealed class KoreanDateParser : IDateParser
             var guard = 0;
             while (match.Success && guard++ < 64)
             {
-                if (rule.Extract(match, context, result))
+                if (match.Length > 0 && rule.Extract(match, context, result))
                 {
-                    // Strip the recognized span, leaving a space so neighbouring words don't fuse.
-                    work = work.Remove(match.Index, match.Length).Insert(match.Index, " ");
+                    AddTokens(tokens, match, rule.TokenKind, input);
+                    MarkConsumed(consumed, match.Index, match.Length);
+                    // Mask the recognized span with same-length spaces. Length-preserving so every
+                    // match index stays aligned to the ORIGINAL input (so token ranges are exact), and
+                    // the spaces still keep neighbouring words from fusing in the title.
+                    work = Mask(work, match.Index, match.Length);
                     match = rule.Pattern.Match(work);
                 }
                 else
@@ -124,11 +143,80 @@ public sealed class KoreanDateParser : IDateParser
         return work;
     }
 
+    /// <summary>Returns <paramref name="input"/> with each suppressed span replaced by same-length spaces
+    /// (the recognition view). Length-preserving and bounds-clamped — bad spans degrade, never throw.</summary>
+    private static string BlankSpans(string input, IReadOnlyList<TextSpan> spans)
+    {
+        if (spans.Count == 0)
+            return input;
+        var chars = input.ToCharArray();
+        foreach (var span in spans)
+        {
+            var start = Math.Clamp(span.Start, 0, chars.Length);
+            var end = Math.Clamp(span.Start + span.Length, start, chars.Length);
+            for (var i = start; i < end; i++)
+                chars[i] = ' ';
+        }
+        return new string(chars);
+    }
+
+    /// <summary>Returns <paramref name="input"/> with the consumed (recognized) positions blanked — the
+    /// title source. Suppressed-but-not-consumed text is left intact, so a reverted span stays in the title.</summary>
+    private static string BlankConsumed(string input, bool[] consumed)
+    {
+        var chars = input.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+            if (consumed[i])
+                chars[i] = ' ';
+        return new string(chars);
+    }
+
+    private static void MarkConsumed(bool[] consumed, int index, int length)
+    {
+        var start = Math.Clamp(index, 0, consumed.Length);
+        var end = Math.Clamp(index + length, start, consumed.Length);
+        for (var i = start; i < end; i++)
+            consumed[i] = true;
+    }
+
+    /// <summary>Replaces <paramref name="length"/> chars at <paramref name="index"/> with spaces, keeping
+    /// the string length (and therefore all original offsets) intact.</summary>
+    private static string Mask(string work, int index, int length)
+        => string.Concat(work.AsSpan(0, index), new string(' ', length), work.AsSpan(index + length));
+
+    /// <summary>
+    /// Emits tokens for a claimed match. A match that carries the shared <c>date</c>/<c>time</c>/
+    /// <c>recur</c>/<c>custom</c> capture groups is split into one token per present group (so a combined
+    /// "금요일 3시" yields a separate date token and time token, each independently editable). A match with
+    /// none of those groups (e.g. "언젠가", "3시간 후", "3일 안에") becomes a single token of the rule's
+    /// <see cref="IQuickAddRule.TokenKind"/>.
+    /// </summary>
+    private static void AddTokens(List<QuickAddToken> tokens, Match match, QuickAddTokenKind defaultKind, string input)
+    {
+        var any = false;
+        Emit("recur", QuickAddTokenKind.Recurrence);
+        Emit("date", QuickAddTokenKind.Date);
+        Emit("custom", QuickAddTokenKind.Date);
+        Emit("time", QuickAddTokenKind.Time);
+        if (!any)
+            tokens.Add(new QuickAddToken(defaultKind, match.Index, match.Length, input.Substring(match.Index, match.Length)));
+
+        void Emit(string group, QuickAddTokenKind kind)
+        {
+            var g = match.Groups[group];
+            if (g.Success && g.Length > 0)
+            {
+                tokens.Add(new QuickAddToken(kind, g.Index, g.Length, input.Substring(g.Index, g.Length)));
+                any = true;
+            }
+        }
+    }
+
     /// <summary>
     /// Last-resort recognition via the library. Defensive throughout: any shape it returns that we
     /// don't understand is ignored, and it only ever fills an unset When.
     /// </summary>
-    private string LibraryFallback(string work, ParseContext context, QuickAddResult result)
+    private string LibraryFallback(string work, string input, ParseContext context, QuickAddResult result, List<QuickAddToken> tokens, bool[] consumed)
     {
         try
         {
@@ -156,7 +244,13 @@ public sealed class KoreanDateParser : IDateParser
                     {
                         var at = work.IndexOf(r.Text, StringComparison.Ordinal);
                         if (at >= 0)
-                            work = work.Remove(at, r.Text.Length).Insert(at, " ");
+                        {
+                            tokens.Add(new QuickAddToken(
+                                hasTime ? QuickAddTokenKind.Time : QuickAddTokenKind.Date,
+                                at, r.Text.Length, input.Substring(at, r.Text.Length)));
+                            MarkConsumed(consumed, at, r.Text.Length);
+                            work = Mask(work, at, r.Text.Length);
+                        }
                     }
                     return work;
                 }

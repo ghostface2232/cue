@@ -88,6 +88,11 @@ public sealed partial class TaskListPage : Page
         // the resize range still clamps it per window size in ApplyDetailPanelWidth.
         _detailPreferredWidth = _preferences.DetailPanelWidth ?? DetailDefaultWidth;
         InitializeComponent();
+        // The quick-add box re-parses the live line through the VM (current clock/zone) to drive the
+        // inline accent. Positional only — commit still re-parses (AddAsync).
+        QuickAddBox.Tokenizer = ViewModel.TokenizeQuickAdd;
+        // The token popover header shows what the live line resolved to (e.g. "내일 → 6월 30일 (화)").
+        QuickAddBox.PreviewProvider = ViewModel.PreviewQuickAdd;
         // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
         _navNotifier.Changed += OnNavDataChanged;
@@ -177,14 +182,11 @@ public sealed partial class TaskListPage : Page
         ScheduleDayRollover(); // arm the next midnight
     }
 
-    private async void QuickAdd_KeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key != VirtualKey.Enter)
-            return;
-        e.Handled = true;
-        if (ViewModel.AddCommand.CanExecute(null))
-            await RunSafelyAsync(() => ViewModel.AddCommand.ExecuteAsync(null));
-    }
+    // Raised by OmniInputBox on Enter (only when not mid-IME-composition); the box owns the keystroke and
+    // the composition gate. It hands over the raw line + the editor-held reverts; the VM re-parses at the
+    // current clock honouring them (the live inline parse is a display cache only).
+    private async void QuickAdd_Submit(object sender, Cue.ViewModels.QuickAddSubmission submission)
+        => await RunSafelyAsync(() => ViewModel.SubmitQuickAddAsync(submission));
 
     private async void TaskSurface_Tapped(object sender, TappedRoutedEventArgs e)
     {

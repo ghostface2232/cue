@@ -18,6 +18,8 @@ file static class Opt
 /// All multi-word markers use <c>\s*</c> so they match with or without the space ("여유되면" / "여유 되면").</summary>
 public sealed class SomedayRule : IQuickAddRule
 {
+    public QuickAddTokenKind TokenKind => QuickAddTokenKind.Someday;
+
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
         @"(?:언젠가는|언젠가|나중에|다음에|담에" +
@@ -55,9 +57,13 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
     private const string TimeWithParticle =
         @"(?:" + Korean.Time + "|" + Korean.DayPart + @")(?:\s*(?:에는|에도|엔|에|은|는|도|부터|쯤|즈음|경|(?<mada>마다)))?";
 
+    public QuickAddTokenKind TokenKind => QuickAddTokenKind.Recurrence;
+
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
-        @"(?:" +
+        // The recurrence expression is captured as `recur` so it can be located as one token, separate
+        // from any trailing time (which carries its own `time` group).
+        @"(?<recur>" +
         // A weekday, optionally led by 매주 and/or trailed by 마다. The 매주/마다 is what marks it
         // recurring; a bare weekday ("목욜", "금요일에") carries no such marker and is left for the
         // one-off WhenDateRule (the Extract returns false when neither is present).
@@ -72,7 +78,7 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         @"|(?<minutely_once>\d+)\s*분\s*에\s*한\s*번\s*씩" +
         @"|(?<minutely>\d+)\s*분\s*마다" +
         @"|(?<hourly>\d+)\s*시간\s*마다" +
-        @")" +
+        @")" +              // close (?<recur>…)
         @"(?:\s*" + TimeWithParticle + ")?", Opt.Flags);
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
@@ -257,6 +263,8 @@ public sealed class WhenDateRule : IQuickAddRule
 /// moment has already passed (a date-less time earlier than "now" rolls to the next day).</summary>
 public sealed class TimeOfDayRule : IQuickAddRule
 {
+    public QuickAddTokenKind TokenKind => QuickAddTokenKind.Time;
+
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
         @"(?:" + Korean.Time + "|" + Korean.DayPart + ")" +
@@ -278,6 +286,8 @@ public sealed class TimeOfDayRule : IQuickAddRule
 /// <summary>점심 먹고 → the same representative time as the bare lunch day-part.</summary>
 public sealed class MealAfterRule : IQuickAddRule
 {
+    public QuickAddTokenKind TokenKind => QuickAddTokenKind.Time;
+
     public Regex Pattern { get; } = new(
         Korean.LeftEdge +
         @"(?<meal>아침|점심|저녁)\s*(?:먹고|먹은\s*뒤|식사\s*후)" +

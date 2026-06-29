@@ -145,6 +145,41 @@ public partial class TaskListViewModel : ObservableObject
 
     partial void OnQuickAddTextChanged(string value) => OnPropertyChanged(nameof(QuickAddIsEmpty));
 
+    /// <summary>Tokenizes a raw quick-add line at the current clock/zone for the inline accent, honouring
+    /// the editor's <paramref name="suppressedSpans"/> (reverted words emit no token, so they aren't
+    /// re-tinted). This is positional metadata only — scheduling still resolves at commit
+    /// (<see cref="SubmitQuickAddAsync"/> re-parses with the clock at that moment), so this never becomes
+    /// the source of truth. Never throws.</summary>
+    public IReadOnlyList<QuickAddToken> TokenizeQuickAdd(string raw, IReadOnlyList<TextSpan> suppressedSpans)
+    {
+        try { return _parser.Parse(raw ?? string.Empty, _clock.GetUtcNow(), _timeZoneId, suppressedSpans).Tokens; }
+        catch { return Array.Empty<QuickAddToken>(); }
+    }
+
+    private static readonly System.Globalization.CultureInfo KoreanCulture = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
+
+    /// <summary>Formats what the live line resolves to (date/time) for the token popover header — e.g.
+    /// "내일" → "6월 30일 (화)" / "오후 3:00". Honours the same reverts as the inline accent. Recurrence and
+    /// someday headers use the token's own phrase, so only date/time are projected. Never throws.</summary>
+    public QuickAddPreview PreviewQuickAdd(string raw, IReadOnlyList<TextSpan> suppressedSpans)
+    {
+        try
+        {
+            var parsed = _parser.Parse(raw ?? string.Empty, _clock.GetUtcNow(), _timeZoneId, suppressedSpans);
+            if (parsed.When.Kind != WhenKind.OnDate || parsed.When.Date is not { } date)
+                return new QuickAddPreview(null, null, null, null);
+            var local = date.ToLocal();
+            var dateText = local.ToString("M월 d일 (ddd)", KoreanCulture);
+            var hasTime = parsed.WhenHasTime;
+            var timeText = hasTime ? local.ToString("tt h:mm", KoreanCulture) : null;
+            return new QuickAddPreview(dateText, timeText, hasTime ? local.Hour : null, hasTime ? local.Minute : null);
+        }
+        catch
+        {
+            return new QuickAddPreview(null, null, null, null);
+        }
+    }
+
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
 
@@ -261,16 +296,46 @@ public partial class TaskListViewModel : ObservableObject
         OnPropertyChanged(nameof(CanQuickAdd));
     }
 
-    /// <summary>Quick-add: parse the line, create + save a task, then refresh from the index.</summary>
+    /// <summary>Quick-add via the Enter command path: commit the current <see cref="QuickAddText"/> with no
+    /// suppression. The control's richer commit (carrying reverted spans) goes through
+    /// <see cref="SubmitQuickAddAsync"/>; both share the same parse-and-save core.</summary>
     [RelayCommand]
-    private async Task AddAsync()
+    private Task AddAsync() => SubmitQuickAddAsync(QuickAddSubmission.Plain(QuickAddText ?? string.Empty));
+
+    /// <summary>The quick-add commit core. Re-parses the raw line at the current clock — honouring the
+    /// editor's reverted (<paramref name="submission"/>.SuppressedSpans) words — then creates and saves the
+    /// task and refreshes from the index. The live inline parse is a display cache only; this re-parse is the
+    /// source of truth, so a midnight/bare-time/timezone boundary can't stale the saved result (plan §5.2).</summary>
+    public async Task SubmitQuickAddAsync(QuickAddSubmission submission)
     {
         if (!CanQuickAdd) return;
-        var text = QuickAddText?.Trim();
-        if (string.IsNullOrEmpty(text))
+        // Pass the raw line (untrimmed): suppression offsets index into it and the parser trims the title
+        // itself. Only the whitespace-only emptiness check happens here.
+        var text = submission.RawText ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
             return;
+        // A commit is already in flight — drop this one. The control's Enter path calls here directly,
+        // bypassing AddCommand's own re-entrancy guard, so without this a second Enter during the save
+        // await would re-submit the still-unchanged line and create a duplicate task. (Single-threaded UI
+        // dispatcher, so a plain flag suffices.)
+        if (_isSubmitting) return;
+        _isSubmitting = true;
+        try
+        {
+            await SaveQuickAddAsync(submission, text);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
 
-        var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId);
+    // Guards SubmitQuickAddAsync against re-entrant commits (a rapid second Enter during the save await).
+    private bool _isSubmitting;
+
+    private async Task SaveQuickAddAsync(QuickAddSubmission submission, string text)
+    {
+        var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId, submission.SuppressedSpans);
 
         // The parser's When is used as-is when it recognized any placement, including explicit
         // Unscheduled markers ("언젠가") and recurrence anchors. Only a genuinely dateless line gets
@@ -303,7 +368,11 @@ public partial class TaskListViewModel : ObservableObject
             task.TagIds.Add(tagId);
 
         await _store.SaveAsync(task);
-        QuickAddText = string.Empty;
+        // Clear the box only if the user hasn't started a new line during the save — otherwise we'd wipe
+        // in-progress input. The box round-trips its visible text into QuickAddText, so equality against the
+        // submitted raw line means "still showing exactly what we just committed".
+        if (string.Equals(QuickAddText, text, StringComparison.Ordinal))
+            QuickAddText = string.Empty;
         await LoadAsync();
         // A new open task bumps its group/tag (or the 없음 bucket) count in the sidebar.
         _navNotifier.NotifyCountsChanged();
