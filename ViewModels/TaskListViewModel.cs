@@ -69,6 +69,11 @@ public partial class TaskListViewModel : ObservableObject
     /// mean off — the open-only default.</summary>
     private bool KeepCompletedToday => _listPreferences?.KeepCompletedForToday ?? false;
 
+    /// <summary>Whether dated rows show their ISO week number ("· W27") — the display half of the "연중 주차"
+    /// preference. Read live so a fresh list (recreated on return from Settings) reflects a toggled value;
+    /// null prefs (tests) mean off.</summary>
+    private bool ShowWeekNumber => _listPreferences?.ShowWeekNumber ?? false;
+
     // Serializes reorder persists so a fast run of drops can't interleave their rank writes.
     private readonly SemaphoreSlim _reorderGate = new(1, 1);
 
@@ -564,7 +569,7 @@ public partial class TaskListViewModel : ObservableObject
 
     private TaskRowViewModel CreateRow(TaskListItem item)
     {
-        var row = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r)) { IsCompact = _rowsCompact };
+        var row = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r), ShowWeekNumber) { IsCompact = _rowsCompact };
         SyncChecklistRows(row, item);
         return row;
     }
@@ -634,7 +639,7 @@ public partial class TaskListViewModel : ObservableObject
                     continue;
                 }
             }
-            target[i].Update(item);
+            target[i].Update(item, ShowWeekNumber);
             SyncChecklistRows(target[i], item);
         }
     }

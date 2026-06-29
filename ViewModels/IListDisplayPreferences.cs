@@ -12,4 +12,9 @@ public interface IListDisplayPreferences
     /// local day rolls over, instead of dropping into its "완료한 일" section the moment it is completed.
     /// Off (the default) keeps the open-only behavior — a completion leaves the live list at once.</summary>
     bool KeepCompletedForToday { get; }
+
+    /// <summary>When true, a dated task's list row appends its ISO-8601 week number to the schedule line
+    /// (e.g. "7월 1일 (수) · W27"), and the quick-add parser recognizes week expressions ("W27", "27주차")
+    /// as dates. Off (the default) shows no week number and leaves those expressions in the title.</summary>
+    bool ShowWeekNumber { get; }
 }
