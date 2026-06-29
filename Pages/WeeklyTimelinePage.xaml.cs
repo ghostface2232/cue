@@ -103,7 +103,9 @@ public sealed partial class WeeklyTimelinePage : Page
         => await RunSafelyAsync(async () =>
         {
             await ViewModel.PreviousMonthCommand.ExecuteAsync(null);
-            FocusTimeline();
+            // Stepping back in time lands on the new (earlier) month's LAST week, so the band reads as one
+            // continuous scroll backward.
+            ScrollToEnd();
         });
 
     private async void Today_Click(object sender, RoutedEventArgs e)
@@ -117,7 +119,8 @@ public sealed partial class WeeklyTimelinePage : Page
         => await RunSafelyAsync(async () =>
         {
             await ViewModel.NextMonthCommand.ExecuteAsync(null);
-            FocusTimeline();
+            // Stepping forward lands on the new month's FIRST week — continuous scroll forward.
+            ScrollToStart();
         });
 
     // --- Horizontal scroll / drag-pan / wheel-pan / keyboard ---
@@ -260,6 +263,27 @@ public sealed partial class WeeklyTimelinePage : Page
             var raw = ViewModel.TodayLineOffset - (TimelineScrollViewer.ViewportWidth / 2);
             TimelineScrollViewer.ChangeView(
                 ClampOffset(SnapToColumn(raw), TimelineScrollViewer.ScrollableWidth),
+                null,
+                null,
+                disableAnimation: false);
+        });
+    }
+
+    // The track starts at the first week column and ends at the last, and ScrollableWidth is a whole
+    // number of column widths, so jumping to 0 / ScrollableWidth lands flush on the month's first / last
+    // column. Deferred so the new month's track has laid out (ScrollableWidth is current).
+    private void ScrollToStart() => ScrollHorizontally(0);
+
+    private void ScrollToEnd() => ScrollHorizontally(double.PositiveInfinity);
+
+    private void ScrollHorizontally(double offset)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            TimelineScrollViewer.UpdateLayout();
+            FocusTimeline();
+            TimelineScrollViewer.ChangeView(
+                ClampOffset(offset, TimelineScrollViewer.ScrollableWidth),
                 null,
                 null,
                 disableAnimation: false);
