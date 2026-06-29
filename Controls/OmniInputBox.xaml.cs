@@ -32,6 +32,10 @@ public sealed partial class OmniInputBox : UserControl
     private long _documentVersion;
     private long _lastTintedVersion = -1;
 
+    // The spans painted by the last full re-tint. When a fresh parse yields the same spans, the painted
+    // result is identical, so we skip the whole-document reformat (the costly per-keystroke/space work).
+    private IReadOnlyList<QuickAddToken> _lastTokens = Array.Empty<QuickAddToken>();
+
     // Re-tint after a typing pause for edits that don't go through composition (paste, delete, arrows,
     // digits/latin). Composition input is covered by TextCompositionEnded instead.
     private readonly DispatcherTimer _idle = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -108,9 +112,10 @@ public sealed partial class OmniInputBox : UserControl
         var self = (OmniInputBox)d;
         if (self._updatingTextFromDocument)
             return; // change originated in the document — don't echo it back and reset the caret
-        self.PushTextToDocument((string)e.NewValue ?? string.Empty);
-        self.UpdatePlaceholder();
-        self.ReTint();
+        var value = (string)e.NewValue ?? string.Empty;
+        self.PushTextToDocument(value);
+        self.UpdatePlaceholder(value);
+        self.ReTint(value, force: false);
     }
 
     // ---- VM <-> Document bridge ----------------------------------------------------------------
@@ -120,10 +125,10 @@ public sealed partial class OmniInputBox : UserControl
         if (_syncingDocument)
             return; // our own SetText — not a user edit
 
-        var text = GetPlainText();
+        var text = GetPlainText(); // single COM read per change; threaded into placeholder + re-tint below
         if (text == (Text ?? string.Empty))
         {
-            UpdatePlaceholder();
+            UpdatePlaceholder(text);
             return; // formatting-only re-raise or no real change (also breaks any echo loop)
         }
 
@@ -131,7 +136,7 @@ public sealed partial class OmniInputBox : UserControl
         _updatingTextFromDocument = true;
         Text = text;                 // propagates to the bound VM property
         _updatingTextFromDocument = false;
-        UpdatePlaceholder();
+        UpdatePlaceholder(text);
 
         // Re-tint trigger (unified rules): never while composing (that path re-tints on
         // TextCompositionEnded); space is a hard delimiter → now; otherwise debounce via idle.
@@ -139,7 +144,7 @@ public sealed partial class OmniInputBox : UserControl
         if (_isComposing)
             return;
         if (text.EndsWith(" ", StringComparison.Ordinal))
-            ReTint();
+            ReTint(text, force: false);
         else
             _idle.Start();
     }
@@ -174,8 +179,10 @@ public sealed partial class OmniInputBox : UserControl
         }
     }
 
-    private void UpdatePlaceholder()
-        => Placeholder.Visibility = string.IsNullOrEmpty(GetPlainText()) ? Visibility.Visible : Visibility.Collapsed;
+    private void UpdatePlaceholder() => UpdatePlaceholder(GetPlainText());
+
+    private void UpdatePlaceholder(string text)
+        => Placeholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
 
     // ---- IME-safe Enter + plain-text paste -----------------------------------------------------
 
@@ -222,7 +229,9 @@ public sealed partial class OmniInputBox : UserControl
 
     // ---- Inline accent (Step 3): full reset, then paint token spans one accent colour --------------
 
-    private void ReTint(bool force = false)
+    private void ReTint(bool force = false) => ReTint(GetPlainText(), force);
+
+    private void ReTint(string raw, bool force)
     {
         if (_isComposing)
             return; // never format a composing (incomplete) syllable
@@ -230,10 +239,19 @@ public sealed partial class OmniInputBox : UserControl
             return; // already tinted this exact text — collapses space+CompositionEnded+idle into one parse
         _lastTintedVersion = _documentVersion;
 
-        var raw = GetPlainText();
         IReadOnlyList<QuickAddToken> tokens;
         try { tokens = Tokenizer?.Invoke(raw) ?? Array.Empty<QuickAddToken>(); }
         catch { tokens = Array.Empty<QuickAddToken>(); }
+
+        // Unchanged spans paint to an identical result — skip the whole-document reset+repaint (the costly
+        // part on the per-keystroke/space path) and just keep the freshly typed tail un-accented. The tail
+        // is always past every token here: if an edit had shifted a span, the spans wouldn't compare equal.
+        if (!force && SameSpans(tokens, _lastTokens))
+        {
+            KeepTypedTailNormal();
+            return;
+        }
+        _lastTokens = tokens;
 
         try
         {
@@ -269,6 +287,49 @@ public sealed partial class OmniInputBox : UserControl
         {
             _syncingDocument = false; // a position/format failure degrades to "no tint" — never throws
         }
+    }
+
+    /// <summary>The skip-path counterpart to the full re-tint's caret handling: when the spans are
+    /// unchanged we don't repaint, but the just-typed tail (the char before a collapsed caret, always past
+    /// every token here) must stay default-coloured and the next char must not inherit an accent — exactly
+    /// what the full path's trailing caret reset does, at O(1).</summary>
+    private void KeepTypedTailNormal()
+    {
+        try
+        {
+            var doc = Box.Document;
+            if (doc.Selection.StartPosition != doc.Selection.EndPosition)
+                return; // a selection, not a caret — nothing was just typed at a single point
+            var caret = doc.Selection.StartPosition;
+            var normal = DefaultColor();
+
+            _syncingDocument = true; // formatting must not be read back as a user edit
+            try
+            {
+                if (caret > 0)
+                    doc.GetRange(caret - 1, caret).CharacterFormat.ForegroundColor = normal;
+                doc.Selection.SetRange(caret, caret);
+                doc.Selection.CharacterFormat.ForegroundColor = normal;
+            }
+            finally
+            {
+                _syncingDocument = false;
+            }
+        }
+        catch
+        {
+            _syncingDocument = false; // degrade to "no tint touch-up" — never throws
+        }
+    }
+
+    private static bool SameSpans(IReadOnlyList<QuickAddToken> a, IReadOnlyList<QuickAddToken> b)
+    {
+        if (a.Count != b.Count)
+            return false;
+        for (var i = 0; i < a.Count; i++)
+            if (a[i].Start != b[i].Start || a[i].Length != b[i].Length)
+                return false;
+        return true;
     }
 
     private Color AccentColor()
