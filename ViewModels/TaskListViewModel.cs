@@ -301,7 +301,27 @@ public partial class TaskListViewModel : ObservableObject
         var text = submission.RawText ?? string.Empty;
         if (string.IsNullOrWhiteSpace(text))
             return;
+        // A commit is already in flight — drop this one. The control's Enter path calls here directly,
+        // bypassing AddCommand's own re-entrancy guard, so without this a second Enter during the save
+        // await would re-submit the still-unchanged line and create a duplicate task. (Single-threaded UI
+        // dispatcher, so a plain flag suffices.)
+        if (_isSubmitting) return;
+        _isSubmitting = true;
+        try
+        {
+            await SaveQuickAddAsync(submission, text);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
 
+    // Guards SubmitQuickAddAsync against re-entrant commits (a rapid second Enter during the save await).
+    private bool _isSubmitting;
+
+    private async Task SaveQuickAddAsync(QuickAddSubmission submission, string text)
+    {
         var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId, submission.SuppressedSpans);
 
         // The parser's When is used as-is when it recognized any placement, including explicit
@@ -335,7 +355,11 @@ public partial class TaskListViewModel : ObservableObject
             task.TagIds.Add(tagId);
 
         await _store.SaveAsync(task);
-        QuickAddText = string.Empty;
+        // Clear the box only if the user hasn't started a new line during the save — otherwise we'd wipe
+        // in-progress input. The box round-trips its visible text into QuickAddText, so equality against the
+        // submitted raw line means "still showing exactly what we just committed".
+        if (string.Equals(QuickAddText, text, StringComparison.Ordinal))
+            QuickAddText = string.Empty;
         await LoadAsync();
         // A new open task bumps its group/tag (or the 없음 bucket) count in the sidebar.
         _navNotifier.NotifyCountsChanged();

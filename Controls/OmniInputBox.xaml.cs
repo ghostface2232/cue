@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Cue.Parsing;
 using Cue.ViewModels;
 using Microsoft.UI.Text;
@@ -91,9 +90,6 @@ public sealed partial class OmniInputBox : UserControl
     /// <summary>Supplies the resolved date/time of the live line for the token popover header (so the user
     /// sees "내일 → 6월 30일 (화)"). Honours the same reverts. Null/throwing degrades to a header without it.</summary>
     public Func<string, IReadOnlyList<TextSpan>, QuickAddPreview>? PreviewProvider { get; set; }
-
-    /// <summary>Current monotonically-increasing version of the visible text (re-parse dedup).</summary>
-    public long DocumentVersion => _documentVersion;
 
     // ---- Dependency properties (bridged to the VM via x:Bind) ----------------------------------
 
@@ -243,7 +239,7 @@ public sealed partial class OmniInputBox : UserControl
 
     /// <summary>Snapshots the raw line + editor-held reverts for the VM to re-parse at the current clock.</summary>
     private QuickAddSubmission BuildSubmission()
-        => new(GetPlainText(), _suppressed.ToArray(), _documentVersion);
+        => new(GetPlainText(), _suppressed.ToArray());
 
     private async void OnBoxPaste(object sender, TextControlPasteEventArgs e)
     {
@@ -279,6 +275,13 @@ public sealed partial class OmniInputBox : UserControl
         if (_isComposing)
             return; // don't interrupt an in-flight syllable
 
+        // A non-space edit defers its re-tint to the idle timer (500ms), so _tokens can still hold the
+        // pre-edit offsets right now — tapping in that window would hit-test, replace, or revert against a
+        // stale span and act on the wrong characters. Flush any pending re-tint first (a no-op when already
+        // current) so the tokens match the live text before we map the caret.
+        _idle.Stop();
+        ReTint();
+
         // The tap has already moved the caret to the clicked character; read it instead of doing our own
         // point→index hit-test (no GetRangeFromPoint coordinate-space guessing). Map the caret to a token.
         int caret;
@@ -309,8 +312,8 @@ public sealed partial class OmniInputBox : UserControl
 
         // Drop any preset identical to what's already there (a no-op swap — e.g. "이번 주 금요일" on a bare
         // "금요일" token, since both replace to the same text).
-        var alts = AlternativesFor(token, preview)
-            .Where(a => !string.Equals(a.Text, token.Text, StringComparison.Ordinal))
+        var alts = QuickAddAlternatives.For(token, preview)
+            .Where(a => !string.Equals(a.Replacement, token.Text, StringComparison.Ordinal))
             .ToList();
 
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.Bottom };
@@ -325,10 +328,10 @@ public sealed partial class OmniInputBox : UserControl
         });
         flyout.Items.Add(new MenuFlyoutSeparator());
 
-        foreach (var (label, replacement) in alts)
+        foreach (var alt in alts)
         {
-            var item = new MenuFlyoutItem { Text = label };
-            var rep = replacement; // capture per iteration
+            var item = new MenuFlyoutItem { Text = alt.Label };
+            var rep = alt.Replacement; // capture per iteration
             item.Click += (_, _) => ReplaceToken(token, rep);
             flyout.Items.Add(item);
         }
@@ -370,131 +373,20 @@ public sealed partial class OmniInputBox : UserControl
         _ => "",                            // History (someday)
     };
 
-    /// <summary>The quick alternatives for a token, as (menu label, replacement text) — every replacement is
-    /// verified to re-parse (QuickAddPresetTests). A weekday date token gets adjacent-weekday + week shifts;
-    /// any other date token gets the generic presets. A time token gets presets plus ±1 hour / AM-PM flip
-    /// computed from the resolved clock. Recurrence keeps the weekday across a frequency swap.</summary>
-    private static IReadOnlyList<(string Label, string Text)> AlternativesFor(QuickAddToken token, QuickAddPreview preview) => token.Kind switch
-    {
-        QuickAddTokenKind.Date when WeekdayChar.Match(token.Text) is { Success: true } m => WeekdayDateAlternatives(token.Text, m.Value[0]),
-        QuickAddTokenKind.Date => new[] { ("오늘", "오늘"), ("내일", "내일"), ("모레", "모레"), ("이번 주말", "이번 주말"), ("다음 주", "다음 주") },
-        QuickAddTokenKind.Time => TimeAlternatives(preview),
-        QuickAddTokenKind.Recurrence => RecurrenceAlternatives(token.Text),
-        _ => Array.Empty<(string, string)>(),
-    };
-
-    private const string WeekOrder = "월화수목금토일";
-    private static readonly Regex WeekdayChar = new(@"[월화수목금토일](?=요일|욜)", RegexOptions.Compiled);
-
-    /// <summary>Weekday-date alternatives, aware of which week the token already denotes (이번/다음/다다음
-    /// 주). Offers the adjacent weekdays (전/후) <i>in the same week</i>, then the same weekday in the two
-    /// <i>other</i> weeks (so the current week isn't re-suggested). "이번 주" replaces to a bare "{요일}" —
-    /// the parser doesn't consume a literal "이번 주" prefix, and bare already means the upcoming one.</summary>
-    private static IReadOnlyList<(string Label, string Text)> WeekdayDateAlternatives(string tokenText, char wd)
-    {
-        var week = WeekOffset(tokenText);
-        var d = WeekOrder.IndexOf(wd);
-
-        var list = new List<(string, string)>();
-        AddDayNeighbor(list, "하루 전", week, d - 1); // the calendar day before
-        AddDayNeighbor(list, "하루 뒤", week, d + 1); // the calendar day after
-        for (var w = 0; w <= 2; w++)
-            if (w != week)
-                list.Add(WeekShiftOption(w, wd)); // same weekday, the other two weeks
-        return list;
-    }
-
-    /// <summary>Adds the calendar-day neighbor (±1 day) as a week-aware weekday option, prefixing the label
-    /// with 하루 전/하루 뒤 so the direction reads unambiguously next to "다음 주 목/토요일". Crossing the
-    /// Mon/Sun boundary shifts the week; a neighbor that would land in the past (before 이번 주) or beyond
-    /// 다다음 주 is skipped rather than mislabeled — a weekday word only ever points forward.</summary>
-    private static void AddDayNeighbor(List<(string Label, string Text)> list, string prefix, int week, int dayIndex)
-    {
-        var w = week;
-        if (dayIndex < 0) { dayIndex += 7; w--; }      // before Monday → previous week's Sunday
-        else if (dayIndex > 6) { dayIndex -= 7; w++; } // after Sunday → next week's Monday
-        if (w is < 0 or > 2)
-            return;
-        var text = WeekdayPhrase(w, WeekOrder[dayIndex]);
-        list.Add(($"{prefix} · {text}", text));
-    }
-
-    /// <summary>Which week the token's weekday phrase denotes: 2 = 다다음 주, 1 = 다음/담(주), 0 = 이번 주 (a
-    /// bare weekday). "다다음" must be tested before "다음" since it contains it.</summary>
-    private static int WeekOffset(string tokenText)
-        => tokenText.Contains("다다음", StringComparison.Ordinal) ? 2
-            : tokenText.Contains("다음", StringComparison.Ordinal) || tokenText.Contains("담", StringComparison.Ordinal) ? 1
-            : 0;
-
-    private static string WeekdayPhrase(int week, char wd) => week switch
-    {
-        1 => $"다음 주 {wd}요일",
-        2 => $"다다음 주 {wd}요일",
-        _ => $"{wd}요일", // this week = bare (the upcoming one)
-    };
-
-    /// <summary>A same-weekday option for week <paramref name="week"/>. The label always names the week; the
-    /// 이번 주 replacement is the bare weekday (the parser leaks a literal "이번 주" into the title).</summary>
-    private static (string Label, string Text) WeekShiftOption(int week, char wd)
-    {
-        var text = WeekdayPhrase(week, wd);
-        var label = week == 0 ? $"이번 주 {wd}요일" : text;
-        return (label, text);
-    }
-
-    /// <summary>Time alternatives, computed from the resolved clock: ±1 hour and an AM/PM flip, formatted as
-    /// explicit 오전/오후 times so they re-parse unambiguously. Empty when the line resolved no time (then the
-    /// popover shows the header + revert only).</summary>
-    private static IReadOnlyList<(string Label, string Text)> TimeAlternatives(QuickAddPreview preview)
-    {
-        if (preview is not { Hour: int h, Minute: int min })
-            return Array.Empty<(string, string)>();
-
-        var earlier = ClockText((h + 23) % 24, min);
-        var later = ClockText((h + 1) % 24, min);
-        var flipped = ClockText((h + 12) % 24, min);
-        return new[]
-        {
-            ($"1시간 일찍 · {earlier}", earlier),
-            ($"1시간 늦게 · {later}", later),
-            ((h >= 12 ? "오전으로" : "오후로") + $" · {flipped}", flipped),
-        };
-    }
-
-    /// <summary>Formats a 24-hour clock as an explicit Korean time ("오후 2시", "오전 3시 30분") — the
-    /// unambiguous form, so the replace-and-reparse round-trip can't be re-read as a different hour.</summary>
-    private static string ClockText(int hour24, int minute)
-    {
-        var (meridiem, h12) = hour24 == 0 ? ("오전", 12)
-            : hour24 < 12 ? ("오전", hour24)
-            : hour24 == 12 ? ("오후", 12)
-            : ("오후", hour24 - 12);
-        return minute == 0 ? $"{meridiem} {h12}시" : $"{meridiem} {h12}시 {minute}분";
-    }
-
-    /// <summary>Recurrence alternatives. 매일/평일 are universal frequency swaps; when the phrase names a
-    /// weekday we also offer 매주/격주 of that same weekday (a weekly↔biweekly toggle that keeps the day).</summary>
-    private static IReadOnlyList<(string Label, string Text)> RecurrenceAlternatives(string tokenText)
-    {
-        var list = new List<(string, string)> { ("매일", "매일"), ("평일", "평일") };
-        var m = WeekdayChar.Match(tokenText);
-        if (m.Success)
-        {
-            var wd = $"{m.Value}요일"; // normalize 금욜 → 금요일
-            list.Add(($"매주 {wd}", $"매주 {wd}"));
-            list.Add(($"격주 {wd}", $"격주 {wd}"));
-        }
-        return list;
-    }
-
     /// <summary>Replaces the token's span with <paramref name="replacement"/>. A real edit: it flows through
-    /// the text bridge (VM update + suppression reprojection), then we force an immediate re-tint.</summary>
+    /// the text bridge (VM update + suppression reprojection), then we force an immediate re-tint. Before
+    /// writing, it re-reads the span and bails if it no longer holds the token text we mapped — a guard
+    /// against editing the wrong characters should the document have shifted out from under a stale token.</summary>
     private void ReplaceToken(QuickAddToken token, string replacement)
     {
         try
         {
             var doc = Box.Document;
-            doc.GetRange(token.Start, token.Start + token.Length).SetText(TextSetOptions.None, replacement);
+            var range = doc.GetRange(token.Start, token.Start + token.Length);
+            range.GetText(TextGetOptions.NoHidden, out var current);
+            if (!string.Equals(current, token.Text, StringComparison.Ordinal))
+                return; // the span drifted off the token — don't overwrite unrelated text
+            range.SetText(TextSetOptions.None, replacement);
             var caret = token.Start + replacement.Length;
             doc.Selection.SetRange(caret, caret);
             ReTint(force: true);

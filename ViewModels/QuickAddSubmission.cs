@@ -12,18 +12,19 @@ namespace Cue.ViewModels;
 /// <param name="RawText">The exact visible text (untrimmed); suppression offsets index into it.</param>
 /// <param name="SuppressedSpans">Original-text spans the user reverted — excluded from recognition but
 /// kept in the title. Empty for a plain commit.</param>
-/// <param name="DocumentVersion">The control's text version at submit time, for stale-parse detection.</param>
 /// <remarks>
-/// A <c>Corrections</c> list (non-text corrections such as forcing a bare "3시" to 15:00, or toggling
-/// scheduled↔deadline) is deliberately omitted for the MVP: every popover correction is currently a plain
-/// text replacement that the re-parse picks up on its own. It is added when a non-text correction lands.
+/// Staleness across the save is handled by the view model, not carried here: the commit re-parses at the
+/// current clock and clears the box only when its text still matches this submission, so a slow save can't
+/// wipe a line the user kept typing. A <c>Corrections</c> list (non-text corrections such as forcing a bare
+/// "3시" to 15:00, or toggling scheduled↔deadline) is deliberately omitted for the MVP: every popover
+/// correction is currently a plain text replacement that the re-parse picks up on its own. It is added when
+/// a non-text correction lands.
 /// </remarks>
 public sealed record QuickAddSubmission(
     string RawText,
-    IReadOnlyList<TextSpan> SuppressedSpans,
-    long DocumentVersion)
+    IReadOnlyList<TextSpan> SuppressedSpans)
 {
     /// <summary>A bare commit of <paramref name="rawText"/> with no suppression (the legacy/Enter path).</summary>
     public static QuickAddSubmission Plain(string rawText)
-        => new(rawText ?? string.Empty, Array.Empty<TextSpan>(), 0);
+        => new(rawText ?? string.Empty, Array.Empty<TextSpan>());
 }

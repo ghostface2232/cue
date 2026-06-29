@@ -868,7 +868,7 @@ public sealed class ViewModelRegressionTests
         // The commit re-parses the raw line honouring the editor's reverts (plan §5.2). Reverting "내일"
         // (chars [0,2)) excludes it from recognition yet keeps it in the title — the false positive the
         // user caught before committing does not get sucked into a date.
-        await vm.SubmitQuickAddAsync(new QuickAddSubmission("내일 장보기", new[] { new TextSpan(0, 2) }, 1));
+        await vm.SubmitQuickAddAsync(new QuickAddSubmission("내일 장보기", new[] { new TextSpan(0, 2) }));
 
         var task = Assert.Single(await store.GetAllActiveAsync());
         Assert.Equal("내일 장보기", task.Title);
@@ -895,6 +895,99 @@ public sealed class ViewModelRegressionTests
         Assert.Equal("장보기", task.Title);
         Assert.Equal(WhenKind.OnDate, task.WhenKind);
         Assert.NotNull(task.WhenDate);
+    }
+
+    [Fact]
+    public async Task RapidDoubleSubmit_DuringTheSave_CreatesOnlyOneTask()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        // Hold the first save open so a second submit lands while it is still in flight — the exact race
+        // the control's direct (non-AddCommand) Enter path could hit. Without the re-entrancy guard the
+        // second submit would re-parse the still-unchanged line and save a second, duplicate task.
+        var release = new TaskCompletionSource();
+        var gated = new GatedSaveStore(store, release.Task);
+        var vm = new TaskListViewModel(gated, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        vm.QuickAddText = "회의";
+
+        var first = vm.SubmitQuickAddAsync(QuickAddSubmission.Plain("회의")); // blocks inside SaveAsync
+        var second = vm.SubmitQuickAddAsync(QuickAddSubmission.Plain("회의")); // dropped by the in-flight guard
+        await second; // returns at once — it never reached the store
+        release.SetResult();
+        await first;
+
+        Assert.Single(await store.GetAllActiveAsync());
+    }
+
+    [Fact]
+    public async Task QuickAddCommit_WhileTheUserKeepsTyping_DoesNotWipeTheNewInput()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var release = new TaskCompletionSource();
+        var gated = new GatedSaveStore(store, release.Task);
+        var vm = new TaskListViewModel(gated, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        // Commit "회의", then — while its save is still open — the user starts a new line. The post-save
+        // clear must not wipe that in-progress text: it clears only when the box still shows the committed
+        // line.
+        vm.QuickAddText = "회의";
+        var commit = vm.AddCommand.ExecuteAsync(null);
+        vm.QuickAddText = "회의 자료 준비";
+        release.SetResult();
+        await commit;
+
+        Assert.Equal("회의 자료 준비", vm.QuickAddText);
+        Assert.Single(await store.GetAllActiveAsync());
+    }
+
+    [Fact]
+    public async Task QuickAddCommit_WithNoFurtherTyping_ClearsTheBox()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+
+        vm.QuickAddText = "회의";
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Equal(string.Empty, vm.QuickAddText);
+        Assert.Single(await store.GetAllActiveAsync());
+    }
+
+    /// <summary>An <see cref="ITaskStore"/> decorator that holds every <see cref="ITaskStore.SaveAsync"/>
+    /// until a release task completes, so a test can keep a save in flight and drive a deterministic race.
+    /// Everything else forwards straight through.</summary>
+    private sealed class GatedSaveStore(ITaskStore inner, Task release) : ITaskStore
+    {
+        public Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken ct = default) where T : RecordBase
+            => inner.GetAllAsync<T>(ct);
+
+        public Task<T?> GetAsync<T>(Guid id, CancellationToken ct = default) where T : RecordBase
+            => inner.GetAsync<T>(id, ct);
+
+        public async Task SaveAsync<T>(T record, CancellationToken ct = default) where T : RecordBase
+        {
+            await release;
+            await inner.SaveAsync(record, ct);
+        }
+
+        public Task DeleteAsync<T>(Guid id, CancellationToken ct = default) where T : RecordBase
+            => inner.DeleteAsync<T>(id, ct);
     }
 
     [Fact]
