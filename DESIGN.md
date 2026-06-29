@@ -249,6 +249,7 @@ Cue should feel quiet, native, and considered. Reading order comes before inform
 3. **Shadows only on truly floating surfaces.** Flyouts, popups, slide-overs get elevation. In-flow cards, list rows, and the detail panel use zero shadow and a 1px stroke for separation.
 4. **Restrained accent.** Never fill a surface with the accent. The accent is for selection indicators, focus rings, tag dots, and the completion check only.
 5. **Tokens are truth.** Sizes, radii, colors, and timings are consumed from the tokens in `Styles/DesignTokens.xaml` — never sprinkled as literals in XAML.
+6. **The in-app theme drives everything, not the OS theme.** 설정 > 화면 모드 (시스템/라이트/다크) is applied as an `ElementTheme` override on the window root, so it can differ from the OS theme. XAML `{ThemeResource}` and `ThemeDictionaries` follow that override automatically — but code that reads `Application.Current.Resources[...]` does **not** (it resolves against `Application.RequestedTheme`, which tracks the OS), and pop-up content (flyouts, menus, dialogs) lives in the pop-up root and does **not** inherit the override. So any themed brush resolved in code, and any code-built pop-up, must go through `Services/ThemeResources` (see "In-app theme resolution"). A surface that only flips when the OS theme changes is a defect.
 
 **Quality baseline**
 
@@ -261,6 +262,14 @@ Cue should feel quiet, native, and considered. Reading order comes before inform
 ## Colors
 
 Cue defines no fixed palette of its own. Color is delegated to WinUI's alpha-based theme tokens so the entire surface flips correctly between Light and Dark. The names below are semantic roles; the value is the WinUI source token.
+
+### In-app theme resolution
+The theme is an `ElementTheme` override on the window root (`AppPreferences.ApplyTheme`), so the app theme can diverge from the OS theme. That makes two paths unsafe, and both route through `Services/ThemeResources` instead:
+
+- **`ThemeResources.Brush(key)`** resolves a themed brush against the window root's effective `ActualTheme` (via the app's `ThemeDictionaries`), not the OS-following `Application.Current.Resources`. Every converter (`PriorityToBrush`/`Tint`, `OccurrencePipKindToBrush`, `SaveStatusToBrush`, the `Hex*` fallbacks) and every code-set glyph/check/ring color uses it.
+- **`ThemeResources.Apply(content)` / `Apply(menuFlyout)`** pins the effective theme onto pop-up content, which otherwise renders in the pop-up root at the OS theme. Applied to every code-built `Flyout`/`MenuFlyout` (confirm popovers, context menus, swatch/icon pickers, nav-visibility flyout, occurrence flyout, quick-add token flyout); `ContentDialog`s are themed centrally in `DialogService`.
+
+Because of this, any code-resolved themed color (and the priority/timeline pip brushes) lives in the `ThemeDictionaries` at the top of `DesignTokens.xaml`, not as a single instance in the default dictionary — a single instance can only carry one theme's color at a time and so would freeze at the OS theme. Imperative colors keyed off `ActualTheme` (caption buttons, focus visuals, tag-color darkening) are re-resolved on `ActualThemeChanged`.
 
 ### Brand & Accent
 - **Accent** (`{colors.accent}` → `AccentFillColorDefault`): Cue's only brand color. Used sparingly — selection bar, focus ring, completion-check fill, today marker/line. Never as a surface fill.
