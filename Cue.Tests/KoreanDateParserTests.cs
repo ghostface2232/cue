@@ -107,7 +107,7 @@ public sealed class KoreanDateParserTests
 
     [Theory]
     [InlineData("새벽 운동 가기", "운동 가기", 6)]
-    [InlineData("아침 약 먹기", "약 먹기", 8)]
+    [InlineData("아침 약 먹기", "약 먹기", 9)]
     [InlineData("오전 회의 참석", "회의 참석", 10)]
     [InlineData("점심때 처방약 먹기", "처방약 먹기", 12)]
     [InlineData("오후에 미팅", "미팅", 15)]
@@ -321,7 +321,7 @@ public sealed class KoreanDateParserTests
         var r = Parse("토욜 아침에 한강 뛰러 가기");
         Assert.Equal("한강 뛰러 가기", r.Title);
         Assert.Equal(new DateOnly(2026, 6, 27), WhenDate(r.When));
-        Assert.Equal(8, WhenHour(r.When));
+        Assert.Equal(9, WhenHour(r.When));
     }
 
     [Theory]

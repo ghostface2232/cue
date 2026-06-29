@@ -299,7 +299,7 @@ public sealed class MealAfterRule : IQuickAddRule
         {
             "아침" => 9,
             "점심" => 12,
-            "저녁" => 19,
+            "저녁" => 18,
             _ => 0,
         };
         return hour > 0

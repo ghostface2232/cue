@@ -48,7 +48,7 @@ internal static class Korean
     /// <summary>The representative clock hour each abstract day-part word resolves to on its own.</summary>
     private static readonly IReadOnlyDictionary<string, int> DayPartHour = new Dictionary<string, int>
     {
-        ["새벽"] = 6, ["아침"] = 8, ["오전"] = 10, ["점심"] = 12,
+        ["새벽"] = 6, ["아침"] = 9, ["오전"] = 10, ["점심"] = 12,
         ["오후"] = 15, ["저녁"] = 18, ["밤"] = 21,
     };
 
