@@ -107,7 +107,7 @@ public sealed class KoreanDateParserTests
 
     [Theory]
     [InlineData("새벽 운동 가기", "운동 가기", 6)]
-    [InlineData("아침 약 먹기", "약 먹기", 8)]
+    [InlineData("아침 약 먹기", "약 먹기", 9)]
     [InlineData("오전 회의 참석", "회의 참석", 10)]
     [InlineData("점심때 처방약 먹기", "처방약 먹기", 12)]
     [InlineData("오후에 미팅", "미팅", 15)]
@@ -321,7 +321,7 @@ public sealed class KoreanDateParserTests
         var r = Parse("토욜 아침에 한강 뛰러 가기");
         Assert.Equal("한강 뛰러 가기", r.Title);
         Assert.Equal(new DateOnly(2026, 6, 27), WhenDate(r.When));
-        Assert.Equal(8, WhenHour(r.When));
+        Assert.Equal(9, WhenHour(r.When));
     }
 
     [Theory]
@@ -471,6 +471,8 @@ public sealed class KoreanDateParserTests
     [InlineData("세 시까지 보고서 제출", "보고서 제출", 15, 0)]
     [InlineData("3시 반까지 보고서 제출", "보고서 제출", 15, 30)]
     [InlineData("점심때까지 보고서 제출", "보고서 제출", 12, 0)]
+    [InlineData("6시 전까지 보고서 제출", "보고서 제출", 18, 0)]
+    [InlineData("저녁 전까지 보고서 제출", "보고서 제출", 18, 0)]
     public void DueTimeOnly_ResolvesToTodayTime_WithCleanTitle(string input, string title, int hour, int minute)
     {
         var r = Parse(input);
@@ -487,6 +489,7 @@ public sealed class KoreanDateParserTests
     [InlineData("일요일 3시까지 보고서 제출", "보고서 제출", 2026, 6, 28, 15, 0)]
     [InlineData("다음주 토요일 2시까지 보고서 제출", "보고서 제출", 2026, 7, 4, 14, 0)]
     [InlineData("26일 점심까지 보고서 제출", "보고서 제출", 2026, 6, 26, 12, 0)]
+    [InlineData("내일 6시 전까지 보고서 제출", "보고서 제출", 2026, 6, 24, 18, 0)]
     public void DueDateTimeCombination_ResolvesCorrectly(string input, string title, int year, int month, int day, int hour, int minute)
     {
         var r = Parse(input);

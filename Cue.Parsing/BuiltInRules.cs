@@ -193,7 +193,7 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         => ctx.Zoned(date, hasTime ? h : 0, hasTime ? m : 0);
 }
 
-/// <summary>…까지 / …마감 / N일 안에 → an OnDate <see cref="QuickAddResult.When"/>. A task has a single
+/// <summary>…까지 / …전까지 / …마감 / N일 안에 → an OnDate <see cref="QuickAddResult.When"/>. A task has a single
 /// date, so a "due" phrase resolves to the same When as a plain scheduled date ("금요일까지 보고서" →
 /// title "보고서", When 금요일). The phrase is still recognized and stripped from the title.</summary>
 public sealed class DeadlineRule : IQuickAddRule
@@ -202,8 +202,8 @@ public sealed class DeadlineRule : IQuickAddRule
         Korean.LeftEdge +
         @"(?:" +
         @"(?<within>\d+)\s*일\s*(?:안에|이내)" +
-        "|" + Korean.Date + @"(?:\s*(?:" + Korean.Time + "|" + Korean.DayPart + @"))?\s*(?:까지|마감)" +
-        @"|(?:" + Korean.Time + "|" + Korean.DayPart + @")\s*(?:까지|마감)" +
+        "|" + Korean.Date + @"(?:\s*(?:" + Korean.Time + "|" + Korean.DayPart + @"))?\s*(?:전\s*)?(?:까지|마감)" +
+        @"|(?:" + Korean.Time + "|" + Korean.DayPart + @")\s*(?:전\s*)?(?:까지|마감)" +
         @")" +
         Korean.RightEdge, Opt.Flags);
 
@@ -240,7 +240,7 @@ public sealed class WhenDateRule : IQuickAddRule
         Korean.Date +
         @"(?:\s*(?:" + Korean.Time + "|" + Korean.DayPart + "))?" +
         @"(?:\s*(?:에는|에도|에|은|는|도|부터|쯤|즈음|경))?" +
-        @"(?!\s*(?:까지|마감|안에|이내))" +
+        @"(?!\s*(?:전\s*)?(?:까지|마감)|\s*(?:안에|이내))" +
         Korean.RightEdge, Opt.Flags);
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
@@ -299,7 +299,7 @@ public sealed class MealAfterRule : IQuickAddRule
         {
             "아침" => 9,
             "점심" => 12,
-            "저녁" => 19,
+            "저녁" => 18,
             _ => 0,
         };
         return hour > 0
