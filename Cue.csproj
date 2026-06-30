@@ -10,7 +10,7 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <!-- Single source of truth for the app/installer version. The release workflow's git tag
          (e.g. v0.1.2) must match this, and build-installer.ps1 reads it to stamp the Inno setup. -->
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
