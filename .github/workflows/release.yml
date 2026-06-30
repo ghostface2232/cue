@@ -45,6 +45,16 @@ jobs:
       - name: Build installer
         run: pwsh -File build-installer.ps1
 
+      - name: Compute installer checksum
+        shell: pwsh
+        # The in-app updater verifies the download against this SHA-256 before launching it. Written in
+        # the "<hex>  <filename>" (sha256sum) shape; the updater reads the first 64-hex token.
+        run: |
+          $exe = "dist/CueSetup-win-x64.exe"
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  CueSetup-win-x64.exe" | Set-Content -NoNewline -Path "$exe.sha256"
+          Write-Host "SHA-256: $hash"
+
       - name: Verify published assets (Smoke Test)
         shell: pwsh
         run: |
@@ -57,6 +67,6 @@ jobs:
         # point — final notes and publishing are done manually. Idempotent: if a release/draft for
         # this tag already exists, just replace the asset instead of failing.
         run: >
-          gh release create "${{ github.ref_name }}" dist/CueSetup-win-x64.exe
+          gh release create "${{ github.ref_name }}" dist/CueSetup-win-x64.exe dist/CueSetup-win-x64.exe.sha256
           --title "${{ github.ref_name }}" --draft --generate-notes
-          || gh release upload "${{ github.ref_name }}" dist/CueSetup-win-x64.exe --clobber
+          || gh release upload "${{ github.ref_name }}" dist/CueSetup-win-x64.exe dist/CueSetup-win-x64.exe.sha256 --clobber

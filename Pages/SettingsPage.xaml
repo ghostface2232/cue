@@ -675,6 +675,44 @@
                                     Text="—" />
                             </Grid>
                         </Border>
+
+                        <!-- Update row: one button drives the whole flow. First press checks the latest
+                             GitHub release; if a newer one exists the button turns accent and a second
+                             press downloads + verifies the installer and hands off to it silently. The
+                             caption carries live status; the spinner shows while checking/downloading. -->
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <Grid Style="{StaticResource SettingsRowStyle}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="업데이트" />
+                                    <TextBlock
+                                        x:Name="UpdateStatusText"
+                                        Style="{StaticResource SettingsCaptionStyle}"
+                                        Text="최신 버전인지 확인할 수 있어요." />
+                                </StackPanel>
+                                <StackPanel
+                                    Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="{StaticResource CueGap8}">
+                                    <ProgressRing
+                                        x:Name="UpdateSpinner"
+                                        Width="18"
+                                        Height="18"
+                                        VerticalAlignment="Center"
+                                        IsActive="False"
+                                        Visibility="Collapsed" />
+                                    <Button
+                                        x:Name="UpdateButton"
+                                        VerticalAlignment="Center"
+                                        Click="UpdateButton_Click"
+                                        Content="업데이트 확인" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Grid>
             </ScrollViewer>

@@ -42,14 +42,23 @@ public sealed partial class SettingsPage : Page
     private const double CompactHysteresis = 40;
 
     private readonly AppPreferences _preferences;
+    private readonly UpdateService _updates;
     private readonly ObservableCollection<CustomDateMeaningRow> _customDateRows = new();
     private readonly bool _animationsEnabled = new UISettings().AnimationsEnabled;
     private bool _loading;
     private bool _isNavCompact;
 
+    // Updater UI state. The button is one of: idle (checks), update-ready (downloads + installs), or
+    // busy (disabled). _pendingUpdate holds a found-but-not-yet-installed update; _updateBusy gates
+    // re-entrancy; _defaultButtonStyle is the button's resting style, restored when reverting from accent.
+    private UpdateCheckResult? _pendingUpdate;
+    private bool _updateBusy;
+    private Style? _defaultButtonStyle;
+
     public SettingsPage()
     {
         _preferences = App.Services.GetRequiredService<AppPreferences>();
+        _updates = App.Services.GetRequiredService<UpdateService>();
         InitializeComponent();
         Loaded += SettingsPage_Loaded;
         // The selected section's glyph is tinted imperatively (the container template can't drive an icon
@@ -73,6 +82,7 @@ public sealed partial class SettingsPage : Page
         WeekRollForwardSwitch.IsOn = _preferences.WeekNumberPastRollsToNextYear;
         WeekRollForwardSwitch.IsEnabled = _preferences.ShowWeekNumber;
         VersionText.Text = $"버전 {AppVersion()}";
+        _defaultButtonStyle = UpdateButton.Style;
         ApplySelectedSection();
         _loading = false;
     }
@@ -89,6 +99,95 @@ public sealed partial class SettingsPage : Page
         if (!string.IsNullOrEmpty(informational))
             return informational.Split('+')[0];
         return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+    }
+
+    /// <summary>
+    /// The single update button. With no pending update it checks GitHub for the latest release; once a
+    /// newer one is found (button now accent), the next press downloads + verifies the installer and hands
+    /// off to it silently, then exits so the installer can replace the running files.
+    /// </summary>
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateBusy)
+            return;
+
+        if (_pendingUpdate is { UpdateAvailable: true } ready)
+            await DownloadAndInstallAsync(ready);
+        else
+            await CheckForUpdateAsync();
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        SetUpdateBusy(true);
+        UpdateStatusText.Text = "업데이트를 확인하고 있어요…";
+        try
+        {
+            var result = await _updates.CheckAsync();
+            if (result.UpdateAvailable)
+            {
+                _pendingUpdate = result;
+                UpdateButton.Content = $"v{result.Latest} 다운로드 및 설치";
+                UpdateButton.Style = Application.Current.Resources["AccentButtonStyle"] as Style ?? _defaultButtonStyle;
+                UpdateStatusText.Text = $"새 버전 v{result.Latest}을(를) 설치할 수 있어요.";
+            }
+            else
+            {
+                _pendingUpdate = null;
+                UpdateButton.Content = "업데이트 확인";
+                UpdateButton.Style = _defaultButtonStyle;
+                UpdateStatusText.Text = "최신 버전을 사용하고 있어요.";
+            }
+        }
+        catch (UpdateException exception)
+        {
+            _pendingUpdate = null;
+            UpdateButton.Content = "업데이트 확인";
+            UpdateButton.Style = _defaultButtonStyle;
+            UpdateStatusText.Text = exception.Message;
+        }
+        finally
+        {
+            SetUpdateBusy(false);
+        }
+    }
+
+    private async Task DownloadAndInstallAsync(UpdateCheckResult update)
+    {
+        SetUpdateBusy(true);
+        // Throttle the caption to whole-percent updates so it doesn't churn on every chunk.
+        var lastPercent = -1;
+        var progress = new Progress<double>(fraction =>
+        {
+            var percent = (int)(fraction * 100);
+            if (percent == lastPercent)
+                return;
+            lastPercent = percent;
+            UpdateStatusText.Text = $"다운로드 중… {percent}%";
+        });
+
+        try
+        {
+            var installerPath = await _updates.DownloadAsync(update, progress);
+            UpdateStatusText.Text = "설치를 시작할게요. 잠시 후 앱이 다시 열려요.";
+            UpdateService.LaunchInstaller(installerPath);
+            // Release the program files so the silent installer can replace them; the helper relaunches Cue.
+            Application.Current.Exit();
+        }
+        catch (UpdateException exception)
+        {
+            UpdateStatusText.Text = exception.Message;
+            SetUpdateBusy(false);
+        }
+    }
+
+    /// <summary>Toggles the spinner + disables the button for the duration of an async update step.</summary>
+    private void SetUpdateBusy(bool busy)
+    {
+        _updateBusy = busy;
+        UpdateButton.IsEnabled = !busy;
+        UpdateSpinner.IsActive = busy;
+        UpdateSpinner.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void PopulateFirstDays()
