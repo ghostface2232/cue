@@ -84,6 +84,10 @@ public partial class App : Application
         services.AddSingleton<IRecurringTaskService, RecurringTaskService>();
         services.AddSingleton<DialogService>();
 
+        // The in-app updater (settings → 정보): checks the latest GitHub release, downloads the
+        // installer, and hands off to the silent installer.
+        services.AddSingleton<UpdateService>();
+
         // Cross-panel signal: the sidebar and a detail panel both edit groups/tags but are separate
         // view models, so a change in one reloads the other through this app-scoped notifier.
         services.AddSingleton<INavDataChangeNotifier, NavDataChangeNotifier>();
