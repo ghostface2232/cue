@@ -1342,7 +1342,7 @@ public sealed partial class TaskListPage : Page
             await _dialogs.TryShowAsync(new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "작업을 완료하지 못했습니다",
+                Title = "작업을 완료하지 못했어요",
                 Content = exception.Message,
                 CloseButtonText = "확인",
             });

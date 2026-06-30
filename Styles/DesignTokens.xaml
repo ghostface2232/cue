@@ -454,7 +454,7 @@
 
     <!-- Confirm popover (reusable anchored confirm — see Services/ConfirmPopover.cs).
          A light, contextual alternative to a centered ContentDialog for one-line confirmations
-         ("삭제하시겠습니까?"): it anchors to the row/button that triggered it, the primary button
+         ("삭제할까요?"): it anchors to the row/button that triggered it, the primary button
          or Enter confirms, and Esc / a click outside cancels. These tokens pin the presenter chrome
          and inner rhythm so every call site (task / group / tag / checklist delete) reads the same.
          The inner layout (message + right-aligned 취소·삭제 buttons) is built in the helper; the

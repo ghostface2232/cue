@@ -11,7 +11,7 @@ namespace Cue.Services;
 /// <summary>Text + placement for a <see cref="ConfirmPopover"/>. Defaults read as a delete confirm.</summary>
 public sealed class ConfirmPopoverOptions
 {
-    public string Message { get; init; } = "삭제하시겠습니까?";
+    public string Message { get; init; } = "삭제할까요?";
     public string ConfirmText { get; init; } = "삭제";
     public string CancelText { get; init; } = "취소";
 

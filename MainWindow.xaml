@@ -198,7 +198,7 @@
             HorizontalAlignment="Right"
             IsOpen="False"
             Severity="Informational"
-            Message="변경 사항을 저장하고 있습니다…"
+            Message="변경한 내용을 저장하고 있어요…"
             IsClosable="False"
             Canvas.ZIndex="999" />
 
@@ -212,8 +212,8 @@
             HorizontalAlignment="Right"
             IsOpen="False"
             Severity="Informational"
-            Title="저장 실패"
-            Message="저장하지 못한 할 일이 있습니다"
+            Title="저장하지 못했어요"
+            Message="저장하지 못한 할 일이 있어요"
             IsClosable="True"
             CloseButtonClick="GlobalErrorInfoBar_CloseButtonClick"
             Canvas.ZIndex="999">

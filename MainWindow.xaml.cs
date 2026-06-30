@@ -1258,7 +1258,7 @@ public sealed partial class MainWindow : Window
             var dialog = new ContentDialog
             {
                 XamlRoot = NavView.XamlRoot,
-                Title = "작업을 완료하지 못했습니다",
+                Title = "작업을 완료하지 못했어요",
                 Content = exception.Message,
                 CloseButtonText = "확인",
             };
@@ -1385,7 +1385,7 @@ public sealed partial class MainWindow : Window
     private string UnsavedFailureMessage()
     {
         var count = _saveFailures.UnsavedTaskCount;
-        return count > 0 ? $"저장하지 못한 할 일이 {count}개 있습니다" : "저장하지 못한 할 일이 있습니다";
+        return count > 0 ? $"저장하지 못한 할 일이 {count}개 있어요" : "저장하지 못한 할 일이 있어요";
     }
 
     private void ShowGlobalErrorNormal()

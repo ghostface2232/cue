@@ -213,7 +213,7 @@ public partial class TaskRowViewModel : ObservableObject
     /// the row into its acknowledgement presentation with the undo affordance.</summary>
     public void BeginCompletionAcknowledgement()
     {
-        AcknowledgeMessage = "할 일을 완료했습니다";
+        AcknowledgeMessage = "할 일을 완료했어요";
         IsAcknowledging = true;
     }
 

@@ -95,6 +95,6 @@ public sealed class SaveFailureCoordinator
         }
 
         if (exceptions.Count == 1) throw exceptions[0];
-        if (exceptions.Count > 1) throw new AggregateException("저장에 실패했습니다.", exceptions);
+        if (exceptions.Count > 1) throw new AggregateException("저장하지 못했어요.", exceptions);
     }
 }

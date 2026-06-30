@@ -602,10 +602,10 @@ public partial class TaskDetailViewModel : ObservableObject
         if (failures.Count == 0) return;
 
         var exceptions = failures
-            .Select(failure => failure.Error ?? new IOException("저장에 실패했습니다."))
+            .Select(failure => failure.Error ?? new IOException("저장하지 못했어요."))
             .ToList();
         if (exceptions.Count == 1) throw exceptions[0];
-        throw new AggregateException("저장에 실패했습니다.", exceptions);
+        throw new AggregateException("저장하지 못했어요.", exceptions);
     }
 
     /// <summary>Captures the panel's current edits as an immutable snapshot, or <c>null</c> when no task is
@@ -878,7 +878,7 @@ public partial class TaskDetailViewModel : ObservableObject
             {
                 throw exceptions[0];
             }
-            throw new AggregateException("저장에 실패했습니다.", exceptions);
+            throw new AggregateException("저장하지 못했어요.", exceptions);
         }
     }
 

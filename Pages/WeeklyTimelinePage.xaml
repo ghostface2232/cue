@@ -280,7 +280,7 @@
             </StackPanel>
         </Grid>
 
-        <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="타임라인을 표시하지 못했습니다" />
+        <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="타임라인을 표시하지 못했어요" />
 
         <Grid
             x:Name="ContentSplitGrid"
@@ -365,7 +365,7 @@
                     VerticalAlignment="Top"
                     FontSize="14"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="이 달에 표시할 날짜가 있는 할 일이 없습니다."
+                    Text="이 달에 표시할 할 일이 없어요."
                     Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
             </Grid>
 

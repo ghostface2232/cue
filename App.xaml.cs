@@ -122,7 +122,7 @@ public partial class App : Application
                     // This recovery window stands outside the normal page tree, so each label pins Pretendard
                     // directly (family built inline so the failure path never depends on a resource lookup)
                     // rather than falling back to the system font.
-                    new TextBlock { Text = "Cue를 시작할 수 없습니다.", FontFamily = RecoveryFont, FontSize = 24 },
+                    new TextBlock { Text = "Cue를 시작하지 못했어요.", FontFamily = RecoveryFont, FontSize = 24 },
                     new TextBlock
                     {
                         Text = exception.Message,

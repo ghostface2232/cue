@@ -135,7 +135,7 @@
 
                     <!-- Completion acknowledgement bar: takes the row's place for a beat after a terminal
                          completion (a one-off, or a recurring series that has ended). Shows a filled check +
-                         "할 일을 완료했습니다" + an 실행 취소 (undo) button, then the View folds the row away. A
+                         "할 일을 완료했어요" + an 실행 취소 (undo) button, then the View folds the row away. A
                          repeating completion does not use this bar — it stays ticked + dimmed in place. -->
                     <Grid
                         MinHeight="84"
@@ -458,7 +458,7 @@
             </DropDownButton>
         </Grid>
 
-        <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="작업을 완료하지 못했습니다" />
+        <InfoBar x:Name="ErrorInfoBar" Grid.Row="1" Margin="4,0,4,8" IsClosable="True" IsOpen="False" Severity="Error" Title="작업을 완료하지 못했어요" />
 
         <!-- Quick-add styled after the Files Omnibar: a floating pill with a CircleElevation border for
              subtle elevation (no drop shadow), centered text/icon, control-fill tone that lifts on
@@ -656,7 +656,7 @@
                     VerticalAlignment="Top"
                     FontSize="14"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="표시할 할 일이 없습니다."
+                    Text="여기에 표시할 할 일이 없어요."
                     Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
             </Grid>
 
