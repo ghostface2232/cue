@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Cue.Domain;
 using Cue.Parsing;
 using Cue.ViewModels;
 using Microsoft.UI.Text;
@@ -46,6 +47,21 @@ public sealed partial class OmniInputBox : UserControl
     // The tokens painted by the last re-tint, in original-text coordinates — what a tap hit-tests against
     // to open the correct/revert popover. Stays aligned with the document because re-tint repaints it.
     private IReadOnlyList<QuickAddToken> _tokens = Array.Empty<QuickAddToken>();
+
+    // The reminder timing chosen for the line being composed, via the time-token popover. Rides the
+    // submission (the parser recognizes no reminder phrase yet) and resets to the default when the box
+    // clears after a commit. AtTime is the domain default — a line with no explicit choice.
+    private ReminderTiming _reminder = ReminderTiming.AtTime;
+
+    // The reminder choices offered in the time-token popover — the same five the detail panel lists.
+    private static readonly (ReminderTiming Timing, string Label)[] ReminderChoices =
+    {
+        (ReminderTiming.AtTime, "정시에"),
+        (ReminderTiming.TenMinutesBefore, "10분 전"),
+        (ReminderTiming.OneHourBefore, "1시간 전"),
+        (ReminderTiming.OneDayBefore, "하루 전"),
+        (ReminderTiming.None, "끔"),
+    };
 
     // Re-tint after a typing pause for edits that don't go through composition (paste, delete, arrows,
     // digits/latin). Composition input is covered by TextCompositionEnded instead.
@@ -184,8 +200,11 @@ public sealed partial class OmniInputBox : UserControl
             _syncingDocument = false;
         }
         // The IME gate / TextChanged path is bypassed for our own SetText, so reproject here. A commit
-        // clears the line (value == "") → the edit covers the whole text → every revert is dropped.
+        // clears the line (value == "") → the edit covers the whole text → every revert is dropped, and the
+        // inline reminder choice resets so the next task starts from the default.
         ReprojectSuppressions(value);
+        if (value.Length == 0)
+            _reminder = ReminderTiming.AtTime;
         _documentVersion++; // external (VM) set changed the visible text too
     }
 
@@ -237,9 +256,10 @@ public sealed partial class OmniInputBox : UserControl
         Submit?.Invoke(this, BuildSubmission());
     }
 
-    /// <summary>Snapshots the raw line + editor-held reverts for the VM to re-parse at the current clock.</summary>
+    /// <summary>Snapshots the raw line + editor-held reverts + chosen reminder for the VM to re-parse at the
+    /// current clock.</summary>
     private QuickAddSubmission BuildSubmission()
-        => new(GetPlainText(), _suppressed.ToArray());
+        => new(GetPlainText(), _suppressed.ToArray(), _reminder);
 
     private async void OnBoxPaste(object sender, TextControlPasteEventArgs e)
     {
@@ -338,6 +358,15 @@ public sealed partial class OmniInputBox : UserControl
         if (alts.Count > 0)
             flyout.Items.Add(new MenuFlyoutSeparator());
 
+        // A time token also carries the pre-notification choice, so a reminder (or off) can be set inside
+        // the input flow — the same five the detail panel offers. Only for Time: date/recurrence/someday
+        // tokens have no reminder.
+        if (token.Kind == QuickAddTokenKind.Time)
+        {
+            AppendReminderItems(flyout);
+            flyout.Items.Add(new MenuFlyoutSeparator());
+        }
+
         // The always-present seat: undo the recognition. Registers a suppression so the parser stops
         // recognizing this span — it stays in the title and won't be re-sucked into a date (plan §5).
         var revert = new MenuFlyoutItem { Text = "일반 텍스트로 입력" };
@@ -347,6 +376,29 @@ public sealed partial class OmniInputBox : UserControl
         // Menu content lives in the pop-up root and doesn't inherit the window root's theme override.
         Cue.Services.ThemeResources.Apply(flyout);
         flyout.ShowAt(Box, new FlyoutShowOptions { Position = at });
+    }
+
+    /// <summary>Appends the reminder sub-section to a time-token flyout: a muted "알림" label header, then the
+    /// five choices as radio-style items with the current one checked. Clicking one records it on
+    /// <see cref="_reminder"/> (the flyout closes on its own), so it rides the next commit's submission.</summary>
+    private void AppendReminderItems(MenuFlyout flyout)
+    {
+        flyout.Items.Add(new MenuFlyoutItem { Text = "알림", IsEnabled = false });
+        foreach (var (timing, label) in ReminderChoices)
+        {
+            var item = new ToggleMenuFlyoutItem { Text = label, IsChecked = _reminder == timing };
+            var chosen = timing; // capture per iteration
+            item.Click += (_, _) => SetReminder(chosen);
+            flyout.Items.Add(item);
+        }
+    }
+
+    /// <summary>Records the inline reminder choice for the line being composed and returns focus to the box.
+    /// The flyout closes itself on the click, so the radio group is rebuilt (with the new check) next open.</summary>
+    private void SetReminder(ReminderTiming timing)
+    {
+        _reminder = timing;
+        Box.Focus(FocusState.Programmatic);
     }
 
     private QuickAddPreview SafePreview()

@@ -622,13 +622,14 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
-                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="리마인더" />
-                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="리마인더 구현 단계에서 활성화" />
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="알림 사용" />
+                                    <TextBlock Style="{StaticResource SettingsCaptionStyle}" behaviors:WordWrapBehavior.KeepAllText="시각이 지정된 할 일은 자동으로 알림이 예약됩니다. Windows 방해 금지 설정을 따릅니다." />
                                 </StackPanel>
                                 <ToggleSwitch
+                                    x:Name="NotificationsSwitch"
                                     Grid.Column="1"
-                                    IsEnabled="False"
-                                    Style="{StaticResource SettingsToggleStyle}" />
+                                    Style="{StaticResource SettingsToggleStyle}"
+                                    Toggled="NotificationsSwitch_Toggled" />
                             </Grid>
                         </Border>
                     </StackPanel>

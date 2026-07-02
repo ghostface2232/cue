@@ -837,6 +837,22 @@
                                     <CheckBox Content="종일" IsChecked="{x:Bind ViewModel.Detail.IsWhenAllDay, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Detail.HasConcreteWhen, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
 
+                                <!-- 알림 (reminder) field. Shown only for a timed When (a concrete date that
+                                     is not 종일) — an all-day or unscheduled task has no individual reminder, so
+                                     switching to 종일/미지정 hides this while keeping the selected value, and it
+                                     returns when the task is timed again. A plain field label like 반복, not a
+                                     card header. The five choices match the quick-add time-token popover. -->
+                                <StackPanel
+                                    Spacing="{StaticResource CueGap4}"
+                                    Visibility="{x:Bind ViewModel.Detail.ShowReminder, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="알림" />
+                                    <ComboBox
+                                        HorizontalAlignment="Stretch"
+                                        DisplayMemberPath="Name"
+                                        ItemsSource="{x:Bind ViewModel.Detail.ReminderOptions}"
+                                        SelectedItem="{x:Bind ViewModel.Detail.SelectedReminder, Mode=TwoWay}" />
+                                </StackPanel>
+
                                 <!-- 반복 (recurrence) field. Shown only when the task carries a concrete 일시 —
                                      a recurrence with no date to anchor it doesn't read as meaningful, so
                                      removing the date removes this field too (and clears the rule, see
