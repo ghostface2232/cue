@@ -250,7 +250,7 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
     /// <list type="bullet">
     ///   <item>Line 1: task title</item>
     ///   <item>Line 2: group name (when present) + scheduled time for pre-reminders</item>
-    ///   <item>Action 1: 완료 button (background activation → complete action)</item>
+    ///   <item>Action 1: 할 일 완료 button (background activation → complete action)</item>
     ///   <item>Action 2: System snooze with selection input (1분, 10분, 30분, 1시간)</item>
     /// </list>
     /// </summary>
@@ -267,8 +267,9 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
         if (secondLine is not null)
             builder.AddText(secondLine);
 
-        // Action 1: 완료 button.
-        builder.AddButton("완료", ToastActivationType.Background, request.CompletionArguments);
+        // Action 1: 할 일 완료 button. Spelled out (not bare "완료") so it reads as completing the task
+        // rather than a generic dismiss/confirm that just closes the toast.
+        builder.AddButton("할 일 완료", ToastActivationType.Background, request.CompletionArguments);
 
         // Action 2: System snooze (selection input + system snooze action).
         AddSnoozeAction(builder);
