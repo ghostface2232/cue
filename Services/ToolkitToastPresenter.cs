@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Cue.Domain;
 using Microsoft.Toolkit.Uwp.Notifications;
 using Windows.UI.Notifications;
@@ -16,13 +17,37 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
 
     private readonly object _activationGate = new();
     private readonly Queue<ToastActivationRequest> _bufferedActivations = new();
+    private readonly bool _available;
     private EventHandler<ToastActivationRequest>? _activated;
 
     public ToolkitToastPresenter()
-        => ToastNotificationManagerCompat.OnActivated += OnToolkitActivated;
+    {
+        // The Compat library's OnActivated subscription triggers an immediate COM activator
+        // registration that reads the app manifest for a toastNotificationActivation CLSID.
+        // In an unpackaged dev-loop build (no manifest / no registered AUMID) this throws
+        // InvalidOperationException. Catch it here so the rest of the app starts normally;
+        // toast scheduling will gracefully no-op via the _available guard.
+        try
+        {
+            ToastNotificationManagerCompat.OnActivated += OnToolkitActivated;
+            _available = true;
+        }
+        catch (Exception exception)
+        {
+            Debug.WriteLine($"[Cue] Toast notification registration unavailable: {exception.Message}");
+            _available = false;
+        }
+    }
 
     public bool WasCurrentProcessToastActivated
-        => ToastNotificationManagerCompat.WasCurrentProcessToastActivated();
+    {
+        get
+        {
+            if (!_available) return false;
+            try { return ToastNotificationManagerCompat.WasCurrentProcessToastActivated(); }
+            catch { return false; }
+        }
+    }
 
     public event EventHandler<ToastActivationRequest> Activated
     {
@@ -55,6 +80,8 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
 
     public void Schedule(ToastScheduleRequest request)
     {
+        if (!_available) return;
+
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Tag);
         if (!ToastActivationPayload.TryParse(request.CompletionArguments, out var payload) ||
@@ -74,6 +101,8 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
 
     public void CancelScheduled(string tag)
     {
+        if (!_available) return;
+
         var notifier = ToastNotificationManagerCompat.CreateToastNotifier();
         foreach (var notification in notifier.GetScheduledToastNotifications()
                      .Where(item => string.Equals(item.Tag, tag, StringComparison.Ordinal)))
@@ -83,18 +112,32 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
     }
 
     public void RemoveFromHistory(string tag)
-        => ToastNotificationManagerCompat.History.Remove(tag);
+    {
+        if (!_available) return;
+
+        try { ToastNotificationManagerCompat.History.Remove(tag); }
+        catch (Exception exception)
+        {
+            Debug.WriteLine($"[Cue] Failed to remove toast from history: {exception.Message}");
+        }
+    }
 
     public IReadOnlyList<string> GetScheduledTags()
-        => ToastNotificationManagerCompat.CreateToastNotifier()
+    {
+        if (!_available) return [];
+
+        return ToastNotificationManagerCompat.CreateToastNotifier()
             .GetScheduledToastNotifications()
             .Select(notification => notification.Tag)
             .Where(tag => !string.IsNullOrEmpty(tag))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
 
     public void Show(string title, string body, string? activationArguments = null)
     {
+        if (!_available) return;
+
         var builder = new ToastContentBuilder().AddText(title).AddText(body);
         if (!string.IsNullOrWhiteSpace(activationArguments))
             builder.AddToastActivationInfo(activationArguments, ToastActivationType.Foreground);
@@ -104,7 +147,10 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
     }
 
     public void Dispose()
-        => ToastNotificationManagerCompat.OnActivated -= OnToolkitActivated;
+    {
+        if (_available)
+            ToastNotificationManagerCompat.OnActivated -= OnToolkitActivated;
+    }
 
     // ── Toast content construction ──────────────────────────────────────────
 
