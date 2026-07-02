@@ -13,7 +13,7 @@
 
 ### 기술 스택
 
-- 알림 API: Microsoft.Toolkit.Uwp.Notifications 7.1.3 (NuGet 최신 안정 버전, net5.0-windows10.0.17763.0 타깃 포함으로 .NET 10 windows TFM 호환, 의존성 없음)
+- 알림 API: Microsoft.Toolkit.Uwp.Notifications 7.1.3 (NuGet 최신 안정 버전, net5.0-windows10.0.17763.0 타깃 포함으로 .NET 10 windows TFM 호환). 이 타깃의 레거시 System.Drawing.Common 4.7.0 전이 의존성은 보안 수정 버전 4.7.2로 앱 프로젝트에서 재고정합니다.
 - 이 패키지를 선택한 근거: Windows App SDK의 AppNotifications에는 예약(Schedule) API가 없고, AppNotificationManager는 Singleton 패키지에 의존하여 self-contained 배포와 충돌합니다. 반면 이 패키지의 ScheduledToastNotification 경로는 package identity, Singleton, WinAppSDK 컴포넌트 추가가 전부 불필요하며 unpackaged 앱에서 앱이 종료된 상태에도 OS가 알림을 전달합니다.
 - 주의: 이 패키지는 유지보수 모드(원 저장소 아카이브)입니다. 따라서 앱 코드가 패키지 API를 직접 부르지 않도록 어댑터 인터페이스 뒤에 격리하고, 장기적으로 자체 구현(AUMID + COM 등록 + Windows.UI.Notifications 직접 호출)으로 교체 가능하게 합니다.
 

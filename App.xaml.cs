@@ -3,10 +3,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.AppLifecycle;
-using Cue.Parsing;
-using Cue.Storage;
-using Cue.Storage.Index;
-using Cue.Storage.Ranking;
+using Cue.Domain;
 using Cue.Storage.Recurrence;
 using Cue.ViewModels;
 using Cue.Services;
@@ -20,18 +17,45 @@ public partial class App : Application
 {
     private const string SingleInstanceKey = "Cue.MainInstance";
 
+    private readonly IToastPresenter _toastPresenter;
+    private readonly IToastActivationSource _toastActivations;
+    private readonly bool _wasToastActivated;
+    private readonly TaskCompletionSource _launchReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly SemaphoreSlim _runtimeGate = new(1, 1);
+    private readonly SemaphoreSlim _windowGate = new(1, 1);
+
     private Window? _window;
     private AppInstance? _mainInstance;
+    private AppInstance? _redirectTarget;
+    private AppActivationArguments? _initialLifecycleArguments;
     private DispatcherQueue? _dispatcherQueue;
-    private readonly Queue<AppActivationArguments> _pendingActivations = new();
+    private AppRuntime? _runtime;
+    private bool _xamlResourcesInitialized;
     internal static Window? CurrentWindow { get; private set; }
 
     /// <summary>The app-wide service provider. Built once at launch, after the store is opened.</summary>
     public static IServiceProvider Services { get; private set; } = null!;
 
-    public App()
+    public App() : this(new ToolkitToastPresenter())
     {
-        InitializeComponent();
+    }
+
+    internal App(ToolkitToastPresenter toastServices)
+        : this(toastServices, toastServices)
+    {
+    }
+
+    internal App(IToastPresenter toastPresenter, IToastActivationSource toastActivations)
+    {
+        _toastPresenter = toastPresenter;
+        _toastActivations = toastActivations;
+        _wasToastActivated = toastActivations.WasCurrentProcessToastActivated;
+        _toastActivations.Activated += OnToastActivated;
+
+        // A complete action deliberately skips App.xaml resource initialization. Open/normal launches
+        // initialize lazily on the UI thread before creating a window.
+        if (!_wasToastActivated)
+            EnsureXamlResourcesInitialized();
     }
 
     protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
@@ -42,134 +66,244 @@ public partial class App : Application
 
             var activationArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
             var mainInstance = AppInstance.FindOrRegisterForKey(SingleInstanceKey);
-            if (!mainInstance.IsCurrent)
+            if (!mainInstance.IsCurrent && !_wasToastActivated)
             {
-                // Transfer foreground permission while this process still owns it, then hand the untouched
-                // activation payload to the primary instance. No store or window is created in this process.
                 WindowForegroundHelper.AllowForProcess(mainInstance.ProcessId);
                 await mainInstance.RedirectActivationToAsync(activationArgs);
                 Exit();
                 return;
             }
 
-            _mainInstance = mainInstance;
-            _mainInstance.Activated += OnAppInstanceActivated;
-            RouteActivation(activationArgs);
+            if (mainInstance.IsCurrent)
+            {
+                _mainInstance = mainInstance;
+                _mainInstance.Activated += OnAppInstanceActivated;
+            }
+            else
+            {
+                // Toolkit normally delivers to the already-running COM server. Keep this fallback for a
+                // startup race where Windows launched a second toast process before that server registered.
+                _redirectTarget = mainInstance;
+                _initialLifecycleArguments = activationArgs;
+            }
 
-            var preferences = new AppPreferences();
-            var timeZone = preferences.ResolveTimeZone();
-            var store = await IndexedTaskStore.OpenAsync(
-                FileTaskStoreOptions.CreateDefault(), TimeProvider.System, timeZone);
-
-            Services = ConfigureServices(store, preferences, timeZone);
-            _window = new MainWindow();
-            CurrentWindow = _window;
-            AppPreferences.ApplyTheme(_window, preferences);
-            // Apply the keyboard-focus preference once the window root exists (default hides the focus
-            // rectangle; 자동 / high contrast show it). MainWindow re-applies on theme / high-contrast change.
-            AppPreferences.ApplyFocusVisuals(_window, preferences);
-            _window.Activate();
-            DrainPendingActivations();
+            _launchReady.TrySetResult();
+            if (!_wasToastActivated)
+                RouteActivation(AppActivationRequest.FromLifecycle(activationArgs));
         }
         catch (Exception exception)
         {
+            _launchReady.TrySetResult();
+            if (_wasToastActivated)
+                return;
             ShowStartupFailure(exception);
         }
     }
 
     private void OnAppInstanceActivated(object? sender, AppActivationArguments args)
-        => RouteActivation(args);
+        => RouteActivation(AppActivationRequest.FromLifecycle(args));
+
+    private void OnToastActivated(object? sender, ToastActivationRequest args)
+    {
+        if (ToastActivationPayload.TryParse(args.Arguments, out var payload))
+            RouteActivation(AppActivationRequest.FromToast(payload!));
+        else
+            RouteActivation(AppActivationRequest.FromToast(
+                new ToastActivationPayload(ToastAction.Open, Guid.Empty, null)));
+    }
 
     /// <summary>
-    /// Single entry point for initial and redirected activation payloads. Argument interpretation is
-    /// intentionally deferred; for now every activation only brings Cue to the foreground.
+    /// Single entry point for initial, redirected, and toast activation payloads. Open requests marshal
+    /// to the UI; complete requests stay headless and use the shared recurrence-aware completion service.
     /// </summary>
-    private void RouteActivation(AppActivationArguments args)
+    private void RouteActivation(AppActivationRequest request)
+        => _ = RouteActivationAsync(request);
+
+    private async Task RouteActivationAsync(AppActivationRequest request)
+    {
+        try
+        {
+            await _launchReady.Task.ConfigureAwait(false);
+
+            if (request.Toast is { Action: ToastAction.Complete } complete)
+            {
+                // Desktop ignores activationType=background as a separate background task: the EXE is
+                // activated anyway. Keep this branch headless by touching only the storage/service graph.
+                await CompleteFromToastAsync(complete).ConfigureAwait(false);
+                if (_wasToastActivated && _window is null)
+                    await ExitApplicationAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (_redirectTarget is not null && _initialLifecycleArguments is not null)
+            {
+                WindowForegroundHelper.AllowForProcess(_redirectTarget.ProcessId);
+                await _redirectTarget.RedirectActivationToAsync(_initialLifecycleArguments);
+                await ExitApplicationAsync().ConfigureAwait(false);
+                return;
+            }
+
+            await RunOnUiThreadAsync(async () =>
+            {
+                await EnsureMainWindowAsync();
+                WindowForegroundHelper.BringToForeground(_window!);
+
+                if (request.Toast is { TaskId: var taskId })
+                {
+                    // TODO(notification navigation): select taskId once shell-level task navigation has a
+                    // stable public entry point. The activation payload is preserved here until then.
+                    _ = taskId;
+                }
+            });
+        }
+        catch (Exception exception)
+        {
+            if (_wasToastActivated && request.Toast is { Action: ToastAction.Complete })
+            {
+                await ExitApplicationAsync().ConfigureAwait(false);
+                return;
+            }
+
+            await RunOnUiThreadAsync(() =>
+            {
+                ShowStartupFailure(exception);
+                return Task.CompletedTask;
+            });
+        }
+    }
+
+    private async Task CompleteFromToastAsync(ToastActivationPayload payload)
+    {
+        var runtime = await EnsureRuntimeAsync().ConfigureAwait(false);
+        var task = await runtime.Store.GetAsync<TaskItem>(payload.TaskId).ConfigureAwait(false);
+        if (task is null || task.IsDeleted || task.IsCompleted)
+            return;
+
+        if (payload.OccurrenceId is { } expectedOccurrenceId)
+        {
+            if (task.Recurrence is null)
+                return;
+
+            var occurrenceUtc = task.When.Date?.Utc ?? task.Recurrence.Anchor.Utc;
+            if (RecurrenceOccurrenceId.From(task.Id, occurrenceUtc) != expectedOccurrenceId)
+                return; // stale action for a cycle that has already advanced
+        }
+
+        var completion = runtime.Services.GetRequiredService<IRecurringTaskService>();
+        var clock = runtime.Services.GetRequiredService<TimeProvider>();
+        await completion.CompleteAsync(payload.TaskId, clock.GetUtcNow()).ConfigureAwait(false);
+        var notifier = runtime.Services.GetRequiredService<INavDataChangeNotifier>();
+        if (_window is null)
+        {
+            notifier.NotifyCountsChanged();
+        }
+        else
+        {
+            await RunOnUiThreadAsync(() =>
+            {
+                notifier.NotifyCountsChanged();
+                return Task.CompletedTask;
+            }).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<AppRuntime> EnsureRuntimeAsync()
+    {
+        if (_runtime is not null)
+            return _runtime;
+
+        await _runtimeGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_runtime is null)
+            {
+                _runtime = await AppRuntimeBootstrapper.OpenAsync(_toastPresenter).ConfigureAwait(false);
+                Services = _runtime.Services;
+            }
+            return _runtime;
+        }
+        finally
+        {
+            _runtimeGate.Release();
+        }
+    }
+
+    private async Task EnsureMainWindowAsync()
+    {
+        if (_window is not null)
+            return;
+
+        await _windowGate.WaitAsync();
+        try
+        {
+            if (_window is not null)
+                return;
+
+            EnsureXamlResourcesInitialized();
+            var runtime = await EnsureRuntimeAsync();
+            _window = new MainWindow();
+            CurrentWindow = _window;
+            AppPreferences.ApplyTheme(_window, runtime.Preferences);
+            AppPreferences.ApplyFocusVisuals(_window, runtime.Preferences);
+            _window.Activate();
+        }
+        finally
+        {
+            _windowGate.Release();
+        }
+    }
+
+    private void EnsureXamlResourcesInitialized()
+    {
+        if (_xamlResourcesInitialized)
+            return;
+        InitializeComponent();
+        _xamlResourcesInitialized = true;
+    }
+
+    private Task RunOnUiThreadAsync(Func<Task> action)
     {
         var dispatcher = _dispatcherQueue;
         if (dispatcher is null)
-            return;
-
+            return Task.FromException(new InvalidOperationException("The app dispatcher is not initialized."));
         if (dispatcher.HasThreadAccess)
+            return action();
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!dispatcher.TryEnqueue(async () =>
+            {
+                try
+                {
+                    await action();
+                    completion.TrySetResult();
+                }
+                catch (Exception exception)
+                {
+                    completion.TrySetException(exception);
+                }
+            }))
         {
-            HandleActivationOnUiThread(args);
-            return;
+            completion.TrySetException(new InvalidOperationException("The app dispatcher is shutting down."));
         }
-
-        dispatcher.TryEnqueue(() => HandleActivationOnUiThread(args));
+        return completion.Task;
     }
 
-    private void HandleActivationOnUiThread(AppActivationArguments args)
-    {
-        if (_window is null)
+    private Task ExitApplicationAsync()
+        => RunOnUiThreadAsync(() =>
         {
-            // A redirected launch can arrive while the primary instance is still opening its store.
-            // Preserve the complete payload for the same routing point once the window exists.
-            _pendingActivations.Enqueue(args);
-            return;
-        }
+            Exit();
+            return Task.CompletedTask;
+        });
 
-        WindowForegroundHelper.BringToForeground(_window);
-    }
-
-    private void DrainPendingActivations()
+    private sealed record AppActivationRequest(
+        AppActivationArguments? Lifecycle,
+        ToastActivationPayload? Toast)
     {
-        while (_pendingActivations.TryDequeue(out var args))
-            HandleActivationOnUiThread(args);
-    }
+        public static AppActivationRequest FromLifecycle(AppActivationArguments arguments)
+            => new(arguments, null);
 
-    /// <summary>Registers the services and view models. The store is supplied as a ready instance.</summary>
-    private static IServiceProvider ConfigureServices(IndexedTaskStore store, AppPreferences preferences, TimeZoneInfo timeZone)
-    {
-        var services = new ServiceCollection();
-
-        // Clock + zone that resolve "now"/"today" and pin parsed dates — the same ones the store
-        // was opened with, so the index and the parser agree on the day.
-        services.AddSingleton(TimeProvider.System);
-        services.AddSingleton(timeZone);
-        services.AddSingleton(preferences);
-
-        // The slice of preferences the task list reads (the keep-completed-in-place toggle), exposed to the
-        // ViewModels layer through its own interface so that layer stays free of the WinUI settings store.
-        services.AddSingleton<IListDisplayPreferences>(preferences);
-
-        // The quick-add parser.
-        services.AddSingleton<IDateParser, PreferenceDateParser>();
-
-        // One store instance, exposed through both faces it implements: the write side (ITaskStore)
-        // and the query side (ITaskIndex).
-        services.AddSingleton<ITaskStore>(store);
-        services.AddSingleton<ITaskIndex>(store);
-        services.AddSingleton<IContainerDeletionStore>(store);
-
-        // The rank service owns LexoRank assignment and persists reorders through the store.
-        services.AddSingleton<IReorderService, ReorderService>();
-
-        // Recurrence lifecycle: records a completed/skipped cycle as a RecurrenceOccurrence owned by the
-        // series and advances it to its next cycle, ends a series, and edits past cycles. The Ical.Net
-        // engine lives behind this service, inside the storage layer.
-        services.AddSingleton<IRecurringTaskService, RecurringTaskService>();
-        services.AddSingleton<DialogService>();
-
-        // The in-app updater (settings → 정보): checks the latest GitHub release, downloads the
-        // installer, and hands off to the silent installer.
-        services.AddSingleton<UpdateService>();
-
-        // Cross-panel signal: the sidebar and a detail panel both edit groups/tags but are separate
-        // view models, so a change in one reloads the other through this app-scoped notifier.
-        services.AddSingleton<INavDataChangeNotifier, NavDataChangeNotifier>();
-
-        // App-scoped registry of every detail view model that still owes work to disk, so a save failure on
-        // one page survives navigating to another (and isn't overwritten by a failure there). The window reads
-        // it on close and the retry button drives it. Each fresh TaskListViewModel injects this singleton.
-        services.AddSingleton<SaveFailureCoordinator>();
-
-        // A fresh list view model per navigation.
-        services.AddTransient<TaskListViewModel>();
-        services.AddTransient<WeeklyTimelineViewModel>();
-        services.AddTransient<ShellViewModel>();
-
-        return services.BuildServiceProvider();
+        public static AppActivationRequest FromToast(ToastActivationPayload payload)
+            => new(null, payload);
     }
 
     private static readonly Microsoft.UI.Xaml.Media.FontFamily RecoveryFont =
@@ -201,6 +335,7 @@ public partial class App : Application
                 },
             },
         };
+        CurrentWindow = _window;
         _window.Activate();
     }
 }

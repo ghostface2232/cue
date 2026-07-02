@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Cue.Domain;
 
 namespace Cue.Storage.Recurrence;
@@ -103,7 +101,7 @@ public sealed class RecurringTaskService : IRecurringTaskService
             // it would also be wrong: this is a brand-new completion of the now-current cycle, not the same
             // record. So when the deterministic id is a tombstone, mint a fresh id for the new record. The
             // tombstone stays dead and the index still shows exactly one live record for the date.
-            var occurrenceId = OccurrenceId(task.Id, occurrenceUtc);
+            var occurrenceId = RecurrenceOccurrenceId.From(task.Id, occurrenceUtc);
             if (await tx.GetAsync<RecurrenceOccurrence>(occurrenceId, ct).ConfigureAwait(false) is { IsDeleted: true })
                 occurrenceId = Guid.NewGuid();
             var occurrence = CreateOccurrence(task, occurrenceId, status, status == OccurrenceStatus.Completed ? at : null);
@@ -268,16 +266,4 @@ public sealed class RecurringTaskService : IRecurringTaskService
             : new List<ChecklistItem>(),
     };
 
-    /// <summary>
-    /// A stable, name-based id for one cycle's occurrence record, derived from the series id and that
-    /// cycle's UTC instant. Two records of the <i>same</i> un-advanced cycle map to the same id (so a
-    /// crash-retry overwrites rather than duplicates), while each advanced cycle has a distinct instant
-    /// and so a distinct record. Deterministic and process-independent: a SHA-256 digest folded into a GUID.
-    /// </summary>
-    private static Guid OccurrenceId(Guid seriesId, DateTimeOffset occurrenceUtc)
-    {
-        var name = $"cue/recurrence-occurrence/{seriesId:N}/{occurrenceUtc.UtcDateTime.Ticks}";
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(name));
-        return new Guid(hash.AsSpan(0, 16));
-    }
 }
