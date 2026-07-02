@@ -1,0 +1,46 @@
+# Builds the unsigned x64 MSIX for Partner Center only when a Store-specific tag
+# (for example v0.1.4-store) is pushed. The normal v0.1.4 tag remains exclusively
+# owned by release.yml and the unpackaged Inno Setup channel.
+name: store-release
+
+on:
+  push:
+    tags:
+      - 'v*-store'
+
+permissions:
+  contents: read
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify Store tag matches Cue.csproj version
+        shell: pwsh
+        run: |
+          [xml]$proj = Get-Content Cue.csproj
+          $version = @($proj.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', '' -replace '-store$', ''
+          if ($version -ne $tagVersion) {
+            throw "Store tag version '$tagVersion' does not match Cue.csproj <Version> '$version'."
+          }
+          Write-Host "Version $version matches Store tag ${{ github.ref_name }}."
+
+      - name: Build unsigned Store MSIX
+        shell: pwsh
+        run: pwsh -File build-msix.ps1
+
+      - name: Upload Partner Center package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cue-${{ github.ref_name }}-x64-msix
+          path: dist/Cue_*_x64.msix
+          if-no-files-found: error
+          retention-days: 30

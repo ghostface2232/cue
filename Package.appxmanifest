@@ -29,6 +29,13 @@
 
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+    <!-- The Store installs this framework dependency alongside Cue. The unpackaged installer must
+         carry the VC++ runtime app-local because it has no package graph; the MSIX channel should
+         use the standard VCLibs framework package instead of duplicating those DLLs in the app. -->
+    <PackageDependency
+      Name="Microsoft.VCLibs.140.00.UWPDesktop"
+      MinVersion="14.0.27323.0"
+      Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
   </Dependencies>
 
   <!-- Korean-first app: Korean parsing is the core feature, so the package ships ko-KR only for now. -->
