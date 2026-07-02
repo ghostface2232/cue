@@ -21,27 +21,93 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
     private EventHandler<ToastActivationRequest>? _activated;
 
     public ToolkitToastPresenter()
+        : this(RuntimeIdentity.IsPackaged)
     {
-        // The Compat library defers (and internally swallows) its COM-activator registration on the
-        // OnActivated subscription, so a missing toastNotificationActivation manifest extension does
-        // NOT surface there — it only re-throws later on the first CreateToastNotifier call. That
-        // happens under `winapp run`, which launches with a debug package identity but no toast
-        // manifest, sending the library down its packaged path. Probe with CreateToastNotifier here
-        // to surface the failure now and no-op every toast operation via the _available guard.
-        // Production installs are unpackaged (no identity) and register via the Win32 COM path, which
-        // needs no manifest and succeeds — so this keeps toasts working there.
+    }
+
+    /// <summary>
+    /// Channel identity is injected so the toast <b>registration/activation wiring</b> — the one real
+    /// per-channel behavior branch in Cue (AGENTS.md distribution invariants) — is driven by the single
+    /// runtime identity helper rather than by <c>#if</c>. The two branches below still call the same WCT
+    /// compat APIs because the library itself forks internally on the same identity check; splitting them
+    /// here documents each channel's contract, keeps the diagnostics accurate, and gives the packaged
+    /// manifest requirements a home. Everything above this seam — the adapter interface, the reconcile
+    /// loop, and the Tag scheme — is identical across channels.
+    /// </summary>
+    internal ToolkitToastPresenter(bool isPackaged)
+    {
+        _available = isPackaged ? TryRegisterPackaged() : TryRegisterUnpackaged();
+    }
+
+    /// <summary>
+    /// Unpackaged (GitHub channel) registration. The WCT compat library auto-registers a Win32 COM
+    /// activator plus the app's AUMID in the per-user registry the first time its APIs are touched — no
+    /// manifest and (in 7.1.x) no Start-menu shortcut are required. Subscribing to OnActivated performs
+    /// that registration; the CreateToastNotifier probe confirms it took. The Inno Setup uninstaller
+    /// clears those registry keys (equivalent to <c>ToastNotificationManagerCompat.Uninstall()</c>), per
+    /// the AGENTS.md gotcha — and because the packaged channel never enters this path, it leaves nothing
+    /// to clean up there.
+    /// </summary>
+    private bool TryRegisterUnpackaged()
+        => TrySubscribeAndProbe("registry COM-activator registration failed");
+
+    /// <summary>
+    /// Packaged (Microsoft Store / MSIX channel) registration. Here WCT does NOT touch the registry: it
+    /// reads the activator identity straight from the running package's <c>AppxManifest.xml</c>
+    /// (Microsoft.Toolkit.Uwp.Notifications 7.1.3, <c>ManifestHelper.GetClsidFromPackageManifest</c>).
+    /// For that lookup to resolve, the manifest merged at packaging time (Step 5) MUST declare, on the
+    /// primary <c>&lt;Application&gt;</c>, with <c>desktop</c>/<c>com</c> added to IgnorableNamespaces:
+    /// <code>
+    ///   &lt;!-- xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+    ///        xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10" --&gt;
+    ///   &lt;Extensions&gt;
+    ///     &lt;desktop:Extension Category="windows.toastNotificationActivation"&gt;
+    ///       &lt;desktop:ToastNotificationActivation ToastActivatorCLSID="{GUID}" /&gt;
+    ///     &lt;/desktop:Extension&gt;
+    ///     &lt;com:Extension Category="windows.comServer"&gt;
+    ///       &lt;com:ComServer&gt;
+    ///         &lt;com:ExeServer Executable="Cue.exe" Arguments="-ToastActivated" DisplayName="Cue Toast Activator"&gt;
+    ///           &lt;com:Class Id="{GUID}" /&gt;
+    ///         &lt;/com:ExeServer&gt;
+    ///       &lt;/com:ComServer&gt;
+    ///     &lt;/com:Extension&gt;
+    ///   &lt;/Extensions&gt;
+    /// </code>
+    /// Exact conditions the library enforces (else it throws on first use):
+    /// <list type="bullet">
+    ///   <item>the <c>ToastActivatorCLSID</c> GUID and the <c>com:Class</c> <c>Id</c> must be identical;</item>
+    ///   <item><c>com:ExeServer/@Executable</c> must resolve to the actually-running exe in the package;</item>
+    ///   <item><c>com:ExeServer/@Arguments</c> must be exactly <c>-ToastActivated</c> — this is the WCT
+    ///     compat contract, NOT the Windows App SDK's <c>----AppNotificationActivated:</c> value;</item>
+    ///   <item>the CLSID is picked once by us and lives only in the manifest; the library derives it from
+    ///     there and writes nothing at runtime.</item>
+    /// </list>
+    /// The library defers the exception to the first CreateToastNotifier, so a packaged build missing
+    /// these fragments (e.g. <c>winapp run</c>, which grants a debug identity but ships no toast manifest)
+    /// degrades to unavailable here instead of crashing — toasts are simply off in that dev scenario.
+    /// </summary>
+    private bool TryRegisterPackaged()
+        => TrySubscribeAndProbe("manifest is missing the toastNotificationActivation / comServer extension");
+
+    /// <summary>
+    /// Shared wiring for both channels: subscribe to activations, then probe the notifier so a broken
+    /// registration surfaces now (and every toast op then no-ops via the <c>_available</c> guard) rather
+    /// than at the first schedule. Only the diagnostic hint differs per channel.
+    /// </summary>
+    private bool TrySubscribeAndProbe(string failureHint)
+    {
         try
         {
             ToastNotificationManagerCompat.OnActivated += OnToolkitActivated;
             _ = ToastNotificationManagerCompat.CreateToastNotifier();
-            _available = true;
+            return true;
         }
         catch (Exception exception)
         {
-            Debug.WriteLine($"[Cue] Toast notifications unavailable, scheduling disabled: {exception.Message}");
+            Debug.WriteLine($"[Cue] Toast notifications unavailable ({failureHint}); scheduling disabled: {exception.Message}");
             try { ToastNotificationManagerCompat.OnActivated -= OnToolkitActivated; }
             catch { /* best-effort unsubscribe; registration never completed */ }
-            _available = false;
+            return false;
         }
     }
 

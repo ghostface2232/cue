@@ -84,6 +84,7 @@ public sealed partial class SettingsPage : Page
         WeekRollForwardSwitch.IsEnabled = _preferences.ShowWeekNumber;
         VersionText.Text = $"버전 {AppVersion()}";
         _defaultButtonStyle = UpdateButton.Style;
+        ApplyUpdateChannelExposure();
         ApplySelectedSection();
         _loading = false;
     }
@@ -100,6 +101,24 @@ public sealed partial class SettingsPage : Page
         if (!string.IsNullOrEmpty(informational))
             return informational.Split('+')[0];
         return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+    }
+
+    /// <summary>
+    /// Gates the in-app updater on channel identity, reading the same <see cref="RuntimeIdentity"/> helper
+    /// the toast registration path uses (one runtime check, not a build split — AGENTS.md distribution
+    /// invariants). On the packaged Microsoft Store channel the Store delivers updates, so the
+    /// GitHub-release check UI is not exposed — the button/spinner are hidden and the caption points to the
+    /// Store. This is exposure only: <see cref="UpdateService"/> stays registered and untouched; the
+    /// unpackaged GitHub channel keeps the full check → download → install flow.
+    /// </summary>
+    private void ApplyUpdateChannelExposure()
+    {
+        if (!RuntimeIdentity.IsPackaged)
+            return;
+
+        UpdateButton.Visibility = Visibility.Collapsed;
+        UpdateSpinner.Visibility = Visibility.Collapsed;
+        UpdateStatusText.Text = "업데이트는 Microsoft Store에서 자동으로 제공돼요.";
     }
 
     /// <summary>
