@@ -133,8 +133,14 @@ internal static class Korean
         @"|(?:다음|담)\s*(?<nextdom>\d{1,2})\s*일" +
         @"|(?:다다음\s*주|다다음)\s*(?<nnwwd>[월화수목금토일])(?:요일|욜)" +
         @"|(?:다음\s*주|다음|담주|담)\s*(?<nwwd>[월화수목금토일])(?:요일|욜)" +
+        // "이번 주 {요일}" must precede the bare "이번 주" alt below, so the weekday is claimed with the
+        // "이번 주" prefix rather than leaking it into the title.
+        @"|이번\s*주\s*(?<twwd>[월화수목금토일])(?:요일|욜)" +
         @"|(?<weekafternext>다다음\s*주)" +
         @"|(?<nextweek>다음\s*주|담주)" +
+        // Bare "이번 주" (no weekday). Sits after the weekend alt ("이번 주말", higher up) and after the
+        // "이번 주 {요일}" alt, so both of those win their more-specific match first.
+        @"|(?<thisweek>이번\s*주)" +
         @"|(?<nextmonth>다음\s*달|담\s*달)" +
         @"|(?<endmonth>이번\s*달\s*말일|이번\s*달\s*말)" +
         @"|(?<mon>\d{1,2})\s*월\s*(?<domd>\d{1,2})\s*일" +
@@ -204,8 +210,10 @@ internal static class Korean
             }
             if (m.Groups["nnwwd"].Success) { date = ctx.WeekdayInWeeksAhead(Weekdays[m.Groups["nnwwd"].Value[0]], 2); return true; }
             if (m.Groups["nwwd"].Success) { date = ctx.NextWeekWeekday(Weekdays[m.Groups["nwwd"].Value[0]]); return true; }
+            if (m.Groups["twwd"].Success) { date = ctx.WeekdayInWeeksAhead(Weekdays[m.Groups["twwd"].Value[0]], 0); return true; }
             if (m.Groups["weekafternext"].Success) { date = ctx.Today.AddDays(14); return true; }
             if (m.Groups["nextweek"].Success) { date = ctx.Today.AddDays(7); return true; }
+            if (m.Groups["thisweek"].Success) { date = ctx.EndOfThisWeek(); return true; }
             if (m.Groups["nextmonth"].Success) { date = ctx.NextMonthSameDay(); return true; }
             if (m.Groups["endmonth"].Success) { date = ctx.EndOfThisMonth(); return true; }
             if (m.Groups["mon"].Success)

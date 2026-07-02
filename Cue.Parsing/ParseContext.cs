@@ -87,6 +87,15 @@ public sealed class ParseContext
     /// <summary>That weekday in the following ISO week (weeks start Monday).</summary>
     public DateOnly NextWeekWeekday(DayOfWeek target) => WeekdayInWeeksAhead(target, 1);
 
+    /// <summary>The last day of the current ISO week — the upcoming Sunday (or today, if today is
+    /// Sunday). "이번 주" ("this week") pins here, reading as a soft "by end of this week" deadline,
+    /// mirroring how "이번 달 말" pins to the month's end. Weeks start Monday.</summary>
+    public DateOnly EndOfThisWeek()
+    {
+        var toSunday = ((int)DayOfWeek.Sunday - (int)Today.DayOfWeek + 7) % 7;
+        return Today.AddDays(toSunday);
+    }
+
     /// <summary>That weekday in the ISO week <paramref name="weeksAhead"/> weeks from now (weeks start
     /// Monday). 1 = next week ("다음 주 금요일"), 2 = the week after ("다다음 주 금요일").</summary>
     public DateOnly WeekdayInWeeksAhead(DayOfWeek target, int weeksAhead)

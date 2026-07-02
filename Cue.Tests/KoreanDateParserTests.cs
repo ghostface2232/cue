@@ -65,6 +65,69 @@ public sealed class KoreanDateParserTests
     }
 
     [Fact]
+    public void ThisWeek_ResolvesToEndOfThisWeek_WithCleanTitle()
+    {
+        // Bare "이번 주" reads as "by the end of this week" → the upcoming Sunday. Now = Tue 2026-06-23,
+        // so this ISO week's Sunday is 2026-06-28. The "이번 주" phrase must be stripped from the title.
+        var r = Parse("이번 주에 보고서 마무리");
+        Assert.Equal("보고서 마무리", r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(2026, 6, 28), WhenDate(r.When));
+        Assert.Equal(DayOfWeek.Sunday, WhenDate(r.When).DayOfWeek);
+    }
+
+    [Theory]
+    // "이번 주 {요일}" lands on that weekday of the current ISO week (weeks start Monday). Now = Tue 6/23,
+    // so this week's Mon–Sun is 6/22–6/28. The "이번 주" prefix must not leak into the title.
+    [InlineData("이번 주 목요일 회의 준비", "회의 준비", 2026, 6, 25)]
+    [InlineData("이번 주 금요일 보고서 제출", "보고서 제출", 2026, 6, 26)]
+    [InlineData("이번 주 일요일 대청소", "대청소", 2026, 6, 28)]
+    public void ThisWeekWeekday_ResolvesToThatDayOfCurrentWeek(string input, string title, int y, int mo, int d)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(y, mo, d), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void ThisWeekWeekday_WithDueParticle_KeepsCleanTitle()
+    {
+        // The word-order/deadline case from PARSING.md §9: "이번 주 목요일까지" must consume the whole
+        // "이번 주 목요일" phrase (plus 까지), leaving only the title.
+        var r = Parse("기획안 제출 이번 주 목요일까지");
+        Assert.Equal("기획안 제출", r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(2026, 6, 25), WhenDate(r.When));
+    }
+
+    [Theory]
+    // Every "이번 주" / "다음 주" form — spaced and unspaced, plus the 담주 contraction — must be caught
+    // as a clean OnDate. 이번 주 → this ISO week's end (Sun 6/28); 다음 주 → a week out (6/30). Now = Tue 6/23.
+    [InlineData("이번 주 메모", "메모", 2026, 6, 28)]
+    [InlineData("이번주 메모", "메모", 2026, 6, 28)]
+    [InlineData("다음 주 메모", "메모", 2026, 6, 30)]
+    [InlineData("다음주 메모", "메모", 2026, 6, 30)]
+    [InlineData("담주 메모", "메모", 2026, 6, 30)]
+    public void WeekWords_SpacedAndUnspaced_AllResolveToADate(string input, string title, int y, int mo, int d)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(y, mo, d), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void ThisWeekend_StillResolvesToSaturday_NotConfusedWithThisWeek()
+    {
+        // Guard: adding "이번 주" must not steal "이번 주말" — the weekend alt still wins.
+        var r = Parse("이번 주말에 책장 정리");
+        Assert.Equal("책장 정리", r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(DayOfWeek.Saturday, WhenDate(r.When).DayOfWeek);
+    }
+
+    [Fact]
     public void AbsoluteMonthDay_ResolvesToThatDate()
     {
         var r = Parse("3월 15일 동창 모임 참석");

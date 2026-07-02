@@ -20,6 +20,7 @@ public sealed class QuickAddPresetTests
     [InlineData("내일")]
     [InlineData("모레")]
     [InlineData("이번 주말")]
+    [InlineData("이번 주")]
     [InlineData("다음 주")]
     public void Date_presets_reparse_to_a_date(string preset)
     {
@@ -58,9 +59,13 @@ public sealed class QuickAddPresetTests
         Assert.Contains(parsed.Tokens, t => t.Kind is QuickAddTokenKind.Date);
     }
 
-    // The "다음 주 {요일}" / "다다음 주 {요일}" week shifts must consume cleanly — no "다음 주"/"다다음 주"
-    // left in the title (the leak that ruled out "이번 주 {요일}", which replaces to a bare weekday instead).
+    // The "이번 주 {요일}" / "다음 주 {요일}" / "다다음 주 {요일}" week shifts must consume cleanly — no
+    // "이번 주"/"다음 주"/"다다음 주" prefix left in the title.
     [Theory]
+    [InlineData("이번 주 월요일")]
+    [InlineData("이번 주 금요일")]
+    [InlineData("이번 주 일요일")]
+    [InlineData("이번주 금요일")]
     [InlineData("다음 주 월요일")]
     [InlineData("다음 주 금요일")]
     [InlineData("다음 주 일요일")]
