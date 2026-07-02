@@ -25,14 +25,20 @@ public sealed class FileTaskStoreOptions
     public string? IndexPath { get; init; }
 
     /// <summary>
-    /// The v1 default: a "Cue" folder under the local application data path
-    /// (<see cref="Environment.SpecialFolder.LocalApplicationData"/>).
+    /// The v1 default: a "Cue" folder under the user's Documents folder
+    /// (<see cref="Environment.SpecialFolder.MyDocuments"/>). The root deliberately lives
+    /// <i>outside</i> <c>%USERPROFILE%\AppData</c>: MSIX virtualizes writes under AppData (redirected,
+    /// and wiped on uninstall), so keeping the root out of AppData gives the unpackaged and Store
+    /// builds identical data semantics (data survives an uninstall) and lets a later cloud-folder root
+    /// slot in. <see cref="Environment.SpecialFolder.MyDocuments"/> resolves the real Documents path
+    /// even when it is redirected into OneDrive. The folder is created on demand at store open (the
+    /// index co-located at <c>{root}/index.db</c> creates the root) and on first save.
     /// </summary>
     public static FileTaskStoreOptions CreateDefault(string appFolderName = "Cue")
         => new()
         {
             RootPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
                 appFolderName),
         };
 }
