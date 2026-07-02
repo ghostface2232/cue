@@ -192,6 +192,11 @@ public partial class App : Application
         var completion = runtime.Services.GetRequiredService<IRecurringTaskService>();
         var clock = runtime.Services.GetRequiredService<TimeProvider>();
         await completion.CompleteAsync(payload.TaskId, clock.GetUtcNow()).ConfigureAwait(false);
+        // A headless process exits before the save-event debounce can elapse, so reconcile explicitly
+        // after the shared completion path to remove this task's now-stale scheduled toast.
+        await runtime.Services.GetRequiredService<NotificationScheduler>()
+            .ReconcileAsync(cancellationToken: default)
+            .ConfigureAwait(false);
         var notifier = runtime.Services.GetRequiredService<INavDataChangeNotifier>();
         if (_window is null)
         {

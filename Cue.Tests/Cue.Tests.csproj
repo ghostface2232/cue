@@ -25,4 +25,13 @@
     <ProjectReference Include="..\ViewModels\Cue.ViewModels.csproj" />
   </ItemGroup>
 
+  <!-- Notification scheduling is App-layer policy but has no WinUI dependency. Compile the same source
+       into this cross-platform test assembly so its expected-set/diff core can use fakes without making
+       the entire test project reference the Windows executable. -->
+  <ItemGroup>
+    <Compile Include="..\Services\INotificationPreferences.cs" Link="AppServices\INotificationPreferences.cs" />
+    <Compile Include="..\Services\IToastPresenter.cs" Link="AppServices\IToastPresenter.cs" />
+    <Compile Include="..\Services\NotificationScheduler.cs" Link="AppServices\NotificationScheduler.cs" />
+  </ItemGroup>
+
 </Project>

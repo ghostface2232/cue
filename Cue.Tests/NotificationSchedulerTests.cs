@@ -1,0 +1,287 @@
+using Cue.Domain;
+using Cue.Services;
+using Cue.Storage;
+
+namespace Cue.Tests;
+
+public class NotificationSchedulerTests
+{
+    private static readonly DateTimeOffset Now =
+        new(2026, 7, 2, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task ExpectedSet_ExcludesPastDelivery()
+    {
+        var task = TimedTask(Now.AddMinutes(-1));
+        var (scheduler, _) = Create(task);
+        await using (scheduler)
+            Assert.Empty(await scheduler.BuildExpectedAsync());
+    }
+
+    [Fact]
+    public async Task ExpectedSet_ExcludesNoneReminder()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        task.Reminder = ReminderTiming.None;
+        var (scheduler, _) = Create(task);
+        await using (scheduler)
+            Assert.Empty(await scheduler.BuildExpectedAsync());
+    }
+
+    [Fact]
+    public async Task ExpectedSet_ExcludesAllDayTask()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        task.When = ScheduledWhen.AllDay(
+            ZonedDateTime.FromUtc(Now.AddHours(1), "UTC"));
+        var (scheduler, _) = Create(task);
+        await using (scheduler)
+            Assert.Empty(await scheduler.BuildExpectedAsync());
+    }
+
+    [Fact]
+    public async Task ExpectedSet_ExcludesDeliveryBeyondRollingWindow()
+    {
+        var task = TimedTask(Now.AddDays(14).AddMinutes(1));
+        var (scheduler, _) = Create(task);
+        await using (scheduler)
+            Assert.Empty(await scheduler.BuildExpectedAsync());
+    }
+
+    [Fact]
+    public async Task ExpectedSet_LeavesRecurringTaskForExtensionSource()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        task.Recurrence = new RecurrenceRule("FREQ=DAILY", task.When.Date!.Value);
+        var (scheduler, _) = Create(task);
+        await using (scheduler)
+            Assert.Empty(await scheduler.BuildExpectedAsync());
+    }
+
+    [Fact]
+    public async Task Reconcile_RemovesCompletedTaskReservation()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        var (scheduler, toasts) = Create(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            Assert.Contains(NotificationScheduler.TagForTask(task.Id), toasts.Scheduled);
+
+            task.CompletedAt = Now;
+            await scheduler.ReconcileAsync();
+
+            Assert.Empty(toasts.Scheduled);
+            Assert.Contains(NotificationScheduler.TagForTask(task.Id), toasts.CancelledTags);
+        }
+    }
+
+    [Fact]
+    public async Task Reconcile_TimeChange_CancelsAndRegistersSameTagAtNewTime()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        var (scheduler, toasts) = Create(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            task.When = ScheduledWhen.On(
+                ZonedDateTime.FromUtc(Now.AddHours(2), "UTC"));
+
+            await scheduler.ReconcileAsync();
+
+            var tag = NotificationScheduler.TagForTask(task.Id);
+            Assert.Equal(2, toasts.ScheduleCount);
+            Assert.Contains(tag, toasts.CancelledTags);
+            Assert.Equal(Now.AddHours(2), toasts.Scheduled[tag].DeliveryTime);
+        }
+    }
+
+    [Fact]
+    public async Task Reconcile_SameInputTwice_IsIdempotent()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        var (scheduler, toasts) = Create(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            await scheduler.ReconcileAsync();
+
+            Assert.Equal(1, toasts.ScheduleCount);
+            Assert.Empty(toasts.CancelledTags);
+            Assert.Single(toasts.Scheduled);
+        }
+    }
+
+    [Fact]
+    public async Task Reconcile_MasterOff_CancelsEveryManagedReservation()
+    {
+        var first = TimedTask(Now.AddHours(1));
+        var second = TimedTask(Now.AddHours(2));
+        var preferences = new FakeNotificationPreferences { NotificationsEnabled = true };
+        var (scheduler, toasts) = Create(preferences, first, second);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            Assert.Equal(2, toasts.Scheduled.Count);
+
+            preferences.NotificationsEnabled = false;
+            await scheduler.ReconcileAsync();
+
+            Assert.Empty(toasts.Scheduled);
+            Assert.Equal(2, toasts.CancelledTags.Distinct().Count());
+        }
+    }
+
+    [Fact]
+    public async Task StartAsync_PerformsInitialReconcile()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        var (scheduler, toasts) = Create(task);
+        await using (scheduler)
+        {
+            await scheduler.StartAsync();
+
+            Assert.Contains(NotificationScheduler.TagForTask(task.Id), toasts.Scheduled);
+        }
+    }
+
+    [Fact]
+    public async Task SaveEvent_TriggersDebouncedReconcile()
+    {
+        var store = new FakeTaskStore([]);
+        var toasts = new FakeToastPresenter();
+        var scheduler = new NotificationScheduler(
+            store,
+            store,
+            toasts,
+            new FakeNotificationPreferences { NotificationsEnabled = true },
+            new FixedTimeProvider(Now),
+            debounce: TimeSpan.Zero,
+            periodicInterval: Timeout.InfiniteTimeSpan);
+        await using (scheduler)
+        {
+            await scheduler.StartAsync();
+            var task = TimedTask(Now.AddHours(1));
+
+            await store.SaveAsync(task);
+            await toasts.ScheduleObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Contains(NotificationScheduler.TagForTask(task.Id), toasts.Scheduled);
+        }
+    }
+
+    private static TaskItem TimedTask(DateTimeOffset when) => new()
+    {
+        Title = "알림 테스트",
+        When = ScheduledWhen.On(ZonedDateTime.FromUtc(when, "UTC")),
+        Reminder = ReminderTiming.AtTime,
+    };
+
+    private static (NotificationScheduler Scheduler, FakeToastPresenter Toasts) Create(params TaskItem[] tasks)
+        => Create(new FakeNotificationPreferences { NotificationsEnabled = true }, tasks);
+
+    private static (NotificationScheduler Scheduler, FakeToastPresenter Toasts) Create(
+        FakeNotificationPreferences preferences,
+        params TaskItem[] tasks)
+    {
+        var store = new FakeTaskStore(tasks);
+        var toasts = new FakeToastPresenter();
+        var scheduler = new NotificationScheduler(
+            store,
+            store,
+            toasts,
+            preferences,
+            new FixedTimeProvider(Now),
+            debounce: TimeSpan.Zero,
+            periodicInterval: Timeout.InfiniteTimeSpan);
+        return (scheduler, toasts);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class FakeNotificationPreferences : INotificationPreferences
+    {
+        private bool _enabled;
+
+        public bool NotificationsEnabled
+        {
+            get => _enabled;
+            set
+            {
+                if (_enabled == value) return;
+                _enabled = value;
+                NotificationsEnabledChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public event EventHandler? NotificationsEnabledChanged;
+    }
+
+    private sealed class FakeToastPresenter : IToastPresenter
+    {
+        public Dictionary<string, ScheduledNotification> Scheduled { get; } = new(StringComparer.Ordinal);
+        public List<string> CancelledTags { get; } = [];
+        public int ScheduleCount { get; private set; }
+        public TaskCompletionSource ScheduleObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Schedule(DateTimeOffset deliveryTime, string tag, string title, string body, string completionArguments)
+        {
+            ScheduleCount++;
+            Scheduled[tag] = new ScheduledNotification(deliveryTime, tag, title, body, completionArguments);
+            ScheduleObserved.TrySetResult();
+        }
+
+        public void CancelScheduled(string tag)
+        {
+            CancelledTags.Add(tag);
+            Scheduled.Remove(tag);
+        }
+
+        public IReadOnlyList<string> GetScheduledTags() => Scheduled.Keys.ToArray();
+
+        public void Show(string title, string body, string? activationArguments = null)
+        {
+        }
+    }
+
+    private sealed class FakeTaskStore(IEnumerable<TaskItem> tasks) : ITaskStore, ITaskStoreChangeSource
+    {
+        private readonly List<TaskItem> _tasks = tasks.ToList();
+
+        public event EventHandler? Changed;
+
+        public Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default)
+            where T : RecordBase
+            => Task.FromResult<IReadOnlyList<T>>(typeof(T) == typeof(TaskItem)
+                ? _tasks.Cast<T>().ToArray()
+                : []);
+
+        public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default)
+            where T : RecordBase
+            => Task.FromResult(_tasks.FirstOrDefault(task => task.Id == id) as T);
+
+        public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default)
+            where T : RecordBase
+        {
+            if (record is TaskItem task)
+            {
+                var index = _tasks.FindIndex(item => item.Id == task.Id);
+                if (index >= 0) _tasks[index] = task;
+                else _tasks.Add(task);
+            }
+            Changed?.Invoke(this, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default)
+            where T : RecordBase
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+    }
+}

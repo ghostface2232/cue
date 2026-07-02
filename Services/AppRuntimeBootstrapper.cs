@@ -21,11 +21,13 @@ internal static class AppRuntimeBootstrapper
         var store = await IndexedTaskStore.OpenAsync(
             FileTaskStoreOptions.CreateDefault(), TimeProvider.System, timeZone);
 
-        return new AppRuntime(
+        var runtime = new AppRuntime(
             store,
             preferences,
             timeZone,
             ConfigureServices(store, preferences, timeZone, toastPresenter));
+        await runtime.Services.GetRequiredService<NotificationScheduler>().StartAsync();
+        return runtime;
     }
 
     private static IServiceProvider ConfigureServices(
@@ -43,12 +45,15 @@ internal static class AppRuntimeBootstrapper
         services.AddSingleton<IDateParser, PreferenceDateParser>();
 
         services.AddSingleton<ITaskStore>(store);
+        services.AddSingleton<ITaskStoreChangeSource>(store);
         services.AddSingleton<ITaskIndex>(store);
         services.AddSingleton<IContainerDeletionStore>(store);
         services.AddSingleton<IReorderService, ReorderService>();
         services.AddSingleton<IRecurringTaskService, RecurringTaskService>();
 
         services.AddSingleton<IToastPresenter>(toastPresenter);
+        services.AddSingleton<INotificationPreferences>(preferences);
+        services.AddSingleton<NotificationScheduler>();
         services.AddSingleton<DialogService>();
         services.AddSingleton<UpdateService>();
         services.AddSingleton<INavDataChangeNotifier, NavDataChangeNotifier>();
