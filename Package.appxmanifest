@@ -18,7 +18,7 @@
   <Identity
     Name="MingwanBae.Cue-"
     Publisher="CN=8C394440-DD7A-4859-B750-5AAA14564DCB"
-    Version="0.1.4.0" />
+    Version="1.0.0.0" />
 
   <Properties>
     <DisplayName>Cue</DisplayName>

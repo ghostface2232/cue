@@ -31,8 +31,13 @@ function Get-ProjectVersion {
     if (-not $value) { throw 'Cue.csproj has no <Version> element.' }
 
     $parsed = $null
-    if (-not [Version]::TryParse([string]$value, [ref]$parsed) -or $parsed.Revision -ge 0) {
-        throw "Cue.csproj <Version> '$value' must be a three-part version such as 0.1.4."
+    if (-not [Version]::TryParse([string]$value, [ref]$parsed) -or
+        $parsed.Revision -ge 0 -or
+        $parsed.Major -lt 1 -or
+        $parsed.Major -gt 65535 -or
+        $parsed.Minor -gt 65535 -or
+        $parsed.Build -gt 65535) {
+        throw "Cue.csproj <Version> '$value' must be a Store-valid three-part version such as 1.0.0 (major 1-65535; minor/build 0-65535)."
     }
     return [string]$value
 }
