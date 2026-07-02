@@ -24,6 +24,7 @@ $unpackDir = Join-Path $workDir 'unpacked'
 $verifyDir = Join-Path $workDir 'verify'
 $arch = 'x64'
 $rid = 'win-x64'
+$storeDisplayName = 'Cue - 할 일 정리'
 
 function Get-ProjectVersion {
     [xml]$project = Get-Content -LiteralPath $projectPath
@@ -42,10 +43,38 @@ function Get-ProjectVersion {
     return [string]$value
 }
 
+function Assert-StoreDisplayNames {
+    param(
+        [Parameter(Mandatory)] [xml]$Manifest,
+        [Parameter(Mandatory)] [string]$Context
+    )
+
+    $namespaces = [Xml.XmlNamespaceManager]::new($Manifest.NameTable)
+    $namespaces.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+    $namespaces.AddNamespace('uap', 'http://schemas.microsoft.com/appx/manifest/uap/windows10')
+
+    $packageNode = $Manifest.SelectSingleNode('/f:Package/f:Properties/f:DisplayName', $namespaces)
+    $packageDisplayName = if ($packageNode) { $packageNode.InnerText } else { '' }
+    if ($packageDisplayName -ne $storeDisplayName) {
+        throw "$Context Package/Properties/DisplayName '$packageDisplayName' must match the reserved Store name '$storeDisplayName'."
+    }
+
+    $visualElements = @($Manifest.SelectNodes('/f:Package/f:Applications/f:Application/uap:VisualElements', $namespaces))
+    if ($visualElements.Count -eq 0) {
+        throw "$Context has no Application/uap:VisualElements element."
+    }
+    $mismatchedNames = @($visualElements | Where-Object { $_.GetAttribute('DisplayName') -ne $storeDisplayName })
+    if ($mismatchedNames) {
+        $actualNames = $mismatchedNames | ForEach-Object { $_.GetAttribute('DisplayName') }
+        throw "$Context Application/uap:VisualElements DisplayName values '$($actualNames -join ', ')' must match the reserved Store name '$storeDisplayName'."
+    }
+}
+
 function Assert-ManifestInputs {
     param([Parameter(Mandatory)] [string]$ProjectVersion)
 
     [xml]$manifest = Get-Content -LiteralPath $manifestPath
+    Assert-StoreDisplayNames -Manifest $manifest -Context 'Package.appxmanifest'
     $manifestVersion = [string]$manifest.Package.Identity.Version
     $expectedVersion = "$ProjectVersion.0"
     if ($manifestVersion -ne $expectedVersion) {
@@ -145,6 +174,7 @@ function Assert-FinalPackage {
     )
 
     [xml]$manifest = Get-Content -LiteralPath (Join-Path $PackageRoot 'AppxManifest.xml')
+    Assert-StoreDisplayNames -Manifest $manifest -Context 'Final MSIX manifest'
     if ($manifest.Package.Identity.Version -ne $ExpectedVersion) {
         throw "Final MSIX version '$($manifest.Package.Identity.Version)' does not match '$ExpectedVersion'."
     }

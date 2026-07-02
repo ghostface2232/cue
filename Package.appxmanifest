@@ -21,7 +21,7 @@
     Version="1.0.0.0" />
 
   <Properties>
-    <DisplayName>Cue</DisplayName>
+    <DisplayName>Cue - 할 일 정리</DisplayName>
     <!-- PublisherDisplayName: the registered publisher display name from Partner Center. -->
     <PublisherDisplayName>Mingwan Bae</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
@@ -51,7 +51,7 @@
       Executable="Cue.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="Cue"
+        DisplayName="Cue - 할 일 정리"
         Description="자연스러운 한국어 한 줄로 할 일을 적으면 날짜·시간·우선순위를 알아서 정리해 주는 To-Do 앱이에요."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
