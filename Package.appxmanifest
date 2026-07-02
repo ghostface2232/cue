@@ -1,50 +1,83 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
-  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap rescap">
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  IgnorableNamespaces="uap rescap com desktop">
 
+  <!-- Identity — the three values here are Cue's product identity.
+       • Name / Publisher: copy the reserved values from Partner Center (Product management →
+         Product identity: "Package/Identity/Name" and "Package/Identity/Publisher"), replacing the
+         REPLACE-WITH-… placeholders below. Until then, local packaged runs still deploy because the
+         WinUI MSIX tooling generates a test certificate matching whatever Publisher is set here.
+       • Version: MUST be Cue.csproj <Version> with ".0" appended (three parts → four). csproj is the
+         single source of truth; the release script fails the build if these drift (mirroring the
+         existing tag↔<Version> check). Bump <Version> in the csproj, then update this to match. -->
   <Identity
-    Name="367AF600-3B58-4074-9667-6FB215BBFDF4"
-    Publisher="CN=AppPublisher"
-    Version="1.0.0.0" />
-
-  <mp:PhoneIdentity PhoneProductId="367AF600-3B58-4074-9667-6FB215BBFDF4" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+    Name="REPLACE-WITH-PARTNER-CENTER-IDENTITY-NAME"
+    Publisher="CN=REPLACE-WITH-PARTNER-CENTER-PUBLISHER-ID"
+    Version="0.1.4.0" />
 
   <Properties>
     <DisplayName>Cue</DisplayName>
-    <PublisherDisplayName>AppPublisher</PublisherDisplayName>
+    <!-- PublisherDisplayName: your registered publisher display name from Partner Center. -->
+    <PublisherDisplayName>REPLACE-WITH-PARTNER-CENTER-PUBLISHER-DISPLAY-NAME</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26226.0" />
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26226.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
 
+  <!-- Korean-first app: Korean parsing is the core feature, so the package ships ko-KR only for now. -->
   <Resources>
-    <Resource Language="x-generate"/>
+    <Resource Language="ko-KR" />
   </Resources>
 
   <Applications>
+    <!-- Executable is the literal produced app host (AssemblyName "Cue" → Cue.exe). It must stay in
+         lockstep with the com:ExeServer Executable below: WCT compat's packaged path (ManifestHelper)
+         rejects the manifest unless the COM server's Executable resolves to the actually-running exe. -->
     <Application Id="App"
-      Executable="$targetnametoken$.exe"
+      Executable="Cue.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
         DisplayName="Cue"
-        Description="Cue"
+        Description="자연스러운 한국어 한 줄로 할 일을 적으면 날짜·시간·우선순위를 알아서 정리해 주는 To-Do 앱이에요."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+
+      <Extensions>
+        <!-- Toast activation for the packaged (Store) channel. WCT compat 7.1.3 reads the activator
+             identity straight from this manifest (ManifestHelper.GetClsidFromPackageManifest), so it
+             enforces exactly: the ToastActivatorCLSID GUID equals the com:Class Id; the com:ExeServer
+             Executable equals the running exe (Cue.exe); and Arguments is exactly "-ToastActivated"
+             (the WCT compat contract; the Windows App SDK's AppNotificationManager uses a different
+             argument value that does not apply here). The CLSID is chosen once here and never generated
+             at runtime. See ToolkitToastPresenter.TryRegisterPackaged. -->
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="01C837CF-C37F-473B-BD77-A557AD27FC68" />
+        </desktop:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="Cue.exe" Arguments="-ToastActivated" DisplayName="Cue Toast Activator">
+              <com:Class Id="01C837CF-C37F-473B-BD77-A557AD27FC68" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
+  <!-- Desktop full-trust app: it needs runFullTrust and nothing else. Do not add capabilities the app
+       does not exercise — each one widens the Store review surface and the consent prompt. -->
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
   </Capabilities>

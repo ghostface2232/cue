@@ -39,6 +39,46 @@ jobs:
           }
           Write-Host "Version $version matches tag ${{ github.ref_name }}."
 
+      - name: Verify Package.appxmanifest version matches Cue.csproj <Version>
+        shell: pwsh
+        # Same principle as the tag check: csproj <Version> is the single source of truth, and the MSIX
+        # (Store channel) manifest version is that three-part value with ".0" appended. Fail the build on
+        # drift so the two channels can never ship mismatched versions.
+        run: |
+          [xml]$proj = Get-Content Cue.csproj
+          $version = @($proj.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+          $expected = "$version.0"
+          [xml]$manifest = Get-Content Package.appxmanifest
+          $manifestVersion = $manifest.Package.Identity.Version
+          if ($manifestVersion -ne $expected) {
+            throw "Package.appxmanifest Identity/Version '$manifestVersion' must be '$expected' (Cue.csproj <Version> '$version' + '.0'). Update the manifest."
+          }
+          Write-Host "Manifest version $manifestVersion matches <Version> $version."
+
+      - name: Verify Package.appxmanifest assets exist
+        shell: pwsh
+        # Missing visual-asset files are not caught at packaging time — they surface only during Store
+        # certification, a slow and late feedback loop. Assert here that every asset the manifest
+        # references resolves to a file on disk, accepting scale-/targetsize-qualified variants
+        # (e.g. a "Assets\Square150x150Logo.png" reference is satisfied by "Square150x150Logo.scale-200.png").
+        run: |
+          $text = Get-Content Package.appxmanifest -Raw
+          $refs = [regex]::Matches($text, 'Assets\\[^"<>]+?\.(?:png|ico|jpg)') |
+            ForEach-Object { $_.Value } | Sort-Object -Unique
+          $missing = @()
+          foreach ($ref in $refs) {
+            $dir = Split-Path $ref -Parent
+            $base = [IO.Path]::GetFileNameWithoutExtension($ref)
+            $ext = [IO.Path]::GetExtension($ref)
+            $exact = Test-Path $ref
+            $variants = Get-ChildItem -Path $dir -Filter "$base*$ext" -ErrorAction SilentlyContinue
+            if (-not $exact -and -not $variants) { $missing += $ref }
+          }
+          if ($missing) {
+            throw "Package.appxmanifest references assets with no matching file (base or scale/targetsize variant): $($missing -join ', ')"
+          }
+          Write-Host "All $($refs.Count) manifest-referenced assets present."
+
       - name: Install Inno Setup 6
         run: choco install innosetup --no-progress -y
 
