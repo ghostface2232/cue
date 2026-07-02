@@ -22,19 +22,25 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
 
     public ToolkitToastPresenter()
     {
-        // The Compat library's OnActivated subscription triggers an immediate COM activator
-        // registration that reads the app manifest for a toastNotificationActivation CLSID.
-        // In an unpackaged dev-loop build (no manifest / no registered AUMID) this throws
-        // InvalidOperationException. Catch it here so the rest of the app starts normally;
-        // toast scheduling will gracefully no-op via the _available guard.
+        // The Compat library defers (and internally swallows) its COM-activator registration on the
+        // OnActivated subscription, so a missing toastNotificationActivation manifest extension does
+        // NOT surface there — it only re-throws later on the first CreateToastNotifier call. That
+        // happens under `winapp run`, which launches with a debug package identity but no toast
+        // manifest, sending the library down its packaged path. Probe with CreateToastNotifier here
+        // to surface the failure now and no-op every toast operation via the _available guard.
+        // Production installs are unpackaged (no identity) and register via the Win32 COM path, which
+        // needs no manifest and succeeds — so this keeps toasts working there.
         try
         {
             ToastNotificationManagerCompat.OnActivated += OnToolkitActivated;
+            _ = ToastNotificationManagerCompat.CreateToastNotifier();
             _available = true;
         }
         catch (Exception exception)
         {
-            Debug.WriteLine($"[Cue] Toast notification registration unavailable: {exception.Message}");
+            Debug.WriteLine($"[Cue] Toast notifications unavailable, scheduling disabled: {exception.Message}");
+            try { ToastNotificationManagerCompat.OnActivated -= OnToolkitActivated; }
+            catch { /* best-effort unsubscribe; registration never completed */ }
             _available = false;
         }
     }
