@@ -290,11 +290,36 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     private async Task ResumeContainerDeletionsAsync(CancellationToken cancellationToken)
     {
         if (_deletionJournal is null) return;
-        foreach (var operation in await _deletionJournal.GetPendingAsync(cancellationToken).ConfigureAwait(false))
+
+        // Resuming is best-effort: the exact condition that leaves an operation pending (an unreadable
+        // child file) can persist across launches, and an unreadable journal is the same class of
+        // trouble — neither may turn into a startup failure. A contained operation simply stays pending
+        // (its journal entry keeps isCompleted: false) and is retried on the next open.
+        IReadOnlyList<ContainerDeletionOperation> pending;
+        try
         {
-            await ApplyContainerDeletionAsync(operation, cancellationToken).ConfigureAwait(false);
-            operation.IsCompleted = true;
-            await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
+            pending = await _deletionJournal.GetPendingAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[Cue] Skipping container-deletion resume; the journal is unreadable: {exception.Message}");
+            return;
+        }
+
+        foreach (var operation in pending)
+        {
+            try
+            {
+                await ApplyContainerDeletionAsync(operation, cancellationToken).ConfigureAwait(false);
+                operation.IsCompleted = true;
+                await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Cue] Container deletion '{operation.Id}' could not resume and stays pending: {exception.Message}");
+            }
         }
     }
 

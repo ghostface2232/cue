@@ -39,6 +39,20 @@ public sealed class ZonedDateTimeJsonConverter : JsonConverter<ZonedDateTime>
         if (utc is null || timeZoneId is null)
             throw new JsonException("ZonedDateTime requires both 'utc' and 'timeZoneId'.");
 
+        // An unresolvable zone id (a hand-edited file, or a record synced from a platform whose zone
+        // this machine can't resolve) would otherwise surface as TimeZoneNotFoundException far from the
+        // read — deep inside the startup index rebuild or a display projection — where nothing isolates
+        // it, so one bad record could block every launch. Folding it into JsonException here lands such
+        // a record in the store's existing corrupt-record isolation (skipped and logged) instead.
+        try
+        {
+            _ = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            throw new JsonException($"Unknown time zone id '{timeZoneId}'.", exception);
+        }
+
         return new ZonedDateTime(utc.Value, timeZoneId);
     }
 

@@ -179,6 +179,11 @@ public partial class TaskDetailViewModel : ObservableObject
     // no future) is left exactly as LoadTimelineAsync built it.
     private bool _isCompleted;
     private bool _isLoading;
+    // Ownership token for OpenAsync: each open (and each Close) claims a new generation, and an
+    // in-flight OpenAsync abandons at its next await when it no longer holds the current one. Without
+    // this, two rapid task switches interleave their panel fills on the UI thread and the loser can
+    // overwrite the winner's state — or a mid-fill flush can persist one task's fields onto another.
+    private int _openGeneration;
     private int _activeSaveCount;
     private DateTimeOffset _saveStartInstant = DateTimeOffset.MinValue;
 
@@ -492,7 +497,12 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public async Task OpenAsync(Guid taskId)
     {
+        // Claim the panel: any older OpenAsync still in flight abandons at its next await below, so a
+        // rapid task switch can never interleave two fills (see _openGeneration).
+        var generation = ++_openGeneration;
         var task = await _store.GetAsync<TaskItem>(taskId);
+        if (generation != _openGeneration)
+            return; // a newer OpenAsync (or Close) took over while the record was loading
         if (task is null || task.IsDeleted)
         {
             Close();
@@ -527,7 +537,11 @@ public partial class TaskDetailViewModel : ObservableObject
         // Stay in the loading guard until the panel is fully populated — setting SelectedTaskGroup and the
         // tag rows below must not trip autosave (no save should fire just from opening a task).
         await LoadTaskGroupsAsync(task.TaskGroupId);
+        if (generation != _openGeneration)
+            return;
         await LoadTagsAsync(task.TagIds);
+        if (generation != _openGeneration)
+            return;
         LoadChecklist(task);
 
         // The recurrence timeline: a recurring task (open or already-ended) shows its cycle history; a
@@ -536,6 +550,8 @@ public partial class TaskDetailViewModel : ObservableObject
         _isCompleted = task.IsCompleted;
         _timelineWindow = TimelinePageSize;
         await LoadTimelineAsync(task);
+        if (generation != _openGeneration)
+            return;
 
         IsOpen = true;
         _isLoading = false;
@@ -543,6 +559,10 @@ public partial class TaskDetailViewModel : ObservableObject
 
     public void Close()
     {
+        // Invalidate any OpenAsync still in flight so a load racing the close can't half-fill or reopen
+        // the panel; it also owns _isLoading, which that abandoned load would otherwise leave stuck on.
+        _openGeneration++;
+        _isLoading = false;
         _taskId = null;
         IsOpen = false;
     }
@@ -588,7 +608,10 @@ public partial class TaskDetailViewModel : ObservableObject
     /// </summary>
     public Task FlushAsync()
     {
-        if (CaptureSnapshot() is { } snapshot) Enqueue(snapshot);
+        // While OpenAsync is mid-fill the panel's fields are a mix of the outgoing and incoming task, so
+        // there is no user edit to capture — capturing would persist one task's fields onto another.
+        // Only drain what is already queued (RequestAutoSave applies the same _isLoading gate).
+        if (!_isLoading && CaptureSnapshot() is { } snapshot) Enqueue(snapshot);
         return DrainPendingSaveAsync();
     }
 

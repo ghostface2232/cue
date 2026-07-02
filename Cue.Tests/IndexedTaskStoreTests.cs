@@ -320,6 +320,84 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PendingDeletionWithAStillUnreadableChild_DoesNotBlockStartup()
+    {
+        var root = NewRoot();
+        var options = new FileTaskStoreOptions { RootPath = root, IndexPath = Path.Combine(root, "index.db") };
+        var project = new TaskGroup { Name = "잠긴 그룹" };
+        var task = new TaskItem { Title = "잠긴 작업", TaskGroupId = project.Id };
+        await using (var seed = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
+        {
+            await seed.SaveAsync(project);
+            await seed.SaveAsync(task);
+        }
+
+        var taskPath = Path.Combine(root, "tasks", task.Id + ".json");
+        await using (var locked = new FileStream(taskPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            await using (var store = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
+            {
+                await Assert.ThrowsAsync<IOException>(() =>
+                    store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks));
+            }
+
+            // The child is STILL unreadable at the next launch — the resume must be contained, leaving the
+            // operation pending for a later run, not turn into a startup failure.
+            await using (var blocked = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
+            {
+                Assert.False((await blocked.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+                var journalPath = Assert.Single(Directory.EnumerateFiles(Path.Combine(root, "meta", "operations"), "*.json"));
+                Assert.Contains("\"isCompleted\": false", await File.ReadAllTextAsync(journalPath));
+            }
+        }
+
+        // Once the file is readable again, the pending operation completes on the next open.
+        await using var recovered = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc);
+        Assert.True((await recovered.GetAsync<TaskItem>(task.Id))!.IsDeleted);
+        Assert.True((await recovered.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+    }
+
+    [Fact]
+    public async Task CorruptDeletionJournalEntry_DoesNotBlockStartup()
+    {
+        var root = NewRoot();
+        await using (var seed = await OpenAsync(root, new MutableTimeProvider(Now)))
+            await seed.SaveAsync(new TaskItem { Title = "멀쩡한 일" });
+
+        var operations = Path.Combine(root, "meta", "operations");
+        Directory.CreateDirectory(operations);
+        await File.WriteAllTextAsync(Path.Combine(operations, Guid.NewGuid() + ".json"), "{not-json");
+
+        // An unreadable journal is skipped for this launch instead of failing OpenAsync.
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        Assert.Single(await store.GetAllActiveAsync());
+    }
+
+    [Fact]
+    public async Task RecordWithAnUnknownTimeZone_IsIsolatedLikeACorruptFile()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        var good = new TaskItem { Title = "정상", When = OnDay(new DateOnly(2026, 6, 23)) };
+        var bad = new TaskItem { Title = "깨진 시간대", When = OnDay(new DateOnly(2026, 6, 24)) };
+        await using (var seed = await OpenAsync(root, clock))
+        {
+            await seed.SaveAsync(good);
+            await seed.SaveAsync(bad);
+        }
+
+        // A zone id this machine can't resolve (hand edit / cross-platform sync). It must land in the
+        // corrupt-record isolation: startup rebuild skips the record and reads fold it to null — one bad
+        // zone must never block every launch.
+        var badPath = Path.Combine(root, "tasks", bad.Id + ".json");
+        await File.WriteAllTextAsync(badPath, (await File.ReadAllTextAsync(badPath)).Replace("UTC", "Cue/NoSuchZone"));
+
+        await using var store = await OpenAsync(root, clock);
+        Assert.Null(await store.GetAsync<TaskItem>(bad.Id));
+        Assert.Equal(good.Id, Assert.Single(await store.GetAllActiveAsync()).Id);
+    }
+
+    [Fact]
     public async Task DeleteTask_IsAPlainSoftDelete_WithItsEmbeddedChecklist()
     {
         var root = NewRoot();

@@ -2815,4 +2815,152 @@ public sealed class ViewModelRegressionTests
             return await inner.MutateAsync(id, mutate, cancellationToken);
         }
     }
+
+    [Fact]
+    public async Task RapidTaskSwitch_AbandonedOpenCannotOverwriteTheNewerPanel()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var first = new TaskItem { Title = "먼저 클릭한 일" };
+        var second = new TaskItem { Title = "나중에 클릭한 일" };
+        await store.SaveAsync(first);
+        await store.SaveAsync(second);
+
+        var gated = new GatedTaskStore(store);
+        gated.ArmGet(first.Id);
+        var detail = new TaskDetailViewModel(
+            gated, store, new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc,
+            () => Task.CompletedTask, new NavDataChangeNotifier());
+
+        // The first click's OpenAsync parks while its record loads; the second click completes fully.
+        var staleOpen = detail.OpenAsync(first.Id);
+        await gated.ReachedGate;
+        await detail.OpenAsync(second.Id);
+
+        // When the stale load resumes it must abandon, not overwrite the newer panel with the first task.
+        gated.Release();
+        await staleOpen;
+
+        Assert.Equal(second.Id, detail.CurrentTaskId);
+        Assert.Equal("나중에 클릭한 일", detail.Title);
+        Assert.True(detail.IsOpen);
+    }
+
+    [Fact]
+    public async Task FlushDuringTaskSwitchLoad_DoesNotWriteTheOldPanelStateOntoTheNewTask()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var tag = new Tag { Name = "빨강" };
+        var taskGroup = new TaskGroup { Name = "프로젝트" };
+        var tagged = new TaskItem { Title = "태그 달린 일", TaskGroupId = taskGroup.Id, TagIds = { tag.Id } };
+        var bare = new TaskItem { Title = "맨몸인 일" };
+        await store.SaveAsync(tag);
+        await store.SaveAsync(taskGroup);
+        await store.SaveAsync(tagged);
+        await store.SaveAsync(bare);
+
+        var gatedIndex = new GatedTaskIndex(store);
+        var detail = new TaskDetailViewModel(
+            store, gatedIndex, new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc,
+            () => Task.CompletedTask, new NavDataChangeNotifier());
+        await detail.OpenAsync(tagged.Id); // the panel shows the tagged task
+
+        // Park the switch mid-fill: the panel already claims the new id but still holds the outgoing
+        // task's tag/group rows — exactly the window a list-driven flush used to capture and persist.
+        gatedIndex.ArmTaskGroupsGate();
+        var parkedOpen = detail.OpenAsync(bare.Id);
+        await gatedIndex.ReachedGate;
+        await detail.FlushAsync();
+
+        var midLoad = await store.GetAsync<TaskItem>(bare.Id);
+        Assert.NotNull(midLoad);
+        Assert.Empty(midLoad.TagIds);
+        Assert.Null(midLoad.TaskGroupId);
+
+        gatedIndex.Release();
+        await parkedOpen;
+        Assert.Equal(bare.Id, detail.CurrentTaskId);
+    }
+
+    /// <summary>Wraps a real index and blocks the first <c>GetTaskGroupsAsync</c> after arming until
+    /// released, so a test can hold a detail-panel OpenAsync mid-fill deterministically.</summary>
+    private sealed class GatedTaskIndex(ITaskIndex inner) : ITaskIndex
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private bool _armed;
+
+        public Task ReachedGate => _reached.Task;
+        public void ArmTaskGroupsGate() => _armed = true;
+        public void Release() => _release.TrySetResult();
+
+        public async Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default)
+        {
+            if (_armed)
+            {
+                _armed = false; // gate only the first armed read
+                _reached.TrySetResult();
+                await _release.Task;
+            }
+            return await inner.GetTaskGroupsAsync(cancellationToken);
+        }
+
+        public Task<IReadOnlyList<TagListItem>> GetTagsAsync(CancellationToken cancellationToken = default)
+            => inner.GetTagsAsync(cancellationToken);
+        public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTaskGroupAsync(CancellationToken cancellationToken = default)
+            => inner.GetOpenTaskCountsByTaskGroupAsync(cancellationToken);
+        public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTagAsync(CancellationToken cancellationToken = default)
+            => inner.GetOpenTaskCountsByTagAsync(cancellationToken);
+        public Task<int> GetOpenTaskCountWithoutTaskGroupAsync(CancellationToken cancellationToken = default)
+            => inner.GetOpenTaskCountWithoutTaskGroupAsync(cancellationToken);
+        public Task<int> GetOpenTaskCountWithoutTagAsync(CancellationToken cancellationToken = default)
+            => inner.GetOpenTaskCountWithoutTagAsync(cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetAllActiveAsync(keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetByTaskGroupAsync(taskGroupId, keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetByTagAsync(tagId, keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+            => inner.GetCompletedByTaskGroupAsync(taskGroupId, limit, offset, excludeKeptInPlace, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+            => inner.GetCompletedByTagAsync(tagId, limit, offset, excludeKeptInPlace, cancellationToken);
+        public Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+            => inner.GetCompletedCountByTaskGroupAsync(taskGroupId, excludeKeptInPlace, cancellationToken);
+        public Task<int> GetCompletedCountByTagAsync(Guid tagId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+            => inner.GetCompletedCountByTagAsync(tagId, excludeKeptInPlace, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetWithoutTaskGroupAsync(keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetWithoutTagAsync(keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetTodayAsync(keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+            => inner.GetTodayCompletedAsync(limit, offset, excludeKeptInPlace, cancellationToken);
+        public Task<int> GetTodayCompletedCountAsync(bool excludeKeptInPlace = false, CancellationToken cancellationToken = default)
+            => inner.GetTodayCompletedCountAsync(excludeKeptInPlace, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetUpcomingAsync(keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetAnytimeAsync(keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default)
+            => inner.GetLogbookAsync(cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default)
+            => inner.GetByPriorityAsync(keepCompletedToday, cancellationToken);
+        public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
+            => inner.GetTimelineRowsAsync(rangeStart, rangeEnd, cancellationToken);
+        public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
+            => inner.GetOccurrencesAsync(seriesId, limit, offset, cancellationToken);
+        public Task<int> GetOccurrenceCountAsync(Guid seriesId, CancellationToken cancellationToken = default)
+            => inner.GetOccurrenceCountAsync(seriesId, cancellationToken);
+    }
 }
