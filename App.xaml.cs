@@ -222,7 +222,13 @@ public partial class App : Application
         {
             if (_runtime is null)
             {
-                _runtime = await AppRuntimeBootstrapper.OpenAsync(_toastPresenter).ConfigureAwait(false);
+                // Flow on the caller's context — do NOT ConfigureAwait(false) here. OpenAsync's own awaits
+                // resume on the captured context, so on the normal launch path it completes on the UI thread;
+                // hopping this continuation to the thread pool (as ConfigureAwait(false) would) strands it
+                // under `winapp run`, so the main window never gets created. Staying on the UI thread is also
+                // what the caller needs next — MainWindow must be constructed there. The headless toast path
+                // reaches here off a thread-pool continuation, so it naturally stays off the UI thread.
+                _runtime = await AppRuntimeBootstrapper.OpenAsync(_toastPresenter);
                 Services = _runtime.Services;
             }
             return _runtime;
