@@ -34,6 +34,10 @@ public sealed record TimeOption(int Value, string Label);
 /// and evaluating it stays in the storage layer (invariant 9).</summary>
 public sealed record RecurrenceEditorOption(string? Rule, string Name);
 
+/// <summary>One choice in the 알림 (reminder) dropdown: a <see cref="ReminderTiming"/> and its label.
+/// Meaningful only for a timed When — the dropdown hides for 종일/미지정 (see <see cref="TaskDetailViewModel.ShowReminder"/>).</summary>
+public sealed record ReminderEditorOption(ReminderTiming Timing, string Name);
+
 /// <summary>
 /// An immutable capture of everything an autosave writes, taken the moment an edit happens. Binding the
 /// target task id together with all field values means a queued save always persists the values that were
@@ -48,7 +52,8 @@ public sealed record TaskEditSnapshot(
     ScheduledWhen When,
     RecurrenceRule? Recurrence,
     Guid? TaskGroupId,
-    IReadOnlyList<Guid> TagIds);
+    IReadOnlyList<Guid> TagIds,
+    ReminderTiming Reminder);
 
 public partial class TagEditorOption : ObservableObject
 {
@@ -222,6 +227,17 @@ public partial class TaskDetailViewModel : ObservableObject
         new("FREQ=YEARLY", "매년"),
     ];
 
+    // The 알림 (reminder) choices, in display order — same five the quick-add time-token popover offers.
+    // 정시에 is AtTime (the enum default), 끔 is None (no notification).
+    public IReadOnlyList<ReminderEditorOption> ReminderOptions { get; } =
+    [
+        new(ReminderTiming.AtTime, "정시에"),
+        new(ReminderTiming.TenMinutesBefore, "10분 전"),
+        new(ReminderTiming.OneHourBefore, "1시간 전"),
+        new(ReminderTiming.OneDayBefore, "하루 전"),
+        new(ReminderTiming.None, "끔"),
+    ];
+
     public ObservableCollection<TaskGroupEditorOption> TaskGroups { get; } = new();
     public ObservableCollection<TagEditorOption> Tags { get; } = new();
     public ObservableCollection<ChecklistItemViewModel> Checklist { get; } = new();
@@ -335,6 +351,11 @@ public partial class TaskDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial RecurrenceEditorOption? SelectedRecurrence { get; set; }
 
+    /// <summary>The chosen 알림 (reminder) timing. Persisted like any other metadata edit; meaningful only
+    /// for a timed When (the dropdown is hidden otherwise, but the value is kept — see <see cref="ShowReminder"/>).</summary>
+    [ObservableProperty]
+    public partial ReminderEditorOption? SelectedReminder { get; set; }
+
     [ObservableProperty]
     public partial string NewChecklistItemTitle { get; set; } = string.Empty;
 
@@ -350,6 +371,11 @@ public partial class TaskDetailViewModel : ObservableObject
 
     /// <summary>Time picker shows only with a concrete date that is not all-day.</summary>
     public bool ShowWhenTime => HasConcreteWhen && !IsWhenAllDay;
+
+    /// <summary>The 알림 dropdown shows only for a timed When (a concrete date that is not 종일) — the same
+    /// condition as the time picker. Switching to 종일 or 미지정 hides it while leaving <see cref="SelectedReminder"/>
+    /// untouched, so returning to a timed When restores the previous choice.</summary>
+    public bool ShowReminder => ShowWhenTime;
 
     public bool IsWhenEditorVisible => HasConcreteWhen;
     // The "+ 날짜 추가" button shows only when there is no concrete date.
@@ -389,6 +415,7 @@ public partial class TaskDetailViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSpecificDate));
         OnPropertyChanged(nameof(HasConcreteWhen));
         OnPropertyChanged(nameof(ShowWhenTime));
+        OnPropertyChanged(nameof(ShowReminder));
         OnPropertyChanged(nameof(IsWhenEditorVisible));
         OnPropertyChanged(nameof(CanAddWhen));
         resume();
@@ -409,6 +436,7 @@ public partial class TaskDetailViewModel : ObservableObject
             SetWhenTimeEditors(WhenTime);
         }
         OnPropertyChanged(nameof(ShowWhenTime));
+        OnPropertyChanged(nameof(ShowReminder));
         resume();
         RebuildTimelinePreview();
     }
@@ -444,6 +472,7 @@ public partial class TaskDetailViewModel : ObservableObject
     }
     partial void OnSelectedPriorityChanged(Priority value) => RequestAutoSave();
     partial void OnSelectedTaskGroupChanged(TaskGroupEditorOption? value) => RequestAutoSave();
+    partial void OnSelectedReminderChanged(ReminderEditorOption? value) => RequestAutoSave();
     partial void OnSelectedRecurrenceChanged(RecurrenceEditorOption? value)
     {
         // Clearing 반복 (선택 "반복 안 함") converts the task back to a plain one in the panel immediately:
@@ -492,6 +521,8 @@ public partial class TaskDetailViewModel : ObservableObject
         LoadRecurrence(task.Recurrence);
         _originalRecurrence = task.Recurrence;
         _loadedRecurrenceRule = task.Recurrence?.Rule;
+
+        SelectedReminder = ReminderOptions.FirstOrDefault(option => option.Timing == task.Reminder) ?? ReminderOptions[0];
 
         // Stay in the loading guard until the panel is fully populated — setting SelectedTaskGroup and the
         // tag rows below must not trip autosave (no save should fire just from opening a task).
@@ -623,7 +654,8 @@ public partial class TaskDetailViewModel : ObservableObject
             when,
             BuildRecurrence(when),
             SelectedTaskGroup?.Id,
-            Tags.Where(tag => tag.IsSelected && tag.Id != Guid.Empty).Select(tag => tag.Id).ToList());
+            Tags.Where(tag => tag.IsSelected && tag.Id != Guid.Empty).Select(tag => tag.Id).ToList(),
+            SelectedReminder?.Timing ?? ReminderTiming.AtTime);
     }
 
     /// <summary>Appends a save to the serial chain. Called on the UI thread, so the continuation captures
@@ -705,6 +737,7 @@ public partial class TaskDetailViewModel : ObservableObject
             task.Recurrence = snapshot.Recurrence;
             task.TaskGroupId = snapshot.TaskGroupId;
             task.TagIds = snapshot.TagIds.ToList();
+            task.Reminder = snapshot.Reminder;
             return true;
         });
         if (saved is not null)

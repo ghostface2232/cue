@@ -95,6 +95,9 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
         Assert.Single(await store.GetAllAsync<TaskItem>());
         var occurrences = await store.GetAllAsync<RecurrenceOccurrence>();
         var occurrence = Assert.Single(occurrences);
+        Assert.Equal(
+            RecurrenceOccurrenceId.From(task.Id, task.When.Date!.Value.Utc),
+            occurrence.Id);
         Assert.Equal(task.Id, occurrence.SeriesId);
         Assert.Equal(OccurrenceStatus.Completed, occurrence.Status);
         Assert.Equal(Now, occurrence.CompletedAt);

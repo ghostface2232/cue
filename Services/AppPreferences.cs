@@ -46,7 +46,7 @@ public sealed class WindowPlacement
 /// <summary>
 /// App-local preferences. Task/project/label data still lives exclusively in the file-backed store.
 /// </summary>
-public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences
+public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences, INotificationPreferences
 {
     private static readonly Dictionary<string, object?> Memory = new();
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -97,6 +97,20 @@ public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences
         get => BoolValue(nameof(KeepCompletedForToday), false);
         set => Set(nameof(KeepCompletedForToday), value);
     }
+
+    /// <summary>Master switch for all scheduled notifications. On by default.</summary>
+    public bool NotificationsEnabled
+    {
+        get => BoolValue(nameof(NotificationsEnabled), true);
+        set
+        {
+            if (value == NotificationsEnabled) return;
+            Set(nameof(NotificationsEnabled), value);
+            NotificationsEnabledChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public event EventHandler? NotificationsEnabledChanged;
 
     /// <summary>When on, a dated list row shows its ISO-8601 week number next to the date ("· W27") and the
     /// quick-add parser recognizes week expressions ("W27", "27주차", "27주에", "W27까지", with an optional

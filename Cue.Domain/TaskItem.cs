@@ -51,6 +51,12 @@ public sealed class TaskItem : RecordBase, ISortable
     /// </summary>
     public ScheduledWhen When { get; set; } = ScheduledWhen.Unscheduled;
 
+    /// <summary>
+    /// Timing of the task's single notification. Meaningful only when <see cref="When"/> is a timed
+    /// OnDate; higher layers ignore it for all-day and unscheduled tasks.
+    /// </summary>
+    public ReminderTiming Reminder { get; set; } = ReminderTiming.AtTime;
+
     /// <summary>Priority flag.</summary>
     public Priority Priority { get; set; } = Priority.None;
 

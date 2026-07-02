@@ -19,12 +19,14 @@ namespace Cue.Storage;
 /// <see cref="ITaskIndex"/> surface) are answered from SQLite and never scan the folder.
 /// </para>
 /// </remarks>
-public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletionStore, IAsyncDisposable
+public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletionStore, ITaskStoreChangeSource, IAsyncDisposable
 {
     private readonly ITaskStore _files;
     private readonly SqliteTaskIndex _index;
     private readonly ContainerDeletionJournal? _deletionJournal;
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
+
+    public event EventHandler? Changed;
 
     public IndexedTaskStore(ITaskStore files, SqliteTaskIndex index)
     {
@@ -80,6 +82,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try { await SaveCoreAsync(record, cancellationToken).ConfigureAwait(false); }
         finally { _mutationGate.Release(); }
+        NotifyChanged();
     }
 
     /// <summary>
@@ -93,16 +96,21 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         where T : RecordBase
     {
         ArgumentNullException.ThrowIfNull(mutate);
+        T? saved = null;
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var record = await ReadExistingForMutationAsync<T>(id, cancellationToken).ConfigureAwait(false);
-            if (record is null || record.IsDeleted) return null;
-            if (!mutate(record)) return null;
-            await SaveCoreAsync(record, cancellationToken).ConfigureAwait(false);
-            return record;
+            if (record is not null && !record.IsDeleted && mutate(record))
+            {
+                await SaveCoreAsync(record, cancellationToken).ConfigureAwait(false);
+                saved = record;
+            }
         }
         finally { _mutationGate.Release(); }
+        if (saved is not null)
+            NotifyChanged();
+        return saved;
     }
 
     /// <summary>
@@ -115,9 +123,17 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     public async Task RunInTransactionAsync(Func<ITaskMutationScope, CancellationToken, Task> work, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(work);
+        var scope = new GatedScope(this);
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try { await work(new GatedScope(this), cancellationToken).ConfigureAwait(false); }
-        finally { _mutationGate.Release(); }
+        try { await work(scope, cancellationToken).ConfigureAwait(false); }
+        finally
+        {
+            _mutationGate.Release();
+            // The file/index transaction is crash-idempotent rather than rollback-capable. If work throws
+            // after one save, notify derived consumers about that committed prefix before rethrowing.
+            if (scope.HasWrites)
+                NotifyChanged();
+        }
     }
 
     /// <summary>The transaction scope handed to <see cref="RunInTransactionAsync"/>: reads come from the
@@ -125,11 +141,16 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     /// gate (the transaction already holds it), so an inner save can't deadlock on the held lock.</summary>
     private sealed class GatedScope(IndexedTaskStore store) : ITaskMutationScope
     {
+        public bool HasWrites { get; private set; }
+
         public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : RecordBase
             => store.ReadExistingForMutationAsync<T>(id, cancellationToken);
 
-        public Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
-            => store.SaveCoreAsync(record, cancellationToken);
+        public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default) where T : RecordBase
+        {
+            await store.SaveCoreAsync(record, cancellationToken).ConfigureAwait(false);
+            HasWrites = true;
+        }
     }
 
     private async Task SaveCoreAsync<T>(T record, CancellationToken cancellationToken) where T : RecordBase
@@ -240,6 +261,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             else await SoftDeleteAndReflectAsync<T>(id, cancellationToken).ConfigureAwait(false);
         }
         finally { _mutationGate.Release(); }
+        NotifyChanged();
     }
 
     /// <summary>
@@ -253,6 +275,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try { await RunContainerDeletionCoreAsync(ContainerDeletionKind.TaskGroup, taskGroupId, mode == TaskGroupDeletionMode.DeleteTasks, cancellationToken).ConfigureAwait(false); }
         finally { _mutationGate.Release(); }
+        NotifyChanged();
     }
 
     private async Task RunContainerDeletionCoreAsync(ContainerDeletionKind kind, Guid id, bool cascadeTasks, CancellationToken cancellationToken)
@@ -431,4 +454,15 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         => _index.GetOccurrenceCountAsync(seriesId, cancellationToken);
 
     public ValueTask DisposeAsync() => _index.DisposeAsync();
+
+    private void NotifyChanged()
+    {
+        try { Changed?.Invoke(this, EventArgs.Empty); }
+        catch (Exception exception)
+        {
+            // A derived-cache consumer must never turn a successful source-of-truth write into a reported
+            // save failure. Reconciliation has startup and periodic fallbacks if an observer misbehaves.
+            System.Diagnostics.Debug.WriteLine($"[Cue] Store change observer failed: {exception}");
+        }
+    }
 }

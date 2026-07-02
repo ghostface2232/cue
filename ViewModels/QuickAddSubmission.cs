@@ -1,3 +1,4 @@
+using Cue.Domain;
 using Cue.Parsing;
 
 namespace Cue.ViewModels;
@@ -12,17 +13,21 @@ namespace Cue.ViewModels;
 /// <param name="RawText">The exact visible text (untrimmed); suppression offsets index into it.</param>
 /// <param name="SuppressedSpans">Original-text spans the user reverted — excluded from recognition but
 /// kept in the title. Empty for a plain commit.</param>
+/// <param name="Reminder">The reminder timing chosen inline in the time-token popover. This is the first
+/// non-text correction carried on the submission: the parser does not (yet) recognize a reminder phrase
+/// (that corpus work is deferred), so the choice can't ride the text and travels here instead. Defaults to
+/// <see cref="ReminderTiming.AtTime"/> — the same default the domain uses for a task with no explicit choice
+/// — and is only meaningful when the committed task turns out to be timed (the scheduler ignores it otherwise).</param>
 /// <remarks>
 /// Staleness across the save is handled by the view model, not carried here: the commit re-parses at the
 /// current clock and clears the box only when its text still matches this submission, so a slow save can't
-/// wipe a line the user kept typing. A <c>Corrections</c> list (non-text corrections such as forcing a bare
-/// "3시" to 15:00, or toggling scheduled↔deadline) is deliberately omitted for the MVP: every popover
-/// correction is currently a plain text replacement that the re-parse picks up on its own. It is added when
-/// a non-text correction lands.
+/// wipe a line the user kept typing. Every other popover correction is a plain text replacement the re-parse
+/// picks up on its own; only <see cref="Reminder"/> needs to be carried out-of-band.
 /// </remarks>
 public sealed record QuickAddSubmission(
     string RawText,
-    IReadOnlyList<TextSpan> SuppressedSpans)
+    IReadOnlyList<TextSpan> SuppressedSpans,
+    ReminderTiming Reminder = ReminderTiming.AtTime)
 {
     /// <summary>A bare commit of <paramref name="rawText"/> with no suppression (the legacy/Enter path).</summary>
     public static QuickAddSubmission Plain(string rawText)

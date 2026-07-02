@@ -410,6 +410,9 @@ public partial class TaskListViewModel : ObservableObject
         {
             Title = parsed.Title,
             When = when,
+            // The reminder chosen inline in the time-token popover. Only meaningful for a timed task — the
+            // scheduler ignores it for an all-day / unscheduled When — but harmless to store regardless.
+            Reminder = submission.Reminder,
             Recurrence = recurrence,
             TaskGroupId = _mode == TaskListMode.TaskGroup ? _filterId : null,
             // New tasks append to the end of the list the user is currently looking at.
