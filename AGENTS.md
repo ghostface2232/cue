@@ -140,16 +140,28 @@ Domain types are pure data holders with no clock or persistence access: they nev
 8. Domain types have no persistence knowledge, and are pure data holders: they never self-stamp UpdatedAt or read the clock — the store does on save.
 9. Dependencies point top-down only: View, ViewModel, Store, files/index.
 10. Do not introduce CRDTs or a server backend. The planned sync is cloud-folder plus last-write-wins, not collaborative editing.
+## Notification subsystem invariants
+
+- A reminder is a derived property of a timed `When`. Only open tasks with a meaningful wall-clock time are eligible for an individual notification; all-day tasks have no individual notification and are covered by the daily briefing instead.
+- `TaskItem.Reminder` is one `ReminderTiming` enum: `AtTime = 0` (the default), `TenMinutesBefore`, `OneHourBefore`, `OneDayBefore`, or `None`. Do not model enabled/disabled state and offset as separate axes; the enum makes invalid combinations such as disabled-with-an-offset impossible to represent.
+- `OneDayBefore` means exactly 24 hours before a timed task — the same wall-clock time on the previous day.
+- A task has exactly one reminder. Do not add multiple reminders, overdue re-notifications, or repeated nags for incomplete work.
+- The task record is the source of truth for notification scheduling; the OS scheduled-toast set is a derived cache, in the same relationship as JSON records and the SQLite index. A reconcile loop diffs the expected and actual sets over a rolling 14-day window after save events and at app startup.
+- Derive each toast `Tag` from the task id, or from a deterministic occurrence id for recurrence. Reconciliation must be idempotent.
+- Completing a task from a toast must still go through the single `ITaskStore.Save` mutation path.
+- `Microsoft.Toolkit.Uwp.Notifications` is in maintenance mode. App code must not reference it directly; isolate it behind an adapter interface in the App layer so the implementation remains replaceable.
 ## Gotchas
  
 - The first successful run must be `dotnet run` or `winapp run` before using F5 or the debugger. The debugger looks for an executable that does not exist until the first run produces it.
 - If a build fails showing only MSB3073, the real XAML compile error may be hidden. Read the full `dotnet build` output.
 - Cloud sync (future): cloud providers may keep files as on-demand placeholders, so hydrate a file before reading it. FileSystemWatcher can miss or duplicate events over cloud-synced folders, so combine it with a periodic reconcile and a reconcile-on-focus pass rather than trusting events alone.
+- Unpackaged toast delivery depends on the registry AUMID registration. The Inno Setup uninstall path must perform cleanup equivalent to `ToastNotificationManagerCompat.Uninstall()` so that registration is not left behind.
+- Desktop toast XML ignores `activationType="background"`; clicking an action starts the process anyway. Activation argument routing must distinguish headless completion from the path that shows the window.
 ## Future work (the foundation already accommodates these)
  
 - Multi-device sync: point the Store root folder at a OneDrive or Google Drive synced folder, then add a folder watcher and conflict-copy reconciliation (last-write-wins by `UpdatedAt`, honoring tombstones). This is additive because the Store already speaks files.
 - Files-grade microinteraction and material polish.
-- Reminders via `AppNotifications`. Scheduled reminders while the app is closed require package identity plus a background task or the Windows Task Scheduler.
+- Reminders via `Microsoft.Toolkit.Uwp.Notifications` and Windows `ScheduledToastNotification`. The OS owns and delivers scheduled toasts while the unpackaged app is closed; package identity, a background task, and Windows Task Scheduler are not required.
 ## Release and distribution
 
 The shipped artifact is an **unpackaged, self-contained `.exe` installed by Inno Setup** — not MSIX. This matches invariant-style packaging intent (unpackaged, so the app can read user-chosen cloud folders later without MSIX virtual-filesystem constraints) and gives a clean, admin-free install.
