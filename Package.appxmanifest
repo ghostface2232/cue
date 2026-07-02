@@ -8,23 +8,22 @@
   xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
   IgnorableNamespaces="uap rescap com desktop">
 
-  <!-- Identity — the three values here are Cue's product identity.
-       • Name / Publisher: copy the reserved values from Partner Center (Product management →
-         Product identity: "Package/Identity/Name" and "Package/Identity/Publisher"), replacing the
-         REPLACE-WITH-… placeholders below. Until then, local packaged runs still deploy because the
-         WinUI MSIX tooling generates a test certificate matching whatever Publisher is set here.
+  <!-- Identity — Cue's product identity from Partner Center (Product management → Product identity).
+       • Name / Publisher: the reserved "Package/Identity/Name" and "Package/Identity/Publisher".
+         Local packaged runs deploy under a test certificate the WinUI MSIX tooling generates to match
+         this Publisher; the Store re-signs the submitted package.
        • Version: MUST be Cue.csproj <Version> with ".0" appended (three parts → four). csproj is the
          single source of truth; the release script fails the build if these drift (mirroring the
          existing tag↔<Version> check). Bump <Version> in the csproj, then update this to match. -->
   <Identity
-    Name="REPLACE-WITH-PARTNER-CENTER-IDENTITY-NAME"
-    Publisher="CN=REPLACE-WITH-PARTNER-CENTER-PUBLISHER-ID"
+    Name="MingwanBae.Cue-"
+    Publisher="CN=8C394440-DD7A-4859-B750-5AAA14564DCB"
     Version="0.1.4.0" />
 
   <Properties>
     <DisplayName>Cue</DisplayName>
-    <!-- PublisherDisplayName: your registered publisher display name from Partner Center. -->
-    <PublisherDisplayName>REPLACE-WITH-PARTNER-CENTER-PUBLISHER-DISPLAY-NAME</PublisherDisplayName>
+    <!-- PublisherDisplayName: the registered publisher display name from Partner Center. -->
+    <PublisherDisplayName>Mingwan Bae</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
