@@ -101,13 +101,20 @@ jobs:
         run: |
           $publishDir = "bin/Release/net10.0-windows10.0.26100.0/win-x64/publish"; @("Assets/AppIcon.ico", "Assets/AppIconTitle.png", "Assets/Fonts/PretendardJP-Medium.otf", "Assets/Fonts/PretendardJP-Regular.otf", "Assets/Fonts/PretendardJP-SemiBold.otf") | ForEach-Object { if (-not (Test-Path "$publishDir/$_")) { throw "Missing asset in publish folder: $_" } }
 
-      - name: Create draft GitHub Release
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         # Creates a DRAFT release with the installer asset + auto-generated notes as a starting
-        # point — final notes and publishing are done manually. Idempotent: if a release/draft for
-        # this tag already exists, just replace the asset instead of failing.
-        run: >
-          gh release create "${{ github.ref_name }}" dist/CueSetup-win-x64.exe dist/CueSetup-win-x64.exe.sha256
-          --title "${{ github.ref_name }}" --draft --generate-notes
-          || gh release upload "${{ github.ref_name }}" dist/CueSetup-win-x64.exe dist/CueSetup-win-x64.exe.sha256 --clobber
+        # point — final notes and publishing are done manually. Check first instead of relying on
+        # `gh release create` to fail: when a published release already exists, GitHub otherwise
+        # accepts a second untagged draft for the same tag instead of reaching an `|| upload` fallback.
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag dist/CueSetup-win-x64.exe dist/CueSetup-win-x64.exe.sha256 --clobber
+          }
+          else {
+            gh release create $tag dist/CueSetup-win-x64.exe dist/CueSetup-win-x64.exe.sha256 `
+              --title $tag --draft --generate-notes
+          }
