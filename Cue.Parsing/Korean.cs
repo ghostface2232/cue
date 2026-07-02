@@ -41,6 +41,17 @@ internal static class Korean
     /// <summary>Native-Korean hour words ("한"…"열두"), longest-first so the regex prefers "열두" over "열".</summary>
     public const string NativeHour = @"열두|열한|열|아홉|여덟|일곱|여섯|다섯|네|세|두|한";
 
+    /// <summary>Native-Korean day counts ("하루"…"열흘"), used by the "이틀 뒤 / 사흘 후" relative-day rule.</summary>
+    private static readonly IReadOnlyDictionary<string, int> NativeDayCounts = new Dictionary<string, int>
+    {
+        ["하루"] = 1, ["이틀"] = 2, ["사흘"] = 3, ["나흘"] = 4, ["닷새"] = 5,
+        ["엿새"] = 6, ["이레"] = 7, ["여드레"] = 8, ["아흐레"] = 9, ["열흘"] = 10,
+    };
+
+    /// <summary>The alternation of native day-count words, longest-first isn't needed (all distinct-prefix),
+    /// but kept as one place so the pattern and the lookup can't drift apart.</summary>
+    public const string NativeDays = @"하루|이틀|사흘|나흘|닷새|엿새|이레|여드레|아흐레|열흘";
+
     /// <summary>Parses an Arabic ("3") or native-Korean ("세") small number.</summary>
     public static int Number(string token)
         => int.TryParse(token, out var n) ? n : NativeSmallNumbers.GetValueOrDefault(token, 0);
@@ -48,8 +59,8 @@ internal static class Korean
     /// <summary>The representative clock hour each abstract day-part word resolves to on its own.</summary>
     private static readonly IReadOnlyDictionary<string, int> DayPartHour = new Dictionary<string, int>
     {
-        ["새벽"] = 6, ["아침"] = 9, ["오전"] = 10, ["점심"] = 12,
-        ["오후"] = 15, ["저녁"] = 18, ["밤"] = 21,
+        ["새벽"] = 6, ["아침"] = 9, ["오전"] = 10, ["점심"] = 12, ["정오"] = 12,
+        ["낮"] = 13, ["오후"] = 15, ["저녁"] = 18, ["밤"] = 21, ["자정"] = 0,
     };
 
     /// <summary>
@@ -90,7 +101,12 @@ internal static class Korean
 
         switch (meridiem)
         {
-            case "오후" or "저녁" or "밤":
+            case "밤":
+                // 밤 12시 = 자정(00:00); 밤 1~11시 = 오후(13~23:00). Only 밤 turns 12 into midnight —
+                // "오후 12시"/"낮 12시" stay noon.
+                h = h == 12 ? 0 : h < 12 ? h + 12 : h;
+                break;
+            case "오후" or "저녁" or "낮":
                 if (h < 12) h += 12;
                 break;
             case "오전" or "새벽" or "아침":
@@ -127,25 +143,33 @@ internal static class Korean
     /// variable parts (e.g. "다음 주 금요일" — <c>nwwd</c> captures only "금").</summary>
     public const string Date =
         @"(?<date>" +
-        @"(?<rel>오늘|내일모레|낼모레|모레|글피|내일|낼|이따)" +
+        @"(?<rel>오늘|내일모레|낼모레|모레|글피|내일|낼|이따가|이따)" +
         @"|(?<weekend>이번\s*주말|주말)" +
         @"|(?:다음\s*달|담\s*달)\s*(?<nmdom>\d{1,2})\s*일" +
+        @"|이번\s*달\s*(?<tmdom>\d{1,2})\s*일" +
         @"|(?:다음|담)\s*(?<nextdom>\d{1,2})\s*일" +
         @"|(?:다다음\s*주|다다음)\s*(?<nnwwd>[월화수목금토일])(?:요일|욜)" +
         @"|(?:다음\s*주|다음|담주|담)\s*(?<nwwd>[월화수목금토일])(?:요일|욜)" +
-        // "이번 주 {요일}" must precede the bare "이번 주" alt below, so the weekday is claimed with the
-        // "이번 주" prefix rather than leaking it into the title.
-        @"|이번\s*주\s*(?<twwd>[월화수목금토일])(?:요일|욜)" +
+        // "이번 (주) {요일}" must precede the bare "이번 주" / "이번 달" alts below, so the weekday is
+        // claimed with the "이번 (주)" prefix rather than leaking it into the title. The 주 is optional:
+        // "이번 금요일" reads the same as "이번 주 금요일".
+        @"|이번\s*(?:주\s*)?(?<twwd>[월화수목금토일])(?:요일|욜)" +
         @"|(?<weekafternext>다다음\s*주)" +
         @"|(?<nextweek>다음\s*주|담주)" +
         // Bare "이번 주" (no weekday). Sits after the weekend alt ("이번 주말", higher up) and after the
         // "이번 주 {요일}" alt, so both of those win their more-specific match first.
         @"|(?<thisweek>이번\s*주)" +
+        // Next month's last day ("다음 달 말일/말"). Must precede the bare "다음 달" alt so the 말/말일 is
+        // consumed and resolved to the month end rather than leaking into the title.
+        @"|(?<nextmonthend>(?:다음\s*달|담\s*달)\s*(?:말일|말))" +
         @"|(?<nextmonth>다음\s*달|담\s*달)" +
         @"|(?<endmonth>이번\s*달\s*말일|이번\s*달\s*말)" +
+        // Bare "이번 달" (no day, no 말) → the month's end, like "이번 주" → the week's end.
+        @"|(?<thismonth>이번\s*달)" +
         @"|(?<mon>\d{1,2})\s*월\s*(?<domd>\d{1,2})\s*일" +
         @"|(?<wd>[월화수목금토일])(?:요일|욜)" +
         @"|(?<ndays>\d+)\s*일\s*(?:후|뒤|이따|있다가|지나서)" +
+        @"|(?<nativedays>" + NativeDays + @")\s*(?:후|뒤|이따|있다가|지나서)" +
         @"|(?<nweeks>\d+)\s*주\s*(?:후|뒤)" +
         @"|(?:한\s*)?(?<oneweek>일주일)\s*(?:후|뒤)" +
         @"|(?<nmonths>\d+)\s*(?:개월|달)\s*(?:후|뒤)" +
@@ -155,11 +179,11 @@ internal static class Korean
     /// <summary>A clock time, optionally with a meridiem/part-of-day prefix. Wrapped as <c>time</c> so the
     /// whole clock expression can be located as one token.</summary>
     public const string Time =
-        @"(?<time>(?:(?<mer>오전|오후|새벽|아침|저녁|밤|점심)\s*)?(?<h>\d{1,2}|" + NativeHour + @")\s*시(?:\s*(?<min>\d{1,2})\s*분|\s*(?<half>반))?)";
+        @"(?<time>(?:(?<mer>오전|오후|새벽|아침|저녁|밤|점심|낮)\s*)?(?<h>\d{1,2}|" + NativeHour + @")\s*시(?:\s*(?<min>\d{1,2})\s*분|\s*(?<half>반))?)";
 
     /// <summary>A bare part-of-day with no clock ("저녁", "점심때", "오전"). Also wrapped as <c>time</c>, so a
     /// bare day-part is located the same way as a clock time.</summary>
-    public const string DayPart = @"(?<time>(?<daypart>새벽|아침|점심|오전|오후|저녁|밤)(?:에|때)?)";
+    public const string DayPart = @"(?<time>(?<daypart>새벽|아침|점심|정오|오전|오후|저녁|밤|자정|낮)(?:에|때)?)";
 
     /// <summary>The largest valid day for a month (leap-permissive for February).</summary>
     public static int MaxDayOfMonth(int month) => month switch
@@ -188,7 +212,7 @@ internal static class Korean
                     "내일" or "낼" => 1,
                     "모레" or "내일모레" or "낼모레" => 2,
                     "글피" => 3,
-                    "이따" => 0,
+                    "이따" or "이따가" => 0,
                     _ => 0,
                 });
                 return true;
@@ -199,6 +223,13 @@ internal static class Korean
                 if (!int.TryParse(m.Groups["nmdom"].Value, out var dom) || dom is < 1 or > 31)
                     return false;
                 date = ctx.NextMonthDay(dom);
+                return true;
+            }
+            if (m.Groups["tmdom"].Success)
+            {
+                if (!int.TryParse(m.Groups["tmdom"].Value, out var dom) || dom is < 1 or > 31)
+                    return false;
+                date = ctx.ThisMonthDay(dom);
                 return true;
             }
             if (m.Groups["nextdom"].Success)
@@ -214,8 +245,10 @@ internal static class Korean
             if (m.Groups["weekafternext"].Success) { date = ctx.Today.AddDays(14); return true; }
             if (m.Groups["nextweek"].Success) { date = ctx.Today.AddDays(7); return true; }
             if (m.Groups["thisweek"].Success) { date = ctx.EndOfThisWeek(); return true; }
+            if (m.Groups["nextmonthend"].Success) { date = ctx.EndOfNextMonth(); return true; }
             if (m.Groups["nextmonth"].Success) { date = ctx.NextMonthSameDay(); return true; }
             if (m.Groups["endmonth"].Success) { date = ctx.EndOfThisMonth(); return true; }
+            if (m.Groups["thismonth"].Success) { date = ctx.EndOfThisMonth(); return true; }
             if (m.Groups["mon"].Success)
             {
                 if (!int.TryParse(m.Groups["mon"].Value, out var month) || !int.TryParse(m.Groups["domd"].Value, out var day))
@@ -227,6 +260,7 @@ internal static class Korean
             }
             if (m.Groups["wd"].Success) { date = ctx.UpcomingWeekday(Weekdays[m.Groups["wd"].Value[0]]); return true; }
             if (m.Groups["ndays"].Success) { date = ctx.Today.AddDays(ParsePositive(m.Groups["ndays"].Value)); return true; }
+            if (m.Groups["nativedays"].Success) { date = ctx.Today.AddDays(NativeDayCounts[m.Groups["nativedays"].Value]); return true; }
             if (m.Groups["nweeks"].Success) { date = ctx.Today.AddDays(7 * ParsePositive(m.Groups["nweeks"].Value)); return true; }
             if (m.Groups["oneweek"].Success) { date = ctx.Today.AddDays(7); return true; }
             if (m.Groups["nmonths"].Success) { date = ctx.AddMonths(ParsePositive(m.Groups["nmonths"].Value)); return true; }

@@ -158,9 +158,22 @@ public sealed class ParseContext
         return new DateOnly(y, month, Math.Min(day, DateTime.DaysInMonth(y, month)));
     }
 
+    /// <summary>The requested day-of-month in the current month (clamped to the month's length). Literal
+    /// "이번 달 N일" — this month's Nth, even if it has already passed.</summary>
+    public DateOnly ThisMonthDay(int day)
+        => new(Today.Year, Today.Month, Math.Min(day, DateTime.DaysInMonth(Today.Year, Today.Month)));
+
     /// <summary>The last calendar day of the current month.</summary>
     public DateOnly EndOfThisMonth()
         => new(Today.Year, Today.Month, DateTime.DaysInMonth(Today.Year, Today.Month));
+
+    /// <summary>The last calendar day of the next month ("다음 달 말일").</summary>
+    public DateOnly EndOfNextMonth()
+    {
+        var (y, m) = (Today.Year, Today.Month + 1);
+        if (m > 12) { m = 1; y++; }
+        return new DateOnly(y, m, DateTime.DaysInMonth(y, m));
+    }
 
     /// <summary>The same day-of-month one month out (clamped to the month's length).</summary>
     public DateOnly NextMonthSameDay()

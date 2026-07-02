@@ -136,6 +136,119 @@ public sealed class KoreanDateParserTests
         Assert.Equal(15, WhenDate(r.When).Day);
     }
 
+    // 이번 {요일} (주 생략) — reads the same as "이번 주 {요일}": that weekday of the current ISO week.
+    [Theory]
+    [InlineData("이번 금요일 회의", "회의", 2026, 6, 26)]
+    [InlineData("이번 목요일 미팅", "미팅", 2026, 6, 25)]
+    [InlineData("이번 일요일 대청소", "대청소", 2026, 6, 28)]
+    public void ThisWeekday_WithoutWeekWord_ResolvesToThisWeek(string input, string title, int y, int mo, int d)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(y, mo, d), WhenDate(r.When));
+    }
+
+    // "이따가" reads like "이따" — later today, no concrete clock time on its own.
+    [Fact]
+    public void Itaga_IsTodayWithoutTime()
+    {
+        var r = Parse("이따가 전화하기");
+        Assert.Equal("전화하기", r.Title);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.False(r.WhenHasTime);
+    }
+
+    [Fact]
+    public void Itaga_ComposesWithEveningTime()
+    {
+        // Same 7–11 → PM bump as "이따 7시": "이따가 저녁 7시" → 19:00.
+        var r = Parse("이따가 저녁 7시 약속");
+        Assert.Equal("약속", r.Title);
+        Assert.Equal(Today, WhenDate(r.When));
+        Assert.Equal(19, WhenHour(r.When));
+    }
+
+    // Native-Korean day counts (하루/이틀/사흘/…/열흘) + 후/뒤 → a relative offset from today.
+    [Theory]
+    [InlineData("하루 뒤 점검", "점검", 1)]
+    [InlineData("이틀 후 점검", "점검", 2)]
+    [InlineData("사흘 뒤 점검", "점검", 3)]
+    [InlineData("사흘 후 점검", "점검", 3)]
+    [InlineData("나흘 뒤 미팅", "미팅", 4)]
+    [InlineData("열흘 후 결산", "결산", 10)]
+    [InlineData("이틀 뒤에 미팅", "미팅", 2)]
+    public void NativeDayCount_ResolvesRelativeDays(string input, string title, int offsetDays)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(Today.AddDays(offsetDays), WhenDate(r.When));
+    }
+
+    // Native day-count words must NOT be misread inside a title (need a trailing 후/뒤 to count).
+    [Theory]
+    [InlineData("하루하루 기록하기")]
+    [InlineData("이틀치 장보기")]
+    public void NativeDayCount_WithoutSuffix_StaysInTitle(string input)
+    {
+        var r = Parse(input);
+        Assert.Equal(input, r.Title);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+    }
+
+    [Fact]
+    public void ThisMonthDay_ResolvesToThisMonthsNth_WithCleanTitle()
+    {
+        // "이번 달 25일" → this month's 25th; the "이번 달" prefix must be stripped.
+        var r = Parse("이번 달 25일 카드값 정산");
+        Assert.Equal("카드값 정산", r.Title);
+        Assert.Equal(new DateOnly(2026, 6, 25), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void BareThisMonth_ResolvesToEndOfMonth()
+    {
+        // Bare "이번 달" → the month's end, mirroring bare "이번 주" → the week's end.
+        var r = Parse("이번 달 세금 정리");
+        Assert.Equal("세금 정리", r.Title);
+        Assert.Equal(new DateOnly(2026, 6, 30), WhenDate(r.When));
+    }
+
+    // "말일"/"말" resolves to the actual last day of the named month (this or next).
+    [Theory]
+    [InlineData("다음 달 말일 정산", "정산", 2026, 7, 31)]
+    [InlineData("담달 말 정산", "정산", 2026, 7, 31)]
+    [InlineData("이번 달 말일 정산", "정산", 2026, 6, 30)]
+    public void MonthEnd_ResolvesToLastDayOfThatMonth(string input, string title, int y, int mo, int d)
+    {
+        var r = Parse(input);
+        Assert.Equal(title, r.Title);
+        Assert.Equal(new DateOnly(y, mo, d), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void NightTwelve_IsMidnight()
+    {
+        // "밤 12시" is midnight (00:00), not noon — the only 12-o'clock case that flips.
+        var r = Parse("내일 밤 12시 약속");
+        Assert.Equal("약속", r.Title);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(0, WhenHour(r.When));
+    }
+
+    [Theory]
+    [InlineData("내일 정오 미팅", 12)]     // 정오 → 12:00
+    [InlineData("내일 자정 회의", 0)]      // 자정 → 00:00
+    [InlineData("내일 낮 12시 약속", 12)]  // 낮 12시 → noon
+    [InlineData("내일 낮 1시 약속", 13)]   // 낮 1시 → 13:00 (PM)
+    public void NoonMidnightDaytime_ResolveToExpectedHour(string input, int hour)
+    {
+        var r = Parse(input);
+        Assert.Equal(Today.AddDays(1), WhenDate(r.When));
+        Assert.Equal(hour, WhenHour(r.When));
+    }
+
     // 3. Times + 4. day-part words
 
     [Fact]

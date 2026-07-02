@@ -248,7 +248,7 @@ public sealed class WhenDateRule : IQuickAddRule
         if (!Korean.TryResolveDate(match, context, out var date))
             return false; // out-of-range date ("99일", "13월 40일") — leave it in the title
         Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
-        if (match.Groups["rel"].Success && match.Groups["rel"].Value == "이따" && hasTime && !meridiemGiven && h is >= 7 and <= 11)
+        if (match.Groups["rel"].Success && match.Groups["rel"].Value is "이따" or "이따가" && hasTime && !meridiemGiven && h is >= 7 and <= 11)
             h += 12;
         if (hasTime)
             h = context.DisambiguateBareHour(date, h, min, meridiemGiven);
