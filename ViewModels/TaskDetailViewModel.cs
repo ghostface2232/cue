@@ -1221,7 +1221,16 @@ public partial class TaskDetailViewModel : ObservableObject
     /// open lists are untouched.</summary>
     public async Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status)
     {
-        var completedAt = status == OccurrenceStatus.Completed ? _clock.GetUtcNow() : (DateTimeOffset?)null;
+        DateTimeOffset? completedAt = null;
+        if (status == OccurrenceStatus.Completed)
+        {
+            // Retroactively marking a past cycle done stamps the completion at the cycle's own scheduled
+            // instant — the missed date plus the task's set time — not "now". The pip sits on its
+            // scheduled date, so pairing it with today's clock time read as "done on that date at this
+            // moment"; stamping the scheduled instant makes it read consistently as completed as due.
+            var occurrence = await _store.GetAsync<RecurrenceOccurrence>(occurrenceId);
+            completedAt = occurrence?.When.Date?.Utc ?? _clock.GetUtcNow();
+        }
         await _recurrence.UpdateOccurrenceStatusAsync(occurrenceId, status, completedAt);
         if (_taskId is { } id && await _store.GetAsync<TaskItem>(id) is { } task)
             await LoadTimelineAsync(task);

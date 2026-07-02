@@ -1478,6 +1478,39 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task CorrectingMissedCycleToCompleted_StampsScheduledInstant_NotNow()
+    {
+        using var temp = new TempDirectory();
+        // Clock at 12:00, but the cycle's scheduled time is 09:00 — so "now" and the scheduled instant
+        // are distinguishable, and the assertion proves the completion is stamped at the latter.
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+        var anchor = ZonedDateTime.FromLocal(new DateTime(2026, 6, 20, 9, 0, 0), "UTC");
+        var task = new TaskItem { Title = "매일 운동", When = ScheduledWhen.On(anchor), Recurrence = new RecurrenceRule("FREQ=DAILY", anchor) };
+        await store.SaveAsync(task);
+
+        var recurring = new RecurringTaskService(store);
+        await recurring.SkipAsync(task.Id, clock.GetUtcNow()); // 6/20 recorded 미수행, series advances to 6/21
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), recurring, clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        var missed = Assert.Single(vm.Detail.Timeline, pip => pip.Kind == OccurrencePipKind.Missed);
+        Assert.NotNull(missed.OccurrenceId);
+
+        await vm.Detail.UpdateOccurrenceStatusAsync(missed.OccurrenceId!.Value, OccurrenceStatus.Completed);
+
+        var occurrence = await store.GetAsync<RecurrenceOccurrence>(missed.OccurrenceId.Value);
+        Assert.Equal(OccurrenceStatus.Completed, occurrence!.Status);
+        // Stamped at the missed cycle's own scheduled instant (6/20 09:00), not the 12:00 clock.
+        Assert.Equal(anchor.Utc, occurrence.CompletedAt);
+    }
+
+    [Fact]
     public async Task DetailTimeline_PagesOlderCyclesOnDemand_NotEagerly()
     {
         using var temp = new TempDirectory();
