@@ -9,7 +9,9 @@ public sealed record ScheduledNotification(
     DateTimeOffset DeliveryTime,
     string Tag,
     string Title,
-    string Body,
+    string? GroupName,
+    DateTimeOffset? ScheduledTime,
+    ReminderTiming Reminder,
     string CompletionArguments);
 
 /// <summary>
@@ -113,6 +115,12 @@ public sealed class NotificationScheduler : IAsyncDisposable
         var windowEnd = now + RollingWindow;
         var tasks = await _store.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
 
+        // Pre-load groups for name lookup (only non-deleted ones).
+        var groups = await _store.GetAllAsync<TaskGroup>(cancellationToken).ConfigureAwait(false);
+        var groupNames = groups
+            .Where(g => !g.IsDeleted)
+            .ToDictionary(g => g.Id, g => g.Name);
+
         foreach (var task in tasks)
         {
             if (task.IsDeleted || task.IsCompleted || task.Recurrence is not null ||
@@ -126,11 +134,23 @@ public sealed class NotificationScheduler : IAsyncDisposable
                 continue;
 
             var tag = TagForTask(task.Id);
+            string? groupName = task.TaskGroupId is { } gid && groupNames.TryGetValue(gid, out var name)
+                ? name
+                : null;
+
+            // For pre-reminders, include the actual scheduled wall-clock time so the toast can show it.
+            // AtTime reminders fire at the task time itself, so there's nothing extra to display.
+            DateTimeOffset? scheduledTime = task.Reminder != ReminderTiming.AtTime
+                ? task.When.Date!.Value.ToLocal()
+                : null;
+
             expected[tag] = new ScheduledNotification(
                 deliveryTime.Value,
                 tag,
                 task.Title,
-                $"예정: {task.When.Date!.Value.ToLocal():yyyy-MM-dd HH:mm}",
+                groupName,
+                scheduledTime,
+                task.Reminder,
                 $"action=complete&taskId={task.Id:D}");
         }
 
@@ -160,7 +180,13 @@ public sealed class NotificationScheduler : IAsyncDisposable
                 .ToHashSet(StringComparer.Ordinal);
 
             foreach (var tag in actual.Where(tag => !expected.ContainsKey(tag)).ToArray())
+            {
                 _toasts.CancelScheduled(tag);
+                // Also clear from notification center in case the toast already fired and is snoozed.
+                // A system-snoozed toast lives in the history, not the schedule queue, so both calls
+                // are needed to fully revoke a stale notification.
+                _toasts.RemoveFromHistory(tag);
+            }
 
             foreach (var (tag, notification) in expected)
             {
@@ -171,17 +197,20 @@ public sealed class NotificationScheduler : IAsyncDisposable
                 if (exists && (refreshExisting || changedSinceLastPass))
                 {
                     _toasts.CancelScheduled(tag);
+                    _toasts.RemoveFromHistory(tag);
                     exists = false;
                 }
 
                 if (!exists)
                 {
-                    _toasts.Schedule(
+                    _toasts.Schedule(new ToastScheduleRequest(
                         notification.DeliveryTime,
                         notification.Tag,
                         notification.Title,
-                        notification.Body,
-                        notification.CompletionArguments);
+                        notification.GroupName,
+                        notification.ScheduledTime,
+                        notification.Reminder,
+                        notification.CompletionArguments));
                 }
             }
 
