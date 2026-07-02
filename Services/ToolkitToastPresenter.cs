@@ -251,7 +251,7 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
     ///   <item>Line 1: task title</item>
     ///   <item>Line 2: group name (when present) + scheduled time for pre-reminders</item>
     ///   <item>Action 1: 완료 button (background activation → complete action)</item>
-    ///   <item>Action 2: System snooze with selection input (10분, 1시간, 오늘 저녁)</item>
+    ///   <item>Action 2: System snooze with selection input (1분, 10분, 30분, 1시간)</item>
     /// </list>
     /// </summary>
     private static ToastContent BuildToastContent(ToastScheduleRequest request, ToastActivationPayload payload)
@@ -271,7 +271,7 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
         builder.AddButton("완료", ToastActivationType.Background, request.CompletionArguments);
 
         // Action 2: System snooze (selection input + system snooze action).
-        AddSnoozeAction(builder, request);
+        AddSnoozeAction(builder);
 
         return builder.GetToastContent();
     }
@@ -310,28 +310,26 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
 
     /// <summary>
     /// Adds the system snooze selection input and snooze button. The OS handles the re-scheduling
-    /// entirely, so this works even when the app is not running. Choices: 10분, 1시간, and
-    /// "오늘 저녁" (minutes from delivery time to 18:00 on the delivery day, included only when the
-    /// delivery is before 18:00).
+    /// entirely, so this works even when the app is not running. Choices are fixed durations —
+    /// 1분, 10분, 30분, 1시간. They must be interval offsets, not absolute targets: the snooze minute
+    /// value is baked into the static toast XML at schedule time, and the OS applies it relative to
+    /// whenever the toast is snoozed. An earlier "오늘 저녁 (18:00)" choice violated that — it encoded
+    /// the gap from the original delivery to 18:00, so snoozing 10분 first and then picking it re-added
+    /// the full original gap and overshot 18:00. Fixed durations have no anchor to drift from.
     /// </summary>
-    private static void AddSnoozeAction(ToastContentBuilder builder, ToastScheduleRequest request)
+    private static void AddSnoozeAction(ToastContentBuilder builder)
     {
-        // Compute the "오늘 저녁 (18:00)" snooze value: minutes from delivery time to 18:00 local.
-        int? eveningMinutes = ComputeEveningSnoozeMinutes(request.DeliveryTime);
-
         var selectionBox = new ToastSelectionBox(SnoozeSelectionId)
         {
             DefaultSelectionBoxItemId = "10",
             Items =
             {
+                new ToastSelectionBoxItem("1", "1분"),
                 new ToastSelectionBoxItem("10", "10분"),
+                new ToastSelectionBoxItem("30", "30분"),
                 new ToastSelectionBoxItem("60", "1시간"),
             },
         };
-
-        if (eveningMinutes is > 0)
-            selectionBox.Items.Add(new ToastSelectionBoxItem(
-                eveningMinutes.Value.ToString(), "오늘 저녁 (18:00)"));
 
         builder.AddToastInput(selectionBox);
 
@@ -342,24 +340,6 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
         {
             SelectionBoxId = SnoozeSelectionId,
         });
-    }
-
-    /// <summary>
-    /// Computes the number of minutes from the delivery time to 18:00 on the same local day. Returns
-    /// null when the delivery is at or after 18:00 (the option would be nonsensical) or when the
-    /// resulting value is ≤ 0 or ≤ 10 (too close to be useful — the 10-minute option already covers it).
-    /// </summary>
-    private static int? ComputeEveningSnoozeMinutes(DateTimeOffset deliveryTime)
-    {
-        // Use the delivery time's own offset to compute the local 18:00 on the same day.
-        var localDelivery = deliveryTime;
-        var evening = new DateTimeOffset(
-            localDelivery.Year, localDelivery.Month, localDelivery.Day,
-            18, 0, 0, localDelivery.Offset);
-        var delta = (int)(evening - localDelivery).TotalMinutes;
-        // Include only when there's a meaningful gap (more than 10 minutes, so it's distinct from the
-        // fixed 10-minute choice).
-        return delta > 10 ? delta : null;
     }
 
     // ── Activation routing ──────────────────────────────────────────────────
