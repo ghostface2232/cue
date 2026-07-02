@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.Windows.AppLifecycle;
 using Cue.Parsing;
 using Cue.Storage;
 using Cue.Storage.Index;
@@ -16,7 +18,12 @@ namespace Cue;
 /// </summary>
 public partial class App : Application
 {
+    private const string SingleInstanceKey = "Cue.MainInstance";
+
     private Window? _window;
+    private AppInstance? _mainInstance;
+    private DispatcherQueue? _dispatcherQueue;
+    private readonly Queue<AppActivationArguments> _pendingActivations = new();
     internal static Window? CurrentWindow { get; private set; }
 
     /// <summary>The app-wide service provider. Built once at launch, after the store is opened.</summary>
@@ -31,6 +38,24 @@ public partial class App : Application
     {
         try
         {
+            _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+
+            var activationArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
+            var mainInstance = AppInstance.FindOrRegisterForKey(SingleInstanceKey);
+            if (!mainInstance.IsCurrent)
+            {
+                // Transfer foreground permission while this process still owns it, then hand the untouched
+                // activation payload to the primary instance. No store or window is created in this process.
+                WindowForegroundHelper.AllowForProcess(mainInstance.ProcessId);
+                await mainInstance.RedirectActivationToAsync(activationArgs);
+                Exit();
+                return;
+            }
+
+            _mainInstance = mainInstance;
+            _mainInstance.Activated += OnAppInstanceActivated;
+            RouteActivation(activationArgs);
+
             var preferences = new AppPreferences();
             var timeZone = preferences.ResolveTimeZone();
             var store = await IndexedTaskStore.OpenAsync(
@@ -44,11 +69,53 @@ public partial class App : Application
             // rectangle; 자동 / high contrast show it). MainWindow re-applies on theme / high-contrast change.
             AppPreferences.ApplyFocusVisuals(_window, preferences);
             _window.Activate();
+            DrainPendingActivations();
         }
         catch (Exception exception)
         {
             ShowStartupFailure(exception);
         }
+    }
+
+    private void OnAppInstanceActivated(object? sender, AppActivationArguments args)
+        => RouteActivation(args);
+
+    /// <summary>
+    /// Single entry point for initial and redirected activation payloads. Argument interpretation is
+    /// intentionally deferred; for now every activation only brings Cue to the foreground.
+    /// </summary>
+    private void RouteActivation(AppActivationArguments args)
+    {
+        var dispatcher = _dispatcherQueue;
+        if (dispatcher is null)
+            return;
+
+        if (dispatcher.HasThreadAccess)
+        {
+            HandleActivationOnUiThread(args);
+            return;
+        }
+
+        dispatcher.TryEnqueue(() => HandleActivationOnUiThread(args));
+    }
+
+    private void HandleActivationOnUiThread(AppActivationArguments args)
+    {
+        if (_window is null)
+        {
+            // A redirected launch can arrive while the primary instance is still opening its store.
+            // Preserve the complete payload for the same routing point once the window exists.
+            _pendingActivations.Enqueue(args);
+            return;
+        }
+
+        WindowForegroundHelper.BringToForeground(_window);
+    }
+
+    private void DrainPendingActivations()
+    {
+        while (_pendingActivations.TryDequeue(out var args))
+            HandleActivationOnUiThread(args);
     }
 
     /// <summary>Registers the services and view models. The store is supplied as a ready instance.</summary>
