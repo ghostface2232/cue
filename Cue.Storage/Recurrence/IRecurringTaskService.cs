@@ -87,6 +87,21 @@ public interface IRecurringTaskService
     IReadOnlyList<DateOnly> ProjectUpcomingOccurrences(RecurrenceRule recurrence, ScheduledWhen currentWhen, int count);
 
     /// <summary>
+    /// Every occurrence of <paramref name="recurrence"/> from the current cycle through
+    /// <paramref name="windowEndUtc"/> (inclusive), oldest-first: the current cycle
+    /// (<paramref name="currentWhen"/>) first, then each later cycle walked off the rule. Unlike
+    /// <see cref="ProjectUpcomingOccurrences"/> this returns full <see cref="ScheduledWhen"/> instants (not
+    /// just dates) and <i>includes</i> the current cycle, because the notification scheduler needs each
+    /// occurrence's time and its deterministic id. Every result carries the series' own time-of-day and
+    /// all-day flag — both are series-wide, applied uniformly across cycles, never per-occurrence. Falls
+    /// back to the rule's anchor when <paramref name="currentWhen"/> has no concrete date. Reuses the shared
+    /// recurrence engine, so no RRULE math is duplicated or escapes the storage layer (invariant 9). Fewer
+    /// results (or none) when the rule is exhausted (UNTIL/COUNT) or can't be evaluated; pure — reads and
+    /// writes nothing.
+    /// </summary>
+    IReadOnlyList<ScheduledWhen> ProjectOccurrencesInWindow(RecurrenceRule recurrence, ScheduledWhen currentWhen, DateTimeOffset windowEndUtc);
+
+    /// <summary>
     /// Undoes the most recent completion of a recurring series: rolls the series back so the cycle the
     /// <paramref name="occurrenceId"/> record stands for becomes the live current cycle again — open and
     /// incomplete, with its frozen checklist state restored — and tombstones that occurrence record.

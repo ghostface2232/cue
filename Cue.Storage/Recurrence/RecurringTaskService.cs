@@ -187,6 +187,34 @@ public sealed class RecurringTaskService : IRecurringTaskService
         return dates;
     }
 
+    public IReadOnlyList<ScheduledWhen> ProjectOccurrencesInWindow(
+        RecurrenceRule recurrence, ScheduledWhen currentWhen, DateTimeOffset windowEndUtc)
+    {
+        ArgumentNullException.ThrowIfNull(recurrence);
+
+        // The current cycle is the first occurrence; fall back to the anchor when the series carries no
+        // concrete When — the same occurrence-instant convention CompleteAsync/the advance use. The all-day
+        // flag is series-wide, so it is applied uniformly as the rule is walked (never inferred per cycle).
+        var allDay = currentWhen.IsAllDay;
+        var current = currentWhen.HasDate
+            ? currentWhen
+            : (allDay ? ScheduledWhen.AllDay(recurrence.Anchor) : ScheduledWhen.On(recurrence.Anchor));
+
+        // Walk the rule forward from the current cycle, seeding each search from the previous occurrence's
+        // own instant so cycles stay on the rule's grid (mirrors ProjectUpcomingOccurrences). Each Next is
+        // strictly after its cursor, so the instants increase monotonically and the window bounds the loop.
+        var occurrences = new List<ScheduledWhen>();
+        for (var when = current; when.Date!.Value.Utc <= windowEndUtc;)
+        {
+            occurrences.Add(when);
+            var next = RecurrenceCalculator.Next(recurrence, when.Date!.Value.Utc);
+            if (next is null)
+                break; // series exhausted (UNTIL/COUNT) or the rule can't be evaluated
+            when = allDay ? ScheduledWhen.AllDay(next.Value) : ScheduledWhen.On(next.Value);
+        }
+        return occurrences;
+    }
+
     public async Task<bool> UndoCompletionAsync(Guid taskId, Guid occurrenceId, DateTimeOffset undoneAt, CancellationToken cancellationToken = default)
     {
         var rolledBack = false;

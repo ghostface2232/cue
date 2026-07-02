@@ -53,6 +53,9 @@ internal static class AppRuntimeBootstrapper
 
         services.AddSingleton<IToastPresenter>(toastPresenter);
         services.AddSingleton<INotificationPreferences>(preferences);
+        // Contributes recurring-occurrence reservations to the scheduler's expected set (Step 6 extension
+        // point). NotificationScheduler receives every registered source via its IEnumerable ctor parameter.
+        services.AddSingleton<IRecurringNotificationSource, RecurringNotificationSource>();
         services.AddSingleton<NotificationScheduler>();
         services.AddSingleton<DialogService>();
         services.AddSingleton<UpdateService>();

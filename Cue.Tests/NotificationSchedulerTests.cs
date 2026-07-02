@@ -1,6 +1,7 @@
 using Cue.Domain;
 using Cue.Services;
 using Cue.Storage;
+using Cue.Storage.Recurrence;
 
 namespace Cue.Tests;
 
@@ -245,12 +246,110 @@ public class NotificationSchedulerTests
         }
     }
 
+    // ── Recurring occurrence scheduling (Step 6) ────────────────────────────
+
+    [Fact]
+    public async Task Recurring_DailyTask_SchedulesEveryOccurrenceInWindow()
+    {
+        // Daily at Now+1h; the 14-day window (exclusive of now, inclusive of now+14d) holds 14 firings.
+        var task = DailyRecurringTask(Now.AddHours(1));
+        var (scheduler, toasts, _, _) = CreateWithRecurring(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+
+            Assert.Equal(14, toasts.Scheduled.Count);
+            Assert.All(toasts.Scheduled.Keys, tag => Assert.StartsWith("occurrence-", tag));
+        }
+    }
+
+    [Fact]
+    public async Task Recurring_CompletingTodayOccurrence_DropsOnlyThatReservation()
+    {
+        var task = DailyRecurringTask(Now.AddHours(1));
+        var (scheduler, toasts, _, recurrence) = CreateWithRecurring(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            var todayTag = NotificationScheduler.TagForOccurrence(
+                RecurrenceOccurrenceId.From(task.Id, task.When.Date!.Value.Utc));
+            Assert.Equal(14, toasts.Scheduled.Count);
+            Assert.Contains(todayTag, toasts.Scheduled);
+
+            // Perform the current cycle: the series advances one day, so today's occurrence leaves the
+            // expected set and the diff cancels exactly its reservation — the rest stay put.
+            await recurrence.CompleteAsync(task.Id, Now);
+            await scheduler.ReconcileAsync();
+
+            Assert.Equal(13, toasts.Scheduled.Count);
+            Assert.DoesNotContain(todayTag, toasts.Scheduled.Keys);
+            Assert.Contains(todayTag, toasts.CancelledTags);
+        }
+    }
+
+    [Fact]
+    public async Task Recurring_SeriesTimeChange_ReregistersEveryOccurrence()
+    {
+        var task = DailyRecurringTask(Now.AddHours(1));
+        var (scheduler, toasts, _, _) = CreateWithRecurring(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            var originalTags = toasts.Scheduled.Keys.ToArray();
+            Assert.Equal(14, originalTags.Length);
+
+            // Shift the whole series two hours later (re-anchor + move the current cycle): every occurrence
+            // instant moves, so every occurrence id — and thus every tag — changes.
+            var shifted = ZonedDateTime.FromUtc(Now.AddHours(3), "UTC");
+            task.When = ScheduledWhen.On(shifted);
+            task.Recurrence = new RecurrenceRule("FREQ=DAILY", shifted);
+
+            await scheduler.ReconcileAsync();
+
+            Assert.Equal(14, toasts.Scheduled.Count);
+            Assert.All(originalTags, tag => Assert.Contains(tag, toasts.CancelledTags));
+            Assert.All(originalTags, tag => Assert.DoesNotContain(tag, toasts.Scheduled.Keys));
+            Assert.Equal(28, toasts.ScheduleCount); // 14 original + 14 re-registered at the new time
+        }
+    }
+
     private static TaskItem TimedTask(DateTimeOffset when) => new()
     {
         Title = "알림 테스트",
         When = ScheduledWhen.On(ZonedDateTime.FromUtc(when, "UTC")),
         Reminder = ReminderTiming.AtTime,
     };
+
+    private static TaskItem DailyRecurringTask(DateTimeOffset firstOccurrence)
+    {
+        var when = ZonedDateTime.FromUtc(firstOccurrence, "UTC");
+        return new TaskItem
+        {
+            Title = "매일 알림",
+            When = ScheduledWhen.On(when),
+            Reminder = ReminderTiming.AtTime,
+            Recurrence = new RecurrenceRule("FREQ=DAILY", when),
+        };
+    }
+
+    private static (NotificationScheduler Scheduler, FakeToastPresenter Toasts, FakeTaskStore Store, RecurringTaskService Recurrence)
+        CreateWithRecurring(params TaskItem[] tasks)
+    {
+        var store = new FakeTaskStore(tasks, []);
+        var toasts = new FakeToastPresenter();
+        var recurrence = new RecurringTaskService(store);
+        var source = new RecurringNotificationSource(store, recurrence);
+        var scheduler = new NotificationScheduler(
+            store,
+            store,
+            toasts,
+            new FakeNotificationPreferences { NotificationsEnabled = true },
+            new FixedTimeProvider(Now),
+            recurringSources: new[] { source },
+            debounce: TimeSpan.Zero,
+            periodicInterval: Timeout.InfiniteTimeSpan);
+        return (scheduler, toasts, store, recurrence);
+    }
 
     private static (NotificationScheduler Scheduler, FakeToastPresenter Toasts) Create(params TaskItem[] tasks)
         => Create(new FakeNotificationPreferences { NotificationsEnabled = true }, tasks, []);

@@ -224,6 +224,11 @@ public sealed class NotificationScheduler : IAsyncDisposable
 
     public static string TagForTask(Guid taskId) => $"{TaskTagPrefix}{taskId:N}";
 
+    /// <summary>The managed tag for one recurring occurrence, derived from its deterministic occurrence id
+    /// (see <c>RecurrenceOccurrenceId</c>). Keeping the tag id-derived makes the diff idempotent and lets a
+    /// per-cycle completion — which advances the series past that occurrence — drop exactly its reservation.</summary>
+    public static string TagForOccurrence(Guid occurrenceId) => $"{OccurrenceTagPrefix}{occurrenceId:N}";
+
     public async ValueTask DisposeAsync()
     {
         _changes.Changed -= OnReconcileTrigger;
