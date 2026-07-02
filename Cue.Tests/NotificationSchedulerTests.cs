@@ -153,6 +153,70 @@ public class NotificationSchedulerTests
     }
 
     [Fact]
+    public async Task Reconcile_RemovesFiredToastFromHistory_WhenTaskCompletedAfterDelivery()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        var (scheduler, toasts) = Create(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            var tag = NotificationScheduler.TagForTask(task.Id);
+            Assert.Contains(tag, toasts.Scheduled);
+
+            // The OS delivers the toast: it leaves the schedule queue and enters the notification center.
+            toasts.Fire(tag);
+            Assert.DoesNotContain(tag, toasts.GetScheduledTags());
+            Assert.Contains(tag, toasts.GetHistoryTags());
+
+            // The user completes the task in-app afterwards. Its tag is now in neither the expected set
+            // nor the schedule queue, so only the history pass can revoke the delivered toast.
+            task.CompletedAt = Now;
+            await scheduler.ReconcileAsync();
+
+            Assert.Contains(tag, toasts.HistoryRemovedTags);
+            Assert.DoesNotContain(tag, toasts.GetHistoryTags());
+        }
+    }
+
+    [Fact]
+    public async Task Reconcile_RemovesFiredToastFromHistory_WhenTaskDeletedAfterDelivery()
+    {
+        var task = TimedTask(Now.AddHours(1));
+        var (scheduler, toasts) = Create(task);
+        await using (scheduler)
+        {
+            await scheduler.ReconcileAsync();
+            var tag = NotificationScheduler.TagForTask(task.Id);
+            toasts.Fire(tag);
+
+            task.DeletedAt = Now;
+            await scheduler.ReconcileAsync();
+
+            Assert.Contains(tag, toasts.HistoryRemovedTags);
+            Assert.DoesNotContain(tag, toasts.GetHistoryTags());
+        }
+    }
+
+    [Fact]
+    public async Task Reconcile_KeepsFiredToastInHistory_WhenTaskStillPending()
+    {
+        // Delivery already in the past, so the expected set excludes it — modeling a toast that has
+        // fired. The task is still incomplete, so its delivered reminder must survive reconcile.
+        var task = TimedTask(Now.AddMinutes(-5));
+        var (scheduler, toasts) = Create(task);
+        await using (scheduler)
+        {
+            var tag = NotificationScheduler.TagForTask(task.Id);
+            toasts.Fire(tag);
+
+            await scheduler.ReconcileAsync();
+
+            Assert.DoesNotContain(tag, toasts.HistoryRemovedTags);
+            Assert.Contains(tag, toasts.GetHistoryTags());
+        }
+    }
+
+    [Fact]
     public async Task Reconcile_TimeChange_CancelsAndRegistersSameTagAtNewTime()
     {
         var task = TimedTask(Now.AddHours(1));
@@ -403,6 +467,7 @@ public class NotificationSchedulerTests
     private sealed class FakeToastPresenter : IToastPresenter
     {
         public Dictionary<string, ScheduledNotification> Scheduled { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> History { get; } = new(StringComparer.Ordinal);
         public List<string> CancelledTags { get; } = [];
         public List<string> HistoryRemovedTags { get; } = [];
         public int ScheduleCount { get; private set; }
@@ -430,9 +495,22 @@ public class NotificationSchedulerTests
         }
 
         public void RemoveFromHistory(string tag)
-            => HistoryRemovedTags.Add(tag);
+        {
+            HistoryRemovedTags.Add(tag);
+            History.Remove(tag);
+        }
 
         public IReadOnlyList<string> GetScheduledTags() => Scheduled.Keys.ToArray();
+
+        public IReadOnlyList<string> GetHistoryTags() => History.ToArray();
+
+        /// <summary>Models the OS delivering a scheduled toast: it leaves the schedule queue and enters
+        /// the notification center (Action Center).</summary>
+        public void Fire(string tag)
+        {
+            Scheduled.Remove(tag);
+            History.Add(tag);
+        }
 
         public void Show(string title, string body, string? activationArguments = null)
         {

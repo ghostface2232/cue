@@ -22,6 +22,14 @@ public interface IToastPresenter
 
     IReadOnlyList<string> GetScheduledTags();
 
+    /// <summary>
+    /// Tags of toasts this app has already delivered that are still sitting in the notification center
+    /// (Action Center). These are gone from the schedule queue that <see cref="GetScheduledTags"/>
+    /// reports, so reconciling delivered-toast cleanup — revoking a fired toast whose task was since
+    /// completed or deleted — requires this separate view of history.
+    /// </summary>
+    IReadOnlyList<string> GetHistoryTags();
+
     void Show(string title, string body, string? activationArguments = null);
 }
 

@@ -206,6 +206,25 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
             .ToArray();
     }
 
+    public IReadOnlyList<string> GetHistoryTags()
+    {
+        if (!_available) return [];
+
+        try
+        {
+            return ToastNotificationManagerCompat.History.GetHistory()
+                .Select(notification => notification.Tag)
+                .Where(tag => !string.IsNullOrEmpty(tag))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch (Exception exception)
+        {
+            Debug.WriteLine($"[Cue] Failed to read toast history: {exception.Message}");
+            return [];
+        }
+    }
+
     public void Show(string title, string body, string? activationArguments = null)
     {
         if (!_available) return;

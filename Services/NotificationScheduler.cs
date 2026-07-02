@@ -107,16 +107,27 @@ public sealed class NotificationScheduler : IAsyncDisposable
     public async Task<IReadOnlyDictionary<string, ScheduledNotification>> BuildExpectedAsync(
         CancellationToken cancellationToken = default)
     {
-        var expected = new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
         if (!_preferences.NotificationsEnabled)
-            return expected;
+            return new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
+
+        var tasks = await _store.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
+        var groups = await _store.GetAllAsync<TaskGroup>(cancellationToken).ConfigureAwait(false);
+        return await BuildExpectedCoreAsync(tasks, groups, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Derives the expected set from already-loaded records, so <see cref="ReconcileAsync"/> can
+    /// read the store once and reuse the same task list for delivered-toast reconciliation.</summary>
+    private async Task<IReadOnlyDictionary<string, ScheduledNotification>> BuildExpectedCoreAsync(
+        IReadOnlyList<TaskItem> tasks,
+        IReadOnlyList<TaskGroup> groups,
+        CancellationToken cancellationToken)
+    {
+        var expected = new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
 
         var now = _clock.GetUtcNow();
         var windowEnd = now + RollingWindow;
-        var tasks = await _store.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
 
         // Pre-load groups for name lookup (only non-deleted ones).
-        var groups = await _store.GetAllAsync<TaskGroup>(cancellationToken).ConfigureAwait(false);
         var groupNames = groups
             .Where(g => !g.IsDeleted)
             .ToDictionary(g => g.Id, g => g.Name);
@@ -174,7 +185,17 @@ public sealed class NotificationScheduler : IAsyncDisposable
         await _reconcileGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var expected = await BuildExpectedAsync(cancellationToken).ConfigureAwait(false);
+            var enabled = _preferences.NotificationsEnabled;
+            var tasks = enabled
+                ? await _store.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false)
+                : (IReadOnlyList<TaskItem>)[];
+            var groups = enabled
+                ? await _store.GetAllAsync<TaskGroup>(cancellationToken).ConfigureAwait(false)
+                : (IReadOnlyList<TaskGroup>)[];
+
+            var expected = enabled
+                ? await BuildExpectedCoreAsync(tasks, groups, cancellationToken).ConfigureAwait(false)
+                : new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
             var actual = _toasts.GetScheduledTags()
                 .Where(IsManagedTag)
                 .ToHashSet(StringComparer.Ordinal);
@@ -185,6 +206,23 @@ public sealed class NotificationScheduler : IAsyncDisposable
                 // Also clear from notification center in case the toast already fired and is snoozed.
                 // A system-snoozed toast lives in the history, not the schedule queue, so both calls
                 // are needed to fully revoke a stale notification.
+                _toasts.RemoveFromHistory(tag);
+            }
+
+            // Delivered toasts leave the schedule queue and live in the notification center, so the diff
+            // above never sees them. A toast that has already fired and whose task is THEN completed or
+            // deleted in-app is in neither `expected` (dropped) nor `actual` (already gone from the
+            // queue) — its stale toast would linger in the notification center, showing a reminder for a
+            // task the user has resolved. Compare the notification center against live task truth so a
+            // resolved task's delivered toast is revoked too. Scoped to task tags: a delivered toast for
+            // a live, still-incomplete task is a legitimate reminder and must stay. Occurrence tags are
+            // left to the recurring source, which owns per-cycle liveness.
+            var liveTaskTags = BuildLiveTaskTags(tasks);
+            foreach (var tag in _toasts.GetHistoryTags()
+                         .Where(tag => tag.StartsWith(TaskTagPrefix, StringComparison.Ordinal) &&
+                                       !liveTaskTags.Contains(tag))
+                         .ToArray())
+            {
                 _toasts.RemoveFromHistory(tag);
             }
 
@@ -220,6 +258,28 @@ public sealed class NotificationScheduler : IAsyncDisposable
         {
             _reconcileGate.Release();
         }
+    }
+
+    /// <summary>Tags for tasks that still warrant a visible notification — alive, not completed, carrying a
+    /// reminder, and non-recurring (recurring series use occurrence tags). A delivered toast whose tag is
+    /// absent here refers to a task the user has since resolved, so its notification-center entry is stale.
+    /// Not windowed: a live task's tag stays "live" even after its delivery time passes, which is exactly
+    /// the fired-but-unresolved reminder that must remain in the notification center.</summary>
+    private static HashSet<string> BuildLiveTaskTags(IReadOnlyList<TaskItem> tasks)
+    {
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var task in tasks)
+        {
+            if (task.IsDeleted || task.IsCompleted || task.Recurrence is not null ||
+                task.Reminder == ReminderTiming.None)
+            {
+                continue;
+            }
+
+            live.Add(TagForTask(task.Id));
+        }
+
+        return live;
     }
 
     public static string TagForTask(Guid taskId) => $"{TaskTagPrefix}{taskId:N}";
