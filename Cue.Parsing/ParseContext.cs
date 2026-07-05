@@ -134,17 +134,26 @@ public sealed class ParseContext
         return true;
     }
 
-    /// <summary>The next occurrence of day-of-month <paramref name="dom"/> (this month or next).</summary>
+    /// <summary>The next date that actually falls on day-of-month <paramref name="dom"/> (today allowed).
+    /// The result must BE the named day — a shorter month never substitutes its clamped last day ("31일"
+    /// typed on June 23 means 7월 31일, not 6월 30일) — so months lacking the day are skipped (February
+    /// for 29/30, February and the 30-day months for 31).</summary>
     public DateOnly UpcomingDayOfMonth(int dom)
     {
         var (y, m) = (Today.Year, Today.Month);
-        var day = Math.Min(dom, DateTime.DaysInMonth(y, m));
-        var candidate = new DateOnly(y, m, day);
-        if (candidate >= Today)
-            return candidate;
-        m++;
-        if (m > 12) { m = 1; y++; }
-        return new DateOnly(y, m, Math.Min(dom, DateTime.DaysInMonth(y, m)));
+        // Any dom in 1..31 is found within a few steps; the bound only guards out-of-range input.
+        for (var i = 0; i < 24; i++)
+        {
+            if (dom <= DateTime.DaysInMonth(y, m))
+            {
+                var candidate = new DateOnly(y, m, dom);
+                if (candidate >= Today)
+                    return candidate;
+            }
+            m++;
+            if (m > 12) { m = 1; y++; }
+        }
+        return Today;
     }
 
     /// <summary>This year's <paramref name="month"/>/<paramref name="day"/>, or next year's if already past.</summary>

@@ -812,6 +812,41 @@ public sealed class KoreanDateParserTests
     }
 
     [Theory]
+    [InlineData("매일유업 우유 사기")]      // 매일 inside a brand name
+    [InlineData("평일반 특강 신청")]        // 평일 inside a class name
+    public void RecurrenceMarkerInsideALongerWord_IsNotMisread(string input)
+    {
+        // The recurrence pattern ends at a Hangul boundary like every other rule, so a marker glued
+        // into a longer word never turns a plain title into a repeating series.
+        var r = Parse(input);
+        Assert.Equal(input, r.Title);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.Null(r.Recurrence);
+    }
+
+    [Fact]
+    public void RecurrenceWeekdayWithLocativeJosa_ConsumesTheJosa()
+    {
+        // "매주 월요일에" — the trailing 에 is consumed with the expression, not orphaned in the title.
+        var r = Parse("매주 월요일에 팀 회의");
+        Assert.Equal("팀 회의", r.Title);
+        Assert.NotNull(r.Recurrence);
+        Assert.Equal("FREQ=WEEKLY;BYDAY=MO", r.Recurrence!.Rule);
+    }
+
+    [Fact]
+    public void RecurrenceFollowedByAGluedNoun_KeepsTheNounWhole()
+    {
+        // "저녁밥" is a meal, not the 저녁 day-part: the boundary check makes the engine back out of the
+        // partially-matched trailing time, so the noun survives intact and the recurrence stays date-only.
+        var r = Parse("매일 저녁밥 챙기기");
+        Assert.Equal("저녁밥 챙기기", r.Title);
+        Assert.NotNull(r.Recurrence);
+        Assert.Equal("FREQ=DAILY", r.Recurrence!.Rule);
+        Assert.False(r.WhenHasTime);
+    }
+
+    [Theory]
     [InlineData("내일 24시 회의")]         // WhenDateRule: a date + an impossible clock
     [InlineData("내일 8시 60분 회의")]     // minute out of range
     [InlineData("24시까지 보고서 제출")]    // DeadlineRule
@@ -834,6 +869,28 @@ public sealed class KoreanDateParserTests
         Assert.Equal("정산", r.Title);
         Assert.NotNull(r.Recurrence);
         Assert.Equal("FREQ=MONTHLY;BYMONTHDAY=31", r.Recurrence!.Rule);
+        // The anchor must sit on the rule's own grid — the next real 31st (July; June has 30 days),
+        // never a clamped June 30.
+        Assert.Equal(new DateOnly(2026, 7, 31), ZonedDate(r.Recurrence.Anchor));
+    }
+
+    [Fact]
+    public void DayOfMonthBeyondThisMonth_RollsToTheNextMonthThatHasIt()
+    {
+        // June has 30 days, so on June 23 "31일" means July 31 — never a clamped June 30.
+        var r = Parse("31일에 헬스장 등록");
+        Assert.Equal("헬스장 등록", r.Title);
+        Assert.Equal(WhenKind.OnDate, r.When.Kind);
+        Assert.Equal(new DateOnly(2026, 7, 31), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void DayOfMonth29InANonLeapFebruary_MeansMarch29()
+    {
+        // 2026 is not a leap year: typed on Feb 1, "29일" is the next real 29th (March 29), not Feb 28.
+        var r = _parser.Parse("29일 정산", new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero), Tz);
+        Assert.Equal("정산", r.Title);
+        Assert.Equal(new DateOnly(2026, 3, 29), WhenDate(r.When));
     }
 
     [Fact]

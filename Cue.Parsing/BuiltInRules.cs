@@ -79,7 +79,13 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
         @"|(?<minutely>\d+)\s*분\s*마다" +
         @"|(?<hourly>\d+)\s*시간\s*마다" +
         @")" +              // close (?<recur>…)
-        @"(?:\s*" + TimeWithParticle + ")?", Opt.Flags);
+        @"(?:\s*" + TimeWithParticle + ")?" +
+        // A trailing locative josa is consumed ("매주 월요일에" leaves no stray 에 in the title), and the
+        // whole expression must end at a Hangul boundary like every other rule — without the RightEdge,
+        // a longer word swallows a recurrence marker ("매일유업" read as 매일, "평일반" as 평일) and a
+        // plain title becomes a runaway series. On a boundary failure the engine backtracks out of a
+        // partially-matched trailing time first ("매일 저녁밥" matches 매일 alone, keeping 저녁밥 whole).
+        @"(?:에는|에도|엔|에|은|는|도|마다)?" + Korean.RightEdge, Opt.Flags);
 
     public bool Extract(Match match, ParseContext context, QuickAddResult result)
     {
