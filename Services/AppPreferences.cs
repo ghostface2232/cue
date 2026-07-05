@@ -1,6 +1,4 @@
 using System.Text.Json;
-using Windows.Foundation.Collections;
-using Windows.Storage;
 using Windows.UI;
 using Windows.UI.ViewManagement;
 using Microsoft.UI.Xaml;
@@ -48,7 +46,6 @@ public sealed class WindowPlacement
 /// </summary>
 public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences, INotificationPreferences
 {
-    private static readonly Dictionary<string, object?> Memory = new();
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public AppPreferences()
@@ -311,37 +308,19 @@ public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences, INo
     private static bool IsValidMeaning(CustomDateMeaning meaning)
         => !string.IsNullOrWhiteSpace(meaning.Name) && meaning.DayOfMonth is >= 1 and <= 31;
 
-    private static IPropertySet? Store
-    {
-        get
-        {
-            try { return ApplicationData.Current.LocalSettings.Values; }
-            catch { return null; }
-        }
-    }
+    // Persistence goes through LocalSettingsStore, which resolves per channel: ApplicationData when
+    // packaged, a JSON settings file under %LOCALAPPDATA%\Cue when not.
 
     private static string Key(string name) => $"settings.{name}";
 
     private static string StringValue(string name, string fallback)
-    {
-        if (Store is { } store && store.TryGetValue(Key(name), out var persisted) && persisted is string text)
-            return text;
-        return Memory.TryGetValue(Key(name), out var value) && value is string remembered ? remembered : fallback;
-    }
+        => LocalSettingsStore.TryGetValue(Key(name), out var value) && value is string text ? text : fallback;
 
     private static bool BoolValue(string name, bool fallback)
-    {
-        if (Store is { } store && store.TryGetValue(Key(name), out var persisted) && persisted is bool flag)
-            return flag;
-        return Memory.TryGetValue(Key(name), out var value) && value is bool remembered ? remembered : fallback;
-    }
+        => LocalSettingsStore.TryGetValue(Key(name), out var value) && value is bool flag ? flag : fallback;
 
     private static double? DoubleValue(string name)
-    {
-        if (Store is { } store && store.TryGetValue(Key(name), out var persisted) && persisted is double number)
-            return number;
-        return Memory.TryGetValue(Key(name), out var value) && value is double remembered ? remembered : null;
-    }
+        => LocalSettingsStore.TryGetValue(Key(name), out var value) && value is double number ? number : null;
 
     private static T EnumValue<T>(string name, T fallback)
         where T : struct
@@ -350,10 +329,5 @@ public sealed class AppPreferences : Cue.ViewModels.IListDisplayPreferences, INo
         return Enum.TryParse<T>(text, out var parsed) ? parsed : fallback;
     }
 
-    private static void Set(string name, object value)
-    {
-        Memory[Key(name)] = value;
-        if (Store is { } store)
-            store[Key(name)] = value;
-    }
+    private static void Set(string name, object value) => LocalSettingsStore.Set(Key(name), value);
 }

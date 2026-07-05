@@ -85,7 +85,11 @@ public sealed class RecurrenceQuickAddRule : IQuickAddRule
     {
         // A recurrence repeats at a fixed wall-clock time, so the "morning already passed" bump that
         // disambiguates one-off bare hours doesn't apply — meridiemGiven is intentionally ignored here.
-        Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out _);
+        var validTime = Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out _);
+        // An impossible clock ("매일 24시") is not a time: decline the whole match so the phrase stays
+        // in the title, rather than silently dropping the time and keeping the recurrence.
+        if (match.Groups["time"].Success && !validTime)
+            return false;
 
         string rule;
         ZonedDateTime anchor;
@@ -222,7 +226,9 @@ public sealed class DeadlineRule : IQuickAddRule
             return false;
         }
 
-        Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
+        var validTime = Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
+        if (match.Groups["time"].Success && !validTime)
+            return false; // impossible clock ("24시까지") — leave the whole phrase in the title
         if (hasTime)
             h = context.DisambiguateBareHour(date, h, min, meridiemGiven);
         var when = hasTime
@@ -247,7 +253,9 @@ public sealed class WhenDateRule : IQuickAddRule
     {
         if (!Korean.TryResolveDate(match, context, out var date))
             return false; // out-of-range date ("99일", "13월 40일") — leave it in the title
-        Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
+        var validTime = Korean.TryResolveTime(match, out var h, out var min, out var hasTime, out var meridiemGiven);
+        if (match.Groups["time"].Success && !validTime)
+            return false; // impossible clock ("내일 24시") — leave the whole phrase in the title
         if (match.Groups["rel"].Success && match.Groups["rel"].Value is "이따" or "이따가" && hasTime && !meridiemGiven && h is >= 7 and <= 11)
             h += 12;
         if (hasTime)

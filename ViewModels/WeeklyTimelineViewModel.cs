@@ -317,6 +317,15 @@ public partial class WeeklyTimelineViewModel : ObservableObject
         {
             if (completed)
             {
+                // Same stale-row guard as the list's toggle: a toast's 완료 button can resolve this task
+                // between the card's projection and the tick — don't complete twice, just reload the lanes.
+                var current = await _store.GetAsync<TaskItem>(row.Id);
+                if (current is null || current.IsDeleted || current.IsCompleted)
+                {
+                    await ReloadRowsAsync();
+                    return;
+                }
+
                 // Repeating: records the current cycle and advances. One-off: stamps it done. Either way the
                 // card stays in range and reloads (dimmed when terminally complete).
                 await _recurrence.CompleteAsync(row.Id, _clock.GetUtcNow());

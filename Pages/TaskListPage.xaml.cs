@@ -90,6 +90,9 @@ public sealed partial class TaskListPage : Page
         // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
         _navNotifier.Changed += OnNavDataChanged;
+        // A toast's 완료 button completes a task without going through this page; reload so the row
+        // doesn't linger unchecked (a re-tick would try to complete the task a second time).
+        _navNotifier.TasksChangedExternally += OnTasksChangedExternally;
         // The view model raises this right after a task is completed from an active list; the page runs
         // the in-row moment (a terminal completion's undo bar + fold, or a repeating one's settle in place).
         ViewModel.CompletionAcknowledged += OnCompletionAcknowledged;
@@ -113,9 +116,13 @@ public sealed partial class TaskListPage : Page
     private async void OnNavDataChanged(object? sender, EventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.ReloadNavOptionsAsync());
 
+    private async void OnTasksChangedExternally(object? sender, EventArgs e)
+        => await RunSafelyAsync(ViewModel.LoadAsync);
+
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         _navNotifier.Changed -= OnNavDataChanged;
+        _navNotifier.TasksChangedExternally -= OnTasksChangedExternally;
         ViewModel.CompletionAcknowledged -= OnCompletionAcknowledged;
         ViewModel.OffscreenTaskCreated -= OnOffscreenTaskCreated;
         ViewModel.Detail.PropertyChanged -= Detail_PropertyChanged;

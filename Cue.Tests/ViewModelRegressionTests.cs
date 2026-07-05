@@ -146,6 +146,38 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task StaleRow_TickedAfterAToastAlreadyCompletedTheTask_DoesNotCompleteASecondTime()
+    {
+        using var temp = new TempDirectory();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "toast me" };
+        await store.SaveAsync(task);
+
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.LoadCommand.ExecuteAsync(null);
+        var row = Assert.Single(vm.Tasks);
+
+        // A toast's 완료 button completes the task out-of-page (the headless CompleteFromToastAsync path)
+        // while the list still shows the row unchecked.
+        var toastCompletion = clock.GetUtcNow();
+        await new RecurringTaskService(store).CompleteAsync(task.Id, toastCompletion);
+
+        // The user ticks the stale row a few minutes later. The toggle must notice the task is already
+        // resolved and reconcile the list instead of stamping a second, later completion.
+        clock.Now = toastCompletion.AddMinutes(5);
+        row.SetCompletedSilently(true);
+        await vm.ToggleCompleteCommand.ExecuteAsync(row);
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(toastCompletion, saved!.CompletedAt);   // the original completion instant survived
+        Assert.Empty(vm.Tasks);                              // reconciled — the completed task left the open list
+    }
+
+    [Fact]
     public async Task RecurringList_OncePerformedIntoTheFuture_StaysTickedAndASecondTickUndoesRatherThanAdvancing()
     {
         using var temp = new TempDirectory();

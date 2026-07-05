@@ -811,6 +811,22 @@ public sealed class KoreanDateParserTests
         Assert.Null(r.Recurrence);
     }
 
+    [Theory]
+    [InlineData("내일 24시 회의")]         // WhenDateRule: a date + an impossible clock
+    [InlineData("내일 8시 60분 회의")]     // minute out of range
+    [InlineData("24시까지 보고서 제출")]    // DeadlineRule
+    [InlineData("매일 24시 스트레칭")]      // RecurrenceQuickAddRule
+    public void ImpossibleClockTime_DeclinesTheWholePhrase(string input)
+    {
+        // Korean.TryResolveTime already rejects impossible clocks ("24시", "8시 60분"); every rule must
+        // honor that rejection (as WeekNumberRule does) and leave the whole phrase in the title, rather
+        // than silently deleting the time while keeping the date/recurrence.
+        var r = Parse(input);
+        Assert.Equal(input, r.Title);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
+        Assert.Null(r.Recurrence);
+    }
+
     [Fact]
     public void BoundaryValid_MonthlyDay31_IsAccepted()
     {
@@ -829,6 +845,18 @@ public sealed class KoreanDateParserTests
         Assert.Equal("적금 자동이체 확인", r.Title);
         Assert.Equal(WhenKind.OnDate, r.When.Kind);
         Assert.Equal(new DateOnly(2026, 6, 25), WhenDate(r.When));
+    }
+
+    [Fact]
+    public void CustomDayOfMonthRule_ImpossibleClock_DeclinesTheWholePhrase()
+    {
+        // The same impossible-clock guard as the built-in rules: "24시" is not a time, so the custom
+        // day-name match declines and the whole phrase stays in the title.
+        var parser = new KoreanDateParser(
+            [new CustomDayOfMonthRule(new Dictionary<string, int> { ["월급날"] = 25 })]);
+        var r = parser.Parse("월급날 24시 정산", Now, Tz);
+        Assert.Equal("월급날 24시 정산", r.Title);
+        Assert.Equal(WhenKind.Unscheduled, r.When.Kind);
     }
 
     // 9. Word order + 11. composite

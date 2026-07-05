@@ -30,6 +30,7 @@
        the entire test project reference the Windows executable. -->
   <ItemGroup>
     <Compile Include="..\Services\INotificationPreferences.cs" Link="AppServices\INotificationPreferences.cs" />
+    <Compile Include="..\Services\JsonSettingsFile.cs" Link="AppServices\JsonSettingsFile.cs" />
     <Compile Include="..\Services\IToastPresenter.cs" Link="AppServices\IToastPresenter.cs" />
     <Compile Include="..\Services\NotificationScheduler.cs" Link="AppServices\NotificationScheduler.cs" />
     <Compile Include="..\Services\ToastActivationPayload.cs" Link="AppServices\ToastActivationPayload.cs" />

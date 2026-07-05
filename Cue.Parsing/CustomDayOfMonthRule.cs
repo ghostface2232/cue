@@ -40,7 +40,9 @@ public sealed class CustomDayOfMonthRule : IQuickAddRule
             return false;
 
         var date = context.UpcomingDayOfMonth(day);
-        Korean.TryResolveTime(match, out var hour, out var minute, out var hasTime, out var meridiemGiven);
+        var validTime = Korean.TryResolveTime(match, out var hour, out var minute, out var hasTime, out var meridiemGiven);
+        if (match.Groups["time"].Success && !validTime)
+            return false; // impossible clock ("월급날 24시") — leave the whole phrase in the title
         if (hasTime)
             hour = context.DisambiguateBareHour(date, hour, minute, meridiemGiven);
 

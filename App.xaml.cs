@@ -207,6 +207,9 @@ public partial class App : Application
             await RunOnUiThreadAsync(() =>
             {
                 notifier.NotifyCountsChanged();
+                // The window is open, so a task list may be showing the just-completed task as a stale
+                // unchecked row; the sidebar badge alone isn't enough — tell the pages to reload too.
+                notifier.NotifyTasksChangedExternally();
                 return Task.CompletedTask;
             }).ConfigureAwait(false);
         }

@@ -75,6 +75,9 @@ public sealed partial class WeeklyTimelinePage : Page
         // Reflect groups/tags created elsewhere (the sidebar, another panel) in this panel's option
         // lists at once. Unsubscribed on navigate-away (the Frame discards the page).
         _navNotifier.Changed += OnNavDataChanged;
+        // A toast's 완료 button completes a task without going through this page; reload the lanes so
+        // the affected card doesn't linger stale (see TaskListPage's matching subscription).
+        _navNotifier.TasksChangedExternally += OnTasksChangedExternally;
         // The 반복 종료 / 삭제 action row reflows as the detail panel opens a (non-)recurring task.
         ViewModel.Detail.PropertyChanged += Detail_PropertyChanged;
     }
@@ -82,9 +85,13 @@ public sealed partial class WeeklyTimelinePage : Page
     private async void OnNavDataChanged(object? sender, EventArgs e)
         => await RunSafelyAsync(() => ViewModel.Detail.ReloadNavOptionsAsync());
 
+    private async void OnTasksChangedExternally(object? sender, EventArgs e)
+        => await RunSafelyAsync(() => ViewModel.LoadAsync());
+
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         _navNotifier.Changed -= OnNavDataChanged;
+        _navNotifier.TasksChangedExternally -= OnTasksChangedExternally;
         ViewModel.Detail.PropertyChanged -= Detail_PropertyChanged;
         if (ViewModel.Detail.IsOpen)
         {

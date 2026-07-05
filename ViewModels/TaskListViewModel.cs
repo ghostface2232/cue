@@ -1060,6 +1060,18 @@ public partial class TaskListViewModel : ObservableObject
         {
             if (completed)
             {
+                // The row can be stale: a toast's 완료 button may have resolved this task after the row
+                // was projected (the page reloads on that signal, but a tick can race it). Completing
+                // again would re-stamp CompletedAt on an already-done task, so re-check the store and
+                // just reconcile the list instead when the task is already resolved.
+                var current = await _store.GetAsync<TaskItem>(row.Id);
+                if (current is null || current.IsDeleted || current.IsCompleted)
+                {
+                    row.EndCompletionAcknowledgement();
+                    await LoadAsync();
+                    return;
+                }
+
                 // Completion runs through the recurrence service: a repeating task records its current
                 // cycle as a history occurrence and advances to its next cycle (returning that next
                 // occurrence) without completing the series itself, while a one-off is simply stamped done
