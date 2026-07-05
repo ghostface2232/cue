@@ -455,6 +455,92 @@ public sealed class RecurringTaskServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpdateOccurrenceStatus_CompletedWithNoInstant_StampsTheCyclesScheduledInstant()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem { Title = "매일 운동", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+        await service.SkipAsync(task.Id, Now); // records Today's cycle as 미수행
+
+        // Correct the missed cycle to 완료 with no instant given: the service must never persist a
+        // Completed record without a stamp — it falls back to the cycle's own scheduled instant.
+        var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
+        await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Completed);
+
+        var edited = await store.GetAsync<RecurrenceOccurrence>(occurrence.Id);
+        Assert.Equal(OccurrenceStatus.Completed, edited!.Status);
+        Assert.Equal(OnDayZoned(Today).Utc, edited.CompletedAt);
+    }
+
+    [Fact]
+    public async Task UpdateOccurrenceStatus_RepairsACompletedRecordMissingItsInstant()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem { Title = "매일 운동", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+        await service.CompleteAsync(task.Id, Now);
+
+        // A legacy/corrupt record: Completed but its completion instant was lost.
+        var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
+        await store.MutateAsync<RecurrenceOccurrence>(occurrence.Id, o => { o.CompletedAt = null; return true; });
+
+        // Re-asserting the same status must repair the invariant, not short-circuit on "status unchanged".
+        await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Completed);
+
+        var repaired = await store.GetAsync<RecurrenceOccurrence>(occurrence.Id);
+        Assert.Equal(OccurrenceStatus.Completed, repaired!.Status);
+        Assert.Equal(OnDayZoned(Today).Utc, repaired.CompletedAt);
+    }
+
+    [Fact]
+    public async Task UpdateOccurrenceStatus_RepairsAMissedRecordStillCarryingAnInstant()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem { Title = "매일 운동", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+        await service.SkipAsync(task.Id, Now);
+
+        // The mirror corruption: a Missed record still carrying a completion instant.
+        var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
+        await store.MutateAsync<RecurrenceOccurrence>(occurrence.Id, o => { o.CompletedAt = Now; return true; });
+
+        await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Missed);
+
+        var repaired = await store.GetAsync<RecurrenceOccurrence>(occurrence.Id);
+        Assert.Equal(OccurrenceStatus.Missed, repaired!.Status);
+        Assert.Null(repaired.CompletedAt);
+    }
+
+    [Fact]
+    public async Task UpdateOccurrenceStatus_RecompleteKeepsTheOriginalInstant()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root);
+        var service = new RecurringTaskService(store);
+
+        var task = new TaskItem { Title = "매일 운동", When = OnDay(Today), Recurrence = Daily(Today) };
+        await store.SaveAsync(task);
+        await service.CompleteAsync(task.Id, Now);
+
+        // Re-asserting Completed with a different instant is an idempotent no-op: history keeps the
+        // moment the cycle was actually performed.
+        var occurrence = Assert.Single(await store.GetAllAsync<RecurrenceOccurrence>());
+        await service.UpdateOccurrenceStatusAsync(occurrence.Id, OccurrenceStatus.Completed, completedAt: Now.AddHours(3));
+
+        var kept = await store.GetAsync<RecurrenceOccurrence>(occurrence.Id);
+        Assert.Equal(Now, kept!.CompletedAt);
+    }
+
+    [Fact]
     public async Task Occurrences_AreReturnedNewestFirst_AndPage()
     {
         var root = NewRoot();

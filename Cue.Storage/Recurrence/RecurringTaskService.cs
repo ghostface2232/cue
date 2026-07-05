@@ -144,12 +144,30 @@ public sealed class RecurringTaskService : IRecurringTaskService
     public Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, DateTimeOffset? completedAt = null, CancellationToken cancellationToken = default)
         => _store.MutateAsync<RecurrenceOccurrence>(occurrenceId, occurrence =>
         {
-            if (occurrence.Status == status)
+            // "A Completed record carries its completion instant; nothing else does" is enforced here,
+            // on the one status write path, rather than trusted to every caller. Resolve the stamp first:
+            //  - an idempotent re-complete keeps the record's original instant (history is not rewritten),
+            //  - a fresh transition takes the caller's instant,
+            //  - with no instant at all (caller passed none, or a legacy record lost its stamp) it falls
+            //    back to the cycle's own scheduled instant — the "completed as due" reading a retroactive
+            //    correction should have (the pip sits on its scheduled date, so pairing it with an
+            //    unrelated clock time reads as "done on that date at that moment").
+            DateTimeOffset? stamp = null;
+            if (status == OccurrenceStatus.Completed)
+            {
+                stamp = (occurrence.Status == OccurrenceStatus.Completed ? occurrence.CompletedAt : null)
+                    ?? completedAt
+                    ?? occurrence.When.Date?.Utc;
+            }
+
+            // Editing a recorded cycle never touches the series' When, so the next scheduled cycle is
+            // unaffected. The no-op check compares BOTH fields, so a record whose stamp violates the
+            // invariant — Completed without an instant, or Missed still carrying one — is repaired
+            // rather than skipped by a status-only early return.
+            if (occurrence.Status == status && occurrence.CompletedAt == stamp)
                 return false; // nothing to persist
             occurrence.Status = status;
-            // Editing a recorded cycle never touches the series' When, so the next scheduled cycle is
-            // unaffected. Stamp the completion instant when reclassifying to Completed; clear it otherwise.
-            occurrence.CompletedAt = status == OccurrenceStatus.Completed ? completedAt : null;
+            occurrence.CompletedAt = stamp;
             return true;
         }, cancellationToken);
 

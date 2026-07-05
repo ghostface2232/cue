@@ -1218,20 +1218,12 @@ public partial class TaskDetailViewModel : ObservableObject
 
     /// <summary>Re-classifies one past cycle from its flyout (완료/미수행) and rebuilds the timeline.
     /// Editing history never moves the series' next scheduled cycle, so only the strip refreshes — the
-    /// open lists are untouched.</summary>
+    /// open lists are untouched. No completion instant is passed: the service stamps a retroactive 완료
+    /// at the cycle's own scheduled instant (the missed date plus the task's set time), never "now", so
+    /// the pip reads as completed as due instead of gluing today's clock onto a past date.</summary>
     public async Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status)
     {
-        DateTimeOffset? completedAt = null;
-        if (status == OccurrenceStatus.Completed)
-        {
-            // Retroactively marking a past cycle done stamps the completion at the cycle's own scheduled
-            // instant — the missed date plus the task's set time — not "now". The pip sits on its
-            // scheduled date, so pairing it with today's clock time read as "done on that date at this
-            // moment"; stamping the scheduled instant makes it read consistently as completed as due.
-            var occurrence = await _store.GetAsync<RecurrenceOccurrence>(occurrenceId);
-            completedAt = occurrence?.When.Date?.Utc ?? _clock.GetUtcNow();
-        }
-        await _recurrence.UpdateOccurrenceStatusAsync(occurrenceId, status, completedAt);
+        await _recurrence.UpdateOccurrenceStatusAsync(occurrenceId, status);
         if (_taskId is { } id && await _store.GetAsync<TaskItem>(id) is { } task)
             await LoadTimelineAsync(task);
     }

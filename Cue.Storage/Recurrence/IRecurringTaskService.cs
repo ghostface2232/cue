@@ -57,11 +57,17 @@ public interface IRecurringTaskService
     /// Re-classifies a single past cycle (<paramref name="occurrenceId"/>) to <paramref name="status"/>.
     /// Touches only that <see cref="RecurrenceOccurrence"/> record — never the series' schedule — so a
     /// correction to history leaves the next scheduled cycle exactly where it was. A no-op if the
-    /// occurrence is missing or deleted.
+    /// occurrence is missing or deleted. Enforces the record invariant "Completed always carries its
+    /// completion instant; other statuses never do": a record found violating it (a legacy Completed
+    /// without a stamp, or a Missed still carrying one) is repaired even when the status itself is
+    /// unchanged.
     /// </summary>
     /// <param name="completedAt">
     /// The completion instant to record when <paramref name="status"/> is
-    /// <see cref="OccurrenceStatus.Completed"/>. Ignored (and cleared) for any other status.
+    /// <see cref="OccurrenceStatus.Completed"/>; ignored (and cleared) for any other status. Optional
+    /// even when completing: a record that is already Completed keeps its original instant (history is
+    /// not rewritten), and with no instant available at all the cycle's own scheduled instant is
+    /// stamped — a retroactive correction then reads as "completed as due".
     /// </param>
     Task UpdateOccurrenceStatusAsync(Guid occurrenceId, OccurrenceStatus status, DateTimeOffset? completedAt = null, CancellationToken cancellationToken = default);
 
