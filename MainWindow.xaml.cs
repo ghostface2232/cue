@@ -110,11 +110,42 @@ public sealed partial class MainWindow : Window
         }
         catch { /* live high-contrast updates unavailable on this config */ }
 
+        // Seed each section from the remembered expand state before wiring the callbacks, so applying the
+        // persisted value here doesn't read back as a user toggle. The XAML default is expanded, matching the
+        // fallback below.
+        _groupsExpanded = NavPreferences.IsSectionExpanded("groups", defaultExpanded: true);
+        _tagsExpanded = NavPreferences.IsSectionExpanded("tags", defaultExpanded: true);
+        GroupsSection.IsExpanded = _groupsExpanded;
+        TagsSection.IsExpanded = _tagsExpanded;
+
         NavView.Loaded += NavView_Loaded;
         NavView.DisplayModeChanged += (_, _) => UpdateNavRowInsets();
         NavView.Expanding += NavView_Expanding;
+        // The pane collapses its expandable sections as it closes and restores them as it opens. Track those
+        // transitions so the framework's own IsExpanded churn isn't mistaken for a user gesture, and re-sync
+        // the sections and the group/tag divider to the true pane state once each transition settles — the
+        // pane can open/close by light-dismiss or auto-close on selection, not just the title-bar toggle.
+        NavView.PaneOpening += (_, _) => _paneTransitioning = true;
+        NavView.PaneClosing += (_, _) => _paneTransitioning = true;
+        NavView.PaneOpened += NavView_PaneOpened;
+        NavView.PaneClosed += NavView_PaneClosed;
         GroupsSection.RegisterPropertyChangedCallback(NavigationViewItem.IsExpandedProperty, OnSectionIsExpandedChanged);
         TagsSection.RegisterPropertyChangedCallback(NavigationViewItem.IsExpandedProperty, OnSectionIsExpandedChanged);
+    }
+
+    private void NavView_PaneOpened(NavigationView sender, object args)
+    {
+        // Labels are visible again — put the sections back to the user's remembered state (the framework may
+        // have collapsed them while the pane was closed) without animating, then refresh the divider/insets.
+        _paneTransitioning = false;
+        RestoreSectionExpansion();
+        UpdateNavRowInsets();
+    }
+
+    private void NavView_PaneClosed(NavigationView sender, object args)
+    {
+        _paneTransitioning = false;
+        UpdateNavRowInsets();
     }
 
     /// <summary>Tints the system caption buttons to match the current theme (transparent backgrounds,
@@ -743,9 +774,55 @@ public sealed partial class MainWindow : Window
     // Set true while we drive IsExpanded ourselves so those programmatic toggles don't re-enter the handlers.
     private bool _suppressSectionAnim;
 
+    // The user's chosen expand state per section — the source of truth, mirrored to NavPreferences. Only a
+    // genuine chevron toggle moves these; the framework's collapse/restore during pane and display-mode
+    // transitions is ignored (see _paneTransitioning) so the sections don't drift on every pane toggle.
+    private bool _groupsExpanded;
+    private bool _tagsExpanded;
+    // True while a pane open/close (or the width-driven display-mode change that opens/closes it) is in
+    // flight. IsExpanded changes the framework makes in this window aren't user intent, so they neither
+    // animate nor update the remembered state above.
+    private bool _paneTransitioning;
+
+    /// <summary>Records a section's current expand state as the user's intent and persists it. Called only
+    /// for genuine chevron toggles — framework-driven churn is filtered out before this runs.</summary>
+    private void RememberSectionExpanded(NavigationViewItem section)
+    {
+        if (section == GroupsSection)
+        {
+            _groupsExpanded = section.IsExpanded;
+            NavPreferences.SetSectionExpanded("groups", _groupsExpanded);
+        }
+        else if (section == TagsSection)
+        {
+            _tagsExpanded = section.IsExpanded;
+            NavPreferences.SetSectionExpanded("tags", _tagsExpanded);
+        }
+    }
+
+    /// <summary>Reasserts each section's remembered expand state without animation, undoing any collapse the
+    /// framework applied while the pane was closed.</summary>
+    private void RestoreSectionExpansion()
+    {
+        ApplySectionExpanded(GroupsSection, _groupsExpanded);
+        ApplySectionExpanded(TagsSection, _tagsExpanded);
+    }
+
+    private void ApplySectionExpanded(NavigationViewItem section, bool expanded)
+    {
+        if (section.IsExpanded == expanded) return;
+        _suppressSectionAnim = true;
+        section.IsExpanded = expanded;
+        _suppressSectionAnim = false;
+    }
+
     private void NavView_Expanding(NavigationView sender, NavigationViewItemExpandingEventArgs args)
     {
         if (_suppressSectionAnim) return;
+        // Ignore the framework re-expanding a section as the pane reopens, and the flyout-style expand that
+        // happens in the compact rail (pane closed) — neither is a user gesture in the open pane, and the
+        // per-row reveal only makes sense for rows laid out in the open pane.
+        if (_paneTransitioning || !NavView.IsPaneOpen) return;
         if (args.ExpandingItem is not NavigationViewItem section) return;
         if (section != GroupsSection && section != TagsSection) return;
 
@@ -769,6 +846,12 @@ public sealed partial class MainWindow : Window
     {
         if (_suppressSectionAnim) return;
         if (sender is not NavigationViewItem section) return;
+        // The framework collapses/restores these sections on its own while the pane is closed or mid-transition.
+        // Only treat a change as user intent when the open pane is settled; otherwise leave the remembered
+        // state (and the on-screen section) untouched so it doesn't churn on every pane toggle.
+        if (_paneTransitioning || !NavView.IsPaneOpen) return;
+
+        RememberSectionExpanded(section);
         if (section.IsExpanded) return; // the expand path is driven by NavView_Expanding
 
         _suppressSectionAnim = true;    // holds through the revert's Expanding and the final collapse

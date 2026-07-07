@@ -18,4 +18,16 @@ public static class NavPreferences
 
     public static void SetVisible(string key, bool visible)
         => LocalSettingsStore.Set($"nav.{key}", visible);
+
+    /// <summary>Whether a collapsible sidebar section (그룹 / 태그) is expanded. This is the durable source
+    /// of truth for the section's open/closed state: the NavigationView collapses and re-expands these
+    /// sections on its own as the pane opens/closes or the width-driven display mode changes, so the chosen
+    /// state is remembered here and reasserted after each transition rather than left to the framework.</summary>
+    public static bool IsSectionExpanded(string key, bool defaultExpanded = true)
+        => LocalSettingsStore.TryGetValue($"nav.section.{key}", out var value) && value is bool persisted
+            ? persisted
+            : defaultExpanded;
+
+    public static void SetSectionExpanded(string key, bool expanded)
+        => LocalSettingsStore.Set($"nav.section.{key}", expanded);
 }
