@@ -316,15 +316,18 @@ public partial class TaskRowViewModel : ObservableObject
     /// <c>OverdueToBrushConverter</c>. The flag itself is theme-independent and so never changes across a
     /// toggle, yet <i>both</i> its branches (overdue and ordinary) return a theme-resolved brush — so every
     /// dated row, not only a past-due one, would otherwise be left showing the old theme's tone.</description></item>
+    /// <item><description><see cref="Priority"/> — the cue dot's fill, resolved by
+    /// <c>PriorityToBrushConverter</c> from the theme-split <c>CuePriorityP1–P4</c> brushes.</description></item>
     /// </list>
     /// </summary>
     public void RefreshThemedColors()
     {
         if (Tags.Count > 0)
             Tags = Tags.ToArray();
-        // Raised directly rather than re-assigned: the value is unchanged by a theme toggle, and it is the
-        // notification — not a new value — that re-runs the converter.
+        // Raised directly rather than re-assigned: these values are unchanged by a theme toggle, and it is
+        // the notification — not a new value — that re-runs the converter.
         OnPropertyChanged(nameof(IsOverdue));
+        OnPropertyChanged(nameof(Priority));
     }
 
     partial void OnIsCompletedChanged(bool value)

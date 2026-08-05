@@ -685,9 +685,9 @@ public partial class TaskListViewModel : ObservableObject
             row.IsCompact = compact;
     }
 
-    /// <summary>Re-runs the converter-resolved color bindings (tag chips, the overdue schedule line) on every
-    /// row. Those converters sample the theme once at convert time and leave a local value behind, so a
-    /// runtime theme toggle would otherwise leave the visible rows showing the previous theme's colors
+    /// <summary>Re-runs the converter-resolved color bindings (tag chips, the priority dot, the overdue schedule
+    /// line) on every row. Those converters sample the theme once at convert time and leave a local value
+    /// behind, so a runtime theme toggle would otherwise leave the visible rows showing the previous theme's colors
     /// (off-screen rows self-correct when virtualization re-realizes them). The page calls this on
     /// <c>ActualThemeChanged</c>; see <see cref="TaskRowViewModel.RefreshThemedColors"/>.</summary>
     public void RefreshThemedColorsForTheme()

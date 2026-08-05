@@ -2383,6 +2383,44 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public void RefreshThemedColorsReRaisesPriorityForTheCueDot()
+    {
+        // The row's priority dot fills from PriorityToBrushConverter, which resolves the theme-split
+        // CuePriorityP1–P4 brushes at convert time — the same local-value trap as the schedule line, so the
+        // dot has to be re-announced too or it keeps the old theme's cue color.
+        var row = new TaskRowViewModel(
+            new TaskListItem(
+                Guid.NewGuid(), "중요", null, WhenKind.Unscheduled, null, null, false, Priority.P1, "0|hzzzzz:"),
+            _ => { },
+            RowToday);
+
+        var notified = 0;
+        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Priority)) notified++; };
+
+        row.RefreshThemedColors();
+
+        Assert.Equal(1, notified);
+        Assert.Equal(Priority.P1, row.Priority);
+    }
+
+    [Fact]
+    public void OccurrencePipRefreshReRaisesKindWithoutChangingIt()
+    {
+        // The 반복 기록 pips color their glyph through OccurrencePipKindToBrushConverter, which resolves a
+        // themed brush once at convert time; the detail panel's theme refresh re-announces Kind so the strip
+        // re-resolves. The kind itself is not a theme concern and must survive the refresh untouched.
+        var pip = new OccurrencePipViewModel(Guid.NewGuid(), new DateOnly(2026, 6, 20), OccurrencePipKind.Completed, null);
+
+        var notified = 0;
+        pip.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(OccurrencePipViewModel.Kind)) notified++; };
+
+        pip.RefreshThemedColors();
+
+        Assert.Equal(1, notified);
+        Assert.Equal(OccurrencePipKind.Completed, pip.Kind);
+    }
+
+    [Fact]
     public void TagEditorOptionRefreshColorReRaisesColor()
     {
         // The detail panel's tag dots bind Color OneWay through the same theme-sampling converter, so a
