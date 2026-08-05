@@ -68,6 +68,9 @@ jobs:
   app:
     name: App (WinUI + XAML)
     runs-on: windows-latest
+    # The startup smoke launches a real GUI process, so cap the job rather than letting a wedged app
+    # sit against the 6-hour default.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -121,14 +124,20 @@ jobs:
       # with, only to still be alive.
       - name: Smoke test app startup
         shell: pwsh
+        timeout-minutes: 3
         run: |
           $exe = Resolve-Path 'dist/ci-smoke/Cue.exe'
-          $process = Start-Process -FilePath $exe -PassThru
+          # Redirect the app's streams to files: a launched process that inherits the runner's log pipe
+          # keeps the step open even after the shell returns.
+          $process = Start-Process -FilePath $exe -PassThru `
+            -RedirectStandardOutput 'dist/app-stdout.txt' -RedirectStandardError 'dist/app-stderr.txt'
           Start-Sleep -Seconds 30
-          if ($process.HasExited) {
+          $exited = $process.HasExited
+          if (-not $exited) { Stop-Process -Id $process.Id -Force }
+          if ($exited) {
+            Get-Content 'dist/app-stderr.txt' -ErrorAction SilentlyContinue | Write-Host
             throw "Cue exited during startup (exit code $($process.ExitCode))."
           }
-          Stop-Process -Id $process.Id -Force
           Write-Host 'Cue started and stayed alive.'
 
       # The store opens at startup, so a successful launch must have created the data root — and must NOT
