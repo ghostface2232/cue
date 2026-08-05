@@ -303,18 +303,31 @@ public partial class TaskRowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Forces the row's tag chip color bindings to re-evaluate. The chip label/icon color is darkened for
-    /// the Light theme by <c>HexToBrushConverter</c>, which samples the live theme once at convert time —
-    /// nothing in the binding graph changes when the user toggles the app theme, so the converter never
-    /// re-runs and an already-rendered chip keeps the previously-resolved color until its container is
-    /// recycled. Re-assigning <see cref="Tags"/> to an equivalent list raises its change notification,
-    /// which rebuilds the chip items and re-evaluates the converter against the now-current theme. No tag
-    /// data changes, and an untagged row is a no-op.
+    /// Forces every binding on this row whose brush is resolved by a converter to re-evaluate. Such a
+    /// converter samples the live theme once at convert time and writes a local value onto the element, so
+    /// nothing in the binding graph changes when the user toggles the app theme: the converter never re-runs
+    /// and the rendered row keeps the previous theme's colors until its container is recycled. Re-raising the
+    /// sources here is what makes an on-screen row re-resolve. No display data changes.
+    /// <list type="bullet">
+    /// <item><description><see cref="Tags"/> — the chip label/icon color, darkened for the Light theme by
+    /// <c>HexToBrushConverter</c>. Re-assigned to an equivalent list because the generated setter would skip
+    /// the notification for an unchanged value; an untagged row is left alone.</description></item>
+    /// <item><description><see cref="IsOverdue"/> — the schedule line's foreground, resolved by
+    /// <c>OverdueToBrushConverter</c>. The flag itself is theme-independent and so never changes across a
+    /// toggle, yet <i>both</i> its branches (overdue and ordinary) return a theme-resolved brush — so every
+    /// dated row, not only a past-due one, would otherwise be left showing the old theme's tone.</description></item>
+    /// <item><description><see cref="Priority"/> — the cue dot's fill, resolved by
+    /// <c>PriorityToBrushConverter</c> from the theme-split <c>CuePriorityP1–P4</c> brushes.</description></item>
+    /// </list>
     /// </summary>
-    public void RefreshTagColors()
+    public void RefreshThemedColors()
     {
         if (Tags.Count > 0)
             Tags = Tags.ToArray();
+        // Raised directly rather than re-assigned: these values are unchanged by a theme toggle, and it is
+        // the notification — not a new value — that re-runs the converter.
+        OnPropertyChanged(nameof(IsOverdue));
+        OnPropertyChanged(nameof(Priority));
     }
 
     partial void OnIsCompletedChanged(bool value)

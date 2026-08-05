@@ -73,6 +73,12 @@ public partial class OccurrencePipViewModel : ObservableObject
     /// latest completion, undoes it). The current/future/terminal pips are display-only.</summary>
     public bool IsInteractive => OccurrenceId is not null;
 
+    /// <summary>Re-announces <see cref="Kind"/> so the pip's color re-resolves after a theme toggle. Its
+    /// glyph color comes from <c>OccurrencePipKindToBrushConverter</c>, which resolves a themed brush once at
+    /// convert time and leaves a local value on the element — the kind never changes with the theme, so only
+    /// the notification re-runs the converter. Mirrors <see cref="TaskRowViewModel.RefreshThemedColors"/>.</summary>
+    public void RefreshThemedColors() => OnPropertyChanged(nameof(Kind));
+
     /// <summary>A future cycle is rendered dimmed (it hasn't happened and can't be acted on yet); every
     /// other pip is at full strength.</summary>
     public double VisualOpacity => Kind == OccurrencePipKind.Future ? 0.5 : 1.0;

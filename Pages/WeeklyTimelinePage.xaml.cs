@@ -80,6 +80,19 @@ public sealed partial class WeeklyTimelinePage : Page
         _navNotifier.TasksChangedExternally += OnTasksChangedExternally;
         // The 반복 종료 / 삭제 action row reflows as the detail panel opens a (non-)recurring task.
         ViewModel.Detail.PropertyChanged += Detail_PropertyChanged;
+        // A card's tag chips, priority dot, and overdue schedule line take their color from converters that
+        // read the theme once when they run and leave a local value on the element; a runtime theme toggle
+        // changes no binding source, so those converters never re-run. The timeline has no virtualization to fall back
+        // on either — a resize relayouts the existing cards in place — so without this the cards would hold
+        // the old theme's colors until the page is left and re-entered. Matches TaskListPage's subscription;
+        // detached in OnNavigatedFrom with the page's other subscriptions.
+        ActualThemeChanged += OnActualThemeChanged;
+    }
+
+    private void OnActualThemeChanged(FrameworkElement sender, object args)
+    {
+        ViewModel.RefreshThemedColorsForTheme();
+        ViewModel.Detail.RefreshThemedColorsForTheme();
     }
 
     private async void OnNavDataChanged(object? sender, EventArgs e)
@@ -93,6 +106,7 @@ public sealed partial class WeeklyTimelinePage : Page
         _navNotifier.Changed -= OnNavDataChanged;
         _navNotifier.TasksChangedExternally -= OnTasksChangedExternally;
         ViewModel.Detail.PropertyChanged -= Detail_PropertyChanged;
+        ActualThemeChanged -= OnActualThemeChanged;
         if (ViewModel.Detail.IsOpen)
         {
             CommitFocusedTextBox();

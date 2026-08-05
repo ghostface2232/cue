@@ -2163,6 +2163,63 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task WeeklyThemeRefreshReAnnouncesEveryCardsConverterResolvedColors()
+    {
+        // The timeline's cards carry the same converter-resolved colors as a list row (tag chips, the overdue
+        // schedule line), and both converters bake in the theme at convert time. Unlike the lists the timeline
+        // has no virtualization to re-realize a card either — a resize relayouts the existing ones in place —
+        // so a theme toggle leaves every card stale until the page is left and re-entered. The page hands the
+        // flip to this method; it must reach every card in every band, overdue or not.
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        // 6/20 is past due and sits in the previous ISO week's column; 6/24 and 6/25 share the current week,
+        // so they stack into successive bands. That spreads the cards over two bands and both branches of
+        // the overdue converter, which is what the nested walk below has to cover.
+        foreach (var (title, day) in new[] { ("지난 주", 20), ("이번 주", 24), ("이번 주 늦게", 25) })
+            await store.SaveAsync(new TaskItem
+            {
+                Title = title,
+                When = ScheduledWhen.AllDay(ZonedDateTime.FromLocal(new DateTime(2026, 6, day), "UTC")),
+            });
+
+        var vm = new WeeklyTimelineViewModel(
+            store,
+            store,
+            new ReorderService(store),
+            new RecurringTaskService(store),
+            clock,
+            TimeZoneInfo.Utc,
+            new NavDataChangeNotifier(),
+            new SaveFailureCoordinator());
+        await vm.LoadAsync();
+
+        var cards = vm.Bands.SelectMany(band => band.Cards).Select(card => card.Row).ToList();
+        Assert.Equal(2, vm.Bands.Count);
+        Assert.Equal(3, cards.Count);
+        Assert.Contains(cards, row => row.IsOverdue);
+        Assert.Contains(cards, row => !row.IsOverdue);
+
+        var notified = new Dictionary<Guid, int>();
+        foreach (var card in cards)
+        {
+            notified[card.Id] = 0;
+            var id = card.Id;
+            card.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(TaskRowViewModel.IsOverdue)) notified[id]++;
+            };
+        }
+
+        vm.RefreshThemedColorsForTheme();
+
+        Assert.All(notified.Values, count => Assert.Equal(1, count));
+    }
+
+    [Fact]
     public async Task QueuedAutoSave_PersistsSnapshot_NotLivePanelValuesChangedAfterward()
     {
         using var temp = new TempDirectory();
@@ -2237,10 +2294,10 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public void RefreshTagColorsReProjectsTaggedRow()
+    public void RefreshThemedColorsReProjectsTaggedRow()
     {
         // The tag chip color converter darkens bright colors for the Light theme and reads the theme once
-        // when it runs, so a runtime theme toggle must force the binding to re-evaluate. RefreshTagColors
+        // when it runs, so a runtime theme toggle must force the binding to re-evaluate. RefreshThemedColors
         // does that by re-assigning Tags, which the row signals via a PropertyChanged on Tags.
         var row = new TaskRowViewModel(
             new TaskListItem(
@@ -2252,10 +2309,37 @@ public sealed class ViewModelRegressionTests
         var notified = 0;
         row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Tags)) notified++; };
 
-        row.RefreshTagColors();
+        row.RefreshThemedColors();
 
         Assert.Equal(1, notified);
         Assert.Equal("#F1C40F", Assert.Single(row.Tags).Color);
+    }
+
+    [Theory]
+    [InlineData(-1, true)]   // past due — the overdue tone
+    [InlineData(1, false)]   // upcoming — the ordinary secondary tone
+    public void RefreshThemedColorsReRaisesIsOverdueWhicheverBranchTheRowIsOn(int dayOffset, bool overdue)
+    {
+        // The schedule line's Foreground is a local value produced by OverdueToBrushConverter, which resolves
+        // a themed brush once at convert time; it overrides the style setter that the framework would have
+        // re-evaluated on a theme flip. IsOverdue itself never changes across a toggle, so only re-raising it
+        // re-runs the converter. Both branches return a theme-resolved brush — the ordinary one no less than
+        // the overdue one — so every dated row must be re-announced, not only a past-due one.
+        var row = new TaskRowViewModel(
+            new TaskListItem(
+                Guid.NewGuid(), "dated", null, WhenKind.OnDate, RowToday.AddDays(dayOffset), null, false,
+                Priority.None, "0|hzzzzz:"),
+            _ => { },
+            RowToday);
+        Assert.Equal(overdue, row.IsOverdue);
+
+        var notified = 0;
+        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.IsOverdue)) notified++; };
+
+        row.RefreshThemedColors();
+
+        Assert.Equal(1, notified);
+        Assert.Equal(overdue, row.IsOverdue);   // the flag is theme-independent; only the binding re-runs
     }
 
     [Fact]
@@ -2273,22 +2357,67 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
-    public void RefreshTagColorsIsNoOpForUntaggedRow()
+    public void RefreshThemedColorsLeavesAnUntaggedRowsTagsBindingAlone()
     {
-        // An untagged row has no chip to re-resolve, so the refresh must not churn its Tags binding.
+        // An untagged row has no chip to re-resolve, so the refresh must not churn its Tags binding — the
+        // schedule line is still re-announced, which is the whole point of running this on such a row.
         var row = new TaskRowViewModel(
             new TaskListItem(
                 Guid.NewGuid(), "plain", null, WhenKind.Unscheduled, null, null, false, Priority.None, "0|hzzzzz:"),
             _ => { },
             RowToday);
 
-        var notified = 0;
-        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Tags)) notified++; };
+        var tags = 0;
+        var schedule = 0;
+        row.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TaskRowViewModel.Tags)) tags++;
+            if (e.PropertyName == nameof(TaskRowViewModel.IsOverdue)) schedule++;
+        };
 
-        row.RefreshTagColors();
+        row.RefreshThemedColors();
 
-        Assert.Equal(0, notified);
+        Assert.Equal(0, tags);
+        Assert.Equal(1, schedule);
         Assert.Empty(row.Tags);
+    }
+
+    [Fact]
+    public void RefreshThemedColorsReRaisesPriorityForTheCueDot()
+    {
+        // The row's priority dot fills from PriorityToBrushConverter, which resolves the theme-split
+        // CuePriorityP1–P4 brushes at convert time — the same local-value trap as the schedule line, so the
+        // dot has to be re-announced too or it keeps the old theme's cue color.
+        var row = new TaskRowViewModel(
+            new TaskListItem(
+                Guid.NewGuid(), "중요", null, WhenKind.Unscheduled, null, null, false, Priority.P1, "0|hzzzzz:"),
+            _ => { },
+            RowToday);
+
+        var notified = 0;
+        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Priority)) notified++; };
+
+        row.RefreshThemedColors();
+
+        Assert.Equal(1, notified);
+        Assert.Equal(Priority.P1, row.Priority);
+    }
+
+    [Fact]
+    public void OccurrencePipRefreshReRaisesKindWithoutChangingIt()
+    {
+        // The 반복 기록 pips color their glyph through OccurrencePipKindToBrushConverter, which resolves a
+        // themed brush once at convert time; the detail panel's theme refresh re-announces Kind so the strip
+        // re-resolves. The kind itself is not a theme concern and must survive the refresh untouched.
+        var pip = new OccurrencePipViewModel(Guid.NewGuid(), new DateOnly(2026, 6, 20), OccurrencePipKind.Completed, null);
+
+        var notified = 0;
+        pip.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(OccurrencePipViewModel.Kind)) notified++; };
+
+        pip.RefreshThemedColors();
+
+        Assert.Equal(1, notified);
+        Assert.Equal(OccurrencePipKind.Completed, pip.Kind);
     }
 
     [Fact]

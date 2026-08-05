@@ -100,17 +100,18 @@ public sealed partial class TaskListPage : Page
         // raises this; we point the user to 모든 할 일 via a bottom snackbar so it isn't silently lost.
         ViewModel.OffscreenTaskCreated += OnOffscreenTaskCreated;
         ViewModel.Detail.PropertyChanged += Detail_PropertyChanged;
-        // Tag chip colors are darkened for the Light theme by a converter that reads the theme once when
-        // it runs; a runtime theme toggle changes no binding source, so the converter never re-runs and the
-        // visible rows keep the old theme's colors. Re-project the realized rows' tags on every theme flip
-        // so the chips re-resolve. Detached in OnNavigatedFrom with the page's other subscriptions.
+        // A row's tag chips, priority dot, and overdue schedule line take their color from converters that
+        // read the theme once when they run and leave a local value on the element; a runtime theme toggle
+        // changes no binding source, so those converters never re-run and the rows keep the old theme's colors.
+        // Re-announce the realized rows' themed sources on every theme flip so they re-resolve. Detached in
+        // OnNavigatedFrom with the page's other subscriptions.
         ActualThemeChanged += OnActualThemeChanged;
     }
 
     private void OnActualThemeChanged(FrameworkElement sender, object args)
     {
-        ViewModel.RefreshTagColorsForTheme();
-        ViewModel.Detail.RefreshTagColorsForTheme();
+        ViewModel.RefreshThemedColorsForTheme();
+        ViewModel.Detail.RefreshThemedColorsForTheme();
     }
 
     private async void OnNavDataChanged(object? sender, EventArgs e)

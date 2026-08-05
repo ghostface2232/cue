@@ -249,14 +249,17 @@ public partial class TaskDetailViewModel : ObservableObject
     public ObservableCollection<RecurrenceEditorOption> RecurrenceOptions { get; } = new();
     public Guid? CurrentTaskId => _taskId;
 
-    /// <summary>Re-runs the tag color converter on the open task's tag-editor rows after a theme toggle.
-    /// Their color dot is darkened for the Light theme by a converter that reads the theme once at convert
-    /// time, so the dots would otherwise hold the previous theme's color until the panel reloads. The page
-    /// calls this on <c>ActualThemeChanged</c>; mirrors <see cref="TaskListViewModel.RefreshTagColorsForTheme"/>.</summary>
-    public void RefreshTagColorsForTheme()
+    /// <summary>Re-runs the panel's converter-resolved colors after a theme toggle: the tag-editor rows'
+    /// color dots (darkened for the Light theme) and the 반복 기록 strip's pips. Both converters read the
+    /// theme once at convert time and leave a local value behind, so those surfaces would otherwise hold the
+    /// previous theme's colors until the panel reloads. The page calls this on <c>ActualThemeChanged</c>;
+    /// mirrors <see cref="TaskListViewModel.RefreshThemedColorsForTheme"/>.</summary>
+    public void RefreshThemedColorsForTheme()
     {
         foreach (var tag in Tags)
             tag.RefreshColor();
+        foreach (var pip in Timeline)
+            pip.RefreshThemedColors();
     }
 
     public bool IsSaving => !_saveChain.IsCompleted || !_checklistChain.IsCompleted || _activeSaveCount > 0;
