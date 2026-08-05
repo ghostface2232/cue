@@ -252,7 +252,7 @@ public partial class TaskDetailViewModel : ObservableObject
     /// <summary>Re-runs the tag color converter on the open task's tag-editor rows after a theme toggle.
     /// Their color dot is darkened for the Light theme by a converter that reads the theme once at convert
     /// time, so the dots would otherwise hold the previous theme's color until the panel reloads. The page
-    /// calls this on <c>ActualThemeChanged</c>; mirrors <see cref="TaskListViewModel.RefreshTagColorsForTheme"/>.</summary>
+    /// calls this on <c>ActualThemeChanged</c>; mirrors <see cref="TaskListViewModel.RefreshThemedColorsForTheme"/>.</summary>
     public void RefreshTagColorsForTheme()
     {
         foreach (var tag in Tags)

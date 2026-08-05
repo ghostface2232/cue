@@ -685,15 +685,15 @@ public partial class TaskListViewModel : ObservableObject
             row.IsCompact = compact;
     }
 
-    /// <summary>Re-runs the tag chip color bindings on every realized row. Tag label/icon colors are
-    /// darkened for the Light theme by a converter that samples the theme once at convert time, so a
+    /// <summary>Re-runs the converter-resolved color bindings (tag chips, the overdue schedule line) on every
+    /// row. Those converters sample the theme once at convert time and leave a local value behind, so a
     /// runtime theme toggle would otherwise leave the visible rows showing the previous theme's colors
     /// (off-screen rows self-correct when virtualization re-realizes them). The page calls this on
-    /// <c>ActualThemeChanged</c>; see <see cref="TaskRowViewModel.RefreshTagColors"/>.</summary>
-    public void RefreshTagColorsForTheme()
+    /// <c>ActualThemeChanged</c>; see <see cref="TaskRowViewModel.RefreshThemedColors"/>.</summary>
+    public void RefreshThemedColorsForTheme()
     {
         foreach (var row in AllRows())
-            row.RefreshTagColors();
+            row.RefreshThemedColors();
     }
 
     // Fixed priority sections for the 중요도 view, in display order. A section is shown only when it has

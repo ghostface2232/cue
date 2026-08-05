@@ -523,6 +523,19 @@ public partial class WeeklyTimelineViewModel : ObservableObject
         }
     }
 
+    /// <summary>Re-runs the converter-resolved color bindings (tag chips, the overdue schedule line) on every
+    /// card. Those converters sample the theme once at convert time and leave a local value behind, so a
+    /// runtime theme toggle would otherwise leave the laid-out cards showing the previous theme's colors —
+    /// and the timeline, unlike the lists, never rebuilds its cards on its own (a resize relayouts them in
+    /// place). The page calls this on <c>ActualThemeChanged</c>; see
+    /// <see cref="TaskRowViewModel.RefreshThemedColors"/>.</summary>
+    public void RefreshThemedColorsForTheme()
+    {
+        foreach (var band in Bands)
+            foreach (var card in band.Cards)
+                card.Row.RefreshThemedColors();
+    }
+
     /// <summary>The x-offset of the week column holding the given task — so the page can pin that column to
     /// the left edge when the detail panel opens (the panel narrows the timeline and recomputes the column
     /// width, which would otherwise leave the scroll on a different week). Returns -1 if the task isn't shown
