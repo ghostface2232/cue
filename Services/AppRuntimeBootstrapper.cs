@@ -57,6 +57,9 @@ internal static class AppRuntimeBootstrapper
         // point). NotificationScheduler receives every registered source via its IEnumerable ctor parameter.
         services.AddSingleton<IRecurringNotificationSource, RecurringNotificationSource>();
         services.AddSingleton<NotificationScheduler>();
+        // The headless 할 일 완료 path: guards a toast payload against a record that has moved on since
+        // delivery, and finishes the interaction either way (see ToastCompletionService).
+        services.AddSingleton<ToastCompletionService>();
         services.AddSingleton<DialogService>();
         services.AddSingleton<UpdateService>();
         services.AddSingleton<INavDataChangeNotifier, NavDataChangeNotifier>();

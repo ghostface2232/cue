@@ -3,8 +3,6 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.AppLifecycle;
-using Cue.Domain;
-using Cue.Storage.Recurrence;
 using Cue.ViewModels;
 using Cue.Services;
 
@@ -175,28 +173,15 @@ public partial class App : Application
     private async Task CompleteFromToastAsync(ToastActivationPayload payload)
     {
         var runtime = await EnsureRuntimeAsync().ConfigureAwait(false);
-        var task = await runtime.Store.GetAsync<TaskItem>(payload.TaskId).ConfigureAwait(false);
-        if (task is null || task.IsDeleted || task.IsCompleted)
+        var outcome = await runtime.Services.GetRequiredService<ToastCompletionService>()
+            .CompleteAsync(payload)
+            .ConfigureAwait(false);
+
+        // A stale activation wrote nothing — it retired its own notification and told the user — so there
+        // is no record change for the open lists or the navigation badges to pick up.
+        if (outcome != ToastCompletionOutcome.Completed)
             return;
 
-        if (payload.OccurrenceId is { } expectedOccurrenceId)
-        {
-            if (task.Recurrence is null)
-                return;
-
-            var occurrenceUtc = task.When.Date?.Utc ?? task.Recurrence.Anchor.Utc;
-            if (RecurrenceOccurrenceId.From(task.Id, occurrenceUtc) != expectedOccurrenceId)
-                return; // stale action for a cycle that has already advanced
-        }
-
-        var completion = runtime.Services.GetRequiredService<IRecurringTaskService>();
-        var clock = runtime.Services.GetRequiredService<TimeProvider>();
-        await completion.CompleteAsync(payload.TaskId, clock.GetUtcNow()).ConfigureAwait(false);
-        // A headless process exits before the save-event debounce can elapse, so reconcile explicitly
-        // after the shared completion path to remove this task's now-stale scheduled toast.
-        await runtime.Services.GetRequiredService<NotificationScheduler>()
-            .ReconcileAsync(cancellationToken: default)
-            .ConfigureAwait(false);
         var notifier = runtime.Services.GetRequiredService<INavDataChangeNotifier>();
         if (_window is null)
         {
