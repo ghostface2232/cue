@@ -906,6 +906,138 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Equal(new[] { tag.Id }, persisted.TagIds);
     }
 
+    /// <summary>
+    /// The save path checks the index first and only reads a container's file when the index does not list
+    /// it as alive, so the preservation rule above has to hold on that fallback too — otherwise a container
+    /// missing from the index (a rebuild that skipped its unreadable file) would look "absent" and its
+    /// references would be silently cleared. Rebuilding while both files are locked produces exactly that
+    /// state: the records exist on disk, the index knows nothing about them.
+    /// </summary>
+    [Fact]
+    public async Task Save_PreservesUnreadableReferences_EvenWhenTheIndexDoesNotKnowThem()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        var group = new TaskGroup { Name = "인덱스에 없는 그룹" };
+        var tag = new Tag { Name = "인덱스에 없는 태그" };
+        await store.SaveAsync(group);
+        await store.SaveAsync(tag);
+
+        var groupPath = Path.Combine(root, "groups", group.Id + ".json");
+        var tagPath = Path.Combine(root, "tags", tag.Id + ".json");
+        await using var lockedGroup = new FileStream(groupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        await using var lockedTag = new FileStream(tagPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        // Corruption isolation drops both locked files from the rebuild, so the index now lists neither.
+        await store.InitializeAsync();
+        Assert.Empty(await store.GetTaskGroupsAsync());
+        Assert.Empty(await store.GetTagsAsync());
+
+        var task = new TaskItem
+        {
+            Title = "인덱스 미스 후에도 보존",
+            TaskGroupId = group.Id,
+            TagIds = { tag.Id },
+        };
+        await store.SaveAsync(task);
+
+        var persisted = (await store.GetAsync<TaskItem>(task.Id))!;
+        Assert.Equal(group.Id, persisted.TaskGroupId);
+        Assert.Equal(new[] { tag.Id }, persisted.TagIds);
+    }
+
+    /// <summary>
+    /// The notification reconcile loop builds its expected set from the index rather than re-reading every
+    /// task file, so the projection has to carry the full zoned When (not just the local day/time columns)
+    /// and the group name, and the query has to exclude every row that could never produce a toast.
+    /// </summary>
+    [Fact]
+    public async Task ReminderCandidates_CarryTheZonedScheduleAndGroup_AndExcludeIneligibleRows()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        var group = new TaskGroup { Name = "업무" };
+        await store.SaveAsync(group);
+
+        var timed = new TaskItem
+        {
+            Title = "알림 대상",
+            When = OnDay(Today),
+            Reminder = ReminderTiming.TenMinutesBefore,
+            TaskGroupId = group.Id,
+        };
+        var allDay = new TaskItem { Title = "종일", When = ScheduledWhen.AllDay(OnDayZoned(Today)) };
+        var unscheduled = new TaskItem { Title = "언젠가", When = ScheduledWhen.Unscheduled };
+        var reminderOff = new TaskItem { Title = "알림 끔", When = OnDay(Today), Reminder = ReminderTiming.None };
+        var completed = new TaskItem { Title = "완료", When = OnDay(Today), CompletedAt = Now };
+        var recurring = new TaskItem
+        {
+            Title = "반복",
+            When = OnDay(Today),
+            Recurrence = new RecurrenceRule("FREQ=DAILY", OnDayZoned(Today)),
+        };
+        foreach (var item in new[] { timed, allDay, unscheduled, reminderOff, completed, recurring })
+            await store.SaveAsync(item);
+
+        var candidates = await store.GetReminderCandidatesAsync(Today, Today);
+        var candidate = Assert.Single(candidates);
+        Assert.Equal(timed.Id, candidate.Id);
+        Assert.Equal("알림 대상", candidate.Title);
+        Assert.Equal("업무", candidate.TaskGroupName);
+        Assert.Equal(ReminderTiming.TenMinutesBefore, candidate.Reminder);
+        // The zoned instant round-trips, which is what lets ReminderTimeCalculator run off the index.
+        Assert.Equal(WhenKind.OnDate, candidate.When.Kind);
+        Assert.False(candidate.When.IsAllDay);
+        Assert.Equal(OnDayZoned(Today).Utc, candidate.When.Date!.Value.Utc);
+        Assert.Equal("UTC", candidate.When.Date!.Value.TimeZoneId);
+
+        // The day range is a real filter, and it survives a rebuild since the columns are file-derived.
+        Assert.Empty(await store.GetReminderCandidatesAsync(Today.AddDays(1), Today.AddDays(7)));
+        await store.InitializeAsync();
+        Assert.Equal(timed.Id, Assert.Single(await store.GetReminderCandidatesAsync(Today, Today)).Id);
+
+        // A tombstoned task leaves the candidate set.
+        await store.DeleteAsync<TaskItem>(timed.Id);
+        Assert.Empty(await store.GetReminderCandidatesAsync(Today, Today));
+    }
+
+    /// <summary>
+    /// The un-windowed reference sweep answers "does this task still warrant a notification?" for the
+    /// scheduler's stale-toast pass and names the recurring series the recurring source must load. It must
+    /// stay date-blind: a fired-but-unresolved reminder is exactly the case that has to keep its entry.
+    /// </summary>
+    [Fact]
+    public async Task ReminderTaskRefs_ListLiveReminderBearingTasks_RegardlessOfDate()
+    {
+        var root = NewRoot();
+        var clock = new MutableTimeProvider(Now);
+        await using var store = await OpenAsync(root, clock);
+
+        var longPast = new TaskItem { Title = "한참 지난 일", When = OnDay(Today.AddDays(-90)) };
+        var farFuture = new TaskItem { Title = "먼 미래", When = OnDay(Today.AddDays(365)) };
+        var recurring = new TaskItem
+        {
+            Title = "반복",
+            When = OnDay(Today),
+            Recurrence = new RecurrenceRule("FREQ=WEEKLY", OnDayZoned(Today)),
+        };
+        var reminderOff = new TaskItem { Title = "알림 끔", When = OnDay(Today), Reminder = ReminderTiming.None };
+        var completed = new TaskItem { Title = "완료", When = OnDay(Today), CompletedAt = Now };
+        foreach (var item in new[] { longPast, farFuture, recurring, reminderOff, completed })
+            await store.SaveAsync(item);
+
+        var refs = await store.GetReminderTaskRefsAsync();
+        Assert.Equal(
+            new[] { longPast.Id, farFuture.Id, recurring.Id }.OrderBy(id => id),
+            refs.Select(r => r.Id).OrderBy(id => id));
+        Assert.True(refs.Single(r => r.Id == recurring.Id).IsRecurring);
+        Assert.False(refs.Single(r => r.Id == longPast.Id).IsRecurring);
+    }
+
     [Fact]
     public async Task Checklist_IsMirroredInTheIndex_AndRebuildsFromFiles()
     {

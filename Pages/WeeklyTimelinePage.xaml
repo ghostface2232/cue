@@ -179,7 +179,12 @@
                                     Spacing="{StaticResource CueGap8}"
                                     VerticalAlignment="Center"
                                     Visibility="{x:Bind Row.HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                                    <TextBlock VerticalAlignment="Center" Style="{StaticResource TimelineMetadataTextStyle}" Text="{x:Bind Row.ScheduleCaption, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        Style="{StaticResource TimelineMetadataTextStyle}"
+                                        Foreground="{x:Bind Row.IsOverdue, Converter={StaticResource OverdueToBrush}, Mode=OneWay}"
+                                        Text="{x:Bind Row.ScheduleCaption, Mode=OneWay}"
+                                        TextTrimming="CharacterEllipsis" />
                                     <FontIcon
                                         VerticalAlignment="Center"
                                         FontSize="12"

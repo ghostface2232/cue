@@ -168,9 +168,31 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await ReflectAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Drops a task's references to containers that no longer exist, so a save can never persist a dangling
+    /// group or tag id. Absent and Unreadable stay materially different: an unreadable record may be alive
+    /// (a cloud provider mid-hydration), so its reference is preserved, while an absent or tombstoned one is
+    /// cleared.
+    /// </summary>
+    /// <remarks>
+    /// This runs on <i>every</i> task save, and the detail panel autosaves per edit, so the naive form —
+    /// one record-file read per reference — put a handful of file reads on the critical path of every
+    /// keystroke-driven save. The index short-circuits the common case: a container the index lists as
+    /// alive is conclusively alive, so no file is read. Only a miss falls through to the file, which is
+    /// still the only place the Absent/Unreadable distinction can be drawn.
+    /// <para>
+    /// The one behavior this trades away: if a reflect failed and left the index ahead of the files (a
+    /// documented, startup-healed state), a container tombstoned in its file may still read as alive here,
+    /// and the reference survives this save instead of being cleared. That is benign — the list queries
+    /// join on <c>deleted_at IS NULL</c>, so a stale reference is invisible in the UI; the startup rebuild
+    /// corrects the index, and the deletion paths already clear these references from every task directly.
+    /// A missed clear is recoverable; wrongly clearing a live reference would not be.
+    /// </para>
+    /// </remarks>
     private async Task NormalizeTaskReferencesAsync(TaskItem task, CancellationToken cancellationToken)
     {
-        if (task.TaskGroupId is { } taskGroupId)
+        if (task.TaskGroupId is { } taskGroupId &&
+            !await _index.IsLiveTaskGroupAsync(taskGroupId, cancellationToken).ConfigureAwait(false))
         {
             var result = await ReadReferenceAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
             if (result.Status == ReferenceReadStatus.Absent ||
@@ -180,9 +202,19 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
         if (task.TagIds.Count > 0)
         {
-            var retainedTags = new List<Guid>(task.TagIds.Count);
-            foreach (var tagId in task.TagIds.Distinct())
+            var distinctTags = task.TagIds.Distinct().ToArray();
+            var liveTags = (await _index.GetLiveTagIdsAsync(distinctTags, cancellationToken).ConfigureAwait(false))
+                .ToHashSet();
+
+            var retainedTags = new List<Guid>(distinctTags.Length);
+            foreach (var tagId in distinctTags)
             {
+                if (liveTags.Contains(tagId))
+                {
+                    retainedTags.Add(tagId);
+                    continue;
+                }
+
                 var result = await ReadReferenceAsync<Tag>(tagId, cancellationToken).ConfigureAwait(false);
                 if (result.Status == ReferenceReadStatus.Unreadable ||
                     result is { Status: ReferenceReadStatus.Found, Record.IsDeleted: false })
@@ -471,6 +503,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
         => _index.GetTimelineRowsAsync(rangeStart, rangeEnd, cancellationToken);
+
+    public Task<IReadOnlyList<ReminderCandidate>> GetReminderCandidatesAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
+        => _index.GetReminderCandidatesAsync(rangeStart, rangeEnd, cancellationToken);
+
+    public Task<IReadOnlyList<ReminderTaskRef>> GetReminderTaskRefsAsync(CancellationToken cancellationToken = default)
+        => _index.GetReminderTaskRefsAsync(cancellationToken);
 
     public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
         => _index.GetOccurrencesAsync(seriesId, limit, offset, cancellationToken);

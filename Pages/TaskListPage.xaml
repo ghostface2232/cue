@@ -291,7 +291,14 @@
                                 Spacing="{StaticResource CueGap8}"
                                 VerticalAlignment="Center"
                                 Visibility="{x:Bind HasSchedule, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
-                                <TextBlock VerticalAlignment="Center" Style="{StaticResource MetadataTextStyle}" Text="{x:Bind ScheduleCaption, Mode=OneWay}" />
+                                <!-- Foreground is bound (not left to the style) so a past-due row's date
+                                     carries the overdue tone; the 오늘 할 일 list mixes due-today and
+                                     long-overdue work, and the wording alone is easy to skim past. -->
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource MetadataTextStyle}"
+                                    Foreground="{x:Bind IsOverdue, Converter={StaticResource OverdueToBrush}, Mode=OneWay}"
+                                    Text="{x:Bind ScheduleCaption, Mode=OneWay}" />
                                 <FontIcon
                                     VerticalAlignment="Center"
                                     FontSize="12"

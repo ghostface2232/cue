@@ -1,5 +1,6 @@
 using Cue.Domain;
 using Cue.Storage;
+using Cue.Storage.Index;
 using Cue.Storage.Recurrence;
 
 namespace Cue.Services;
@@ -23,6 +24,12 @@ namespace Cue.Services;
 /// occurrence — removes exactly that occurrence from the expected set, and the scheduler's diff cancels
 /// only its reservation. Completing a cycle never touches the rest of the series.
 /// </para>
+/// <para>
+/// An RRULE is not indexed (a list row only needs the <c>is_recurring</c> boolean), so unlike the one-off
+/// half of the loop this source does have to read record files. It reads only the ones it needs: the index
+/// names the live, reminder-bearing recurring series and those files are loaded by id, rather than
+/// enumerating the whole <c>tasks/</c> folder on every reconcile pass. Group names come from the index too.
+/// </para>
 /// </remarks>
 internal sealed class RecurringNotificationSource : IRecurringNotificationSource
 {
@@ -32,23 +39,33 @@ internal sealed class RecurringNotificationSource : IRecurringNotificationSource
     private static readonly TimeSpan MaxReminderLead = TimeSpan.FromHours(24);
 
     private readonly ITaskStore _store;
+    private readonly ITaskIndex _index;
     private readonly IRecurringTaskService _recurrence;
 
-    public RecurringNotificationSource(ITaskStore store, IRecurringTaskService recurrence)
+    public RecurringNotificationSource(ITaskStore store, ITaskIndex index, IRecurringTaskService recurrence)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _index = index ?? throw new ArgumentNullException(nameof(index));
         _recurrence = recurrence ?? throw new ArgumentNullException(nameof(recurrence));
     }
 
     public async Task<IReadOnlyList<ScheduledNotification>> GetExpectedAsync(
         DateTimeOffset now, DateTimeOffset windowEnd, CancellationToken cancellationToken = default)
     {
-        var tasks = await _store.GetAllAsync<TaskItem>(cancellationToken).ConfigureAwait(false);
+        // The index names the series worth looking at (alive, open, reminder not None); the per-task guard
+        // below still applies the full predicate, so narrowing here can only save reads, never change the
+        // outcome. A series whose file has since vanished simply yields null and is skipped.
+        var refs = await _index.GetReminderTaskRefsAsync(cancellationToken).ConfigureAwait(false);
+        var tasks = new List<TaskItem>();
+        foreach (var reference in refs)
+        {
+            if (!reference.IsRecurring) continue;
+            if (await _store.GetAsync<TaskItem>(reference.Id, cancellationToken).ConfigureAwait(false) is { } task)
+                tasks.Add(task);
+        }
 
         // Group names for the toast's second line (non-deleted only), same as the one-off path.
-        var groups = await _store.GetAllAsync<TaskGroup>(cancellationToken).ConfigureAwait(false);
-        var groupNames = groups
-            .Where(group => !group.IsDeleted)
+        var groupNames = (await _index.GetTaskGroupsAsync(cancellationToken).ConfigureAwait(false))
             .ToDictionary(group => group.Id, group => group.Name);
 
         var projectionEnd = windowEnd + MaxReminderLead;

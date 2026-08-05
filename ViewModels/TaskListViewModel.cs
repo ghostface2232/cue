@@ -442,7 +442,7 @@ public partial class TaskListViewModel : ObservableObject
     {
         if (when.Kind != WhenKind.OnDate || when.Date is not { } date)
             return;
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone).DateTime);
+        var today = CurrentDay();
         var whenDay = DateOnly.FromDateTime(date.ToLocal().DateTime);
         if (whenDay == today)
             return;
@@ -450,6 +450,13 @@ public partial class TaskListViewModel : ObservableObject
             return; // the new task is visible on this screen — no need to point elsewhere
         OffscreenTaskCreated?.Invoke();
     }
+
+    /// <summary>The current day in this list's time zone — the same reference the index uses to decide
+    /// Today/Upcoming/overdue membership, so a row's relative label and overdue tint agree with the query
+    /// that put it there. Read per row rather than cached: the midnight refresh reloads through
+    /// <see cref="LoadAsync"/>, and reading the clock keeps that reload from needing to invalidate state.</summary>
+    private DateOnly CurrentDay()
+        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone).DateTime);
 
     /// <summary>
     /// The wall-clock delay from now until just after the next local day boundary (00:00 in the list's own
@@ -660,7 +667,7 @@ public partial class TaskListViewModel : ObservableObject
 
     private TaskRowViewModel CreateRow(TaskListItem item)
     {
-        var row = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r), ShowWeekNumber) { IsCompact = _rowsCompact };
+        var row = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r), CurrentDay(), ShowWeekNumber) { IsCompact = _rowsCompact };
         SyncChecklistRows(row, item);
         return row;
     }
@@ -730,7 +737,7 @@ public partial class TaskListViewModel : ObservableObject
                     continue;
                 }
             }
-            target[i].Update(item, ShowWeekNumber);
+            target[i].Update(item, CurrentDay(), ShowWeekNumber);
             SyncChecklistRows(target[i], item);
         }
     }

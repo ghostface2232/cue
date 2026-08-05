@@ -36,6 +36,7 @@
             <local:HexToTintBrushConverter x:Key="HexToTint" />
             <local:OccurrencePipKindToBrushConverter x:Key="OccurrencePipKindToBrush" />
             <local:SaveStatusToBrushConverter x:Key="SaveStatusToBrush" />
+            <local:OverdueToBrushConverter x:Key="OverdueToBrush" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

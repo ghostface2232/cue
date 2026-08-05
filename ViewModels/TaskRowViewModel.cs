@@ -64,6 +64,20 @@ public partial class TaskRowViewModel : ObservableObject
         ? $"이번 할 일 완료됨 · 다음: {Schedule}"
         : Schedule;
 
+    /// <summary>
+    /// True when this row is open work whose date has already passed. The 오늘 할 일 list deliberately
+    /// carries overdue work forward (its query takes any When day today-or-earlier), so without this a
+    /// task due today and one two weeks late sit side by side reading identically. The view tints the
+    /// schedule line with it.
+    /// </summary>
+    /// <remarks>
+    /// Completed work is never overdue — that includes the Logbook and the rows the "완료한 일 당일 표시"
+    /// preference keeps dimmed in place. A recurring row that is <see cref="IsAheadOfSchedule"/> has a
+    /// future date by definition, so it can't be overdue either.
+    /// </remarks>
+    [ObservableProperty]
+    public partial bool IsOverdue { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPriority))]
     [NotifyPropertyChangedFor(nameof(PriorityCaption))]
@@ -224,7 +238,10 @@ public partial class TaskRowViewModel : ObservableObject
         AcknowledgeMessage = string.Empty;
     }
 
-    public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled, bool showWeekNumber = false)
+    /// <param name="today">The current day in the list's own time zone. Passed in rather than read from a
+    /// clock here so the row stays a pure projection, and so the owning list's midnight refresh re-renders
+    /// every relative label and overdue tint at the same instant its queries roll over.</param>
+    public TaskRowViewModel(TaskListItem item, Action<TaskRowViewModel> onUserToggled, DateOnly today, bool showWeekNumber = false)
     {
         _onUserToggled = onUserToggled;
         // The in-place list reconcile mutates ChecklistItems directly, so notify HasChecklist from the
@@ -238,7 +255,8 @@ public partial class TaskRowViewModel : ObservableObject
         Id = item.Id;
         Title = FormatTitle(item.Title);
         SortOrder = item.SortOrder;
-        Schedule = BuildSchedule(item, showWeekNumber);
+        Schedule = BuildSchedule(item, showWeekNumber, today);
+        IsOverdue = IsPastDue(item, today);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
         IsAheadOfSchedule = item.IsAheadOfSchedule;
@@ -258,10 +276,11 @@ public partial class TaskRowViewModel : ObservableObject
     /// a row whose <see cref="Id"/> already matches <paramref name="item"/>. The generated setters skip the
     /// change notification when a value is unchanged, so a refresh that touched nothing here is silent.
     /// </summary>
-    public void Update(TaskListItem item, bool showWeekNumber = false)
+    public void Update(TaskListItem item, DateOnly today, bool showWeekNumber = false)
     {
         Title = FormatTitle(item.Title);
-        Schedule = BuildSchedule(item, showWeekNumber);
+        Schedule = BuildSchedule(item, showWeekNumber, today);
+        IsOverdue = IsPastDue(item, today);
         Priority = item.Priority;
         IsRecurring = item.IsRecurring;
         IsAheadOfSchedule = item.IsAheadOfSchedule;
@@ -328,19 +347,54 @@ public partial class TaskRowViewModel : ObservableObject
     // An all-day (종일) task carries no time in the index (its time column is NULL), so the row shows the
     // date alone. A present time is a deliberate schedule and is shown next to the date. When the "연중 주차"
     // preference is on, the ISO-8601 week number is appended ("· W27") so a dated row carries its week.
-    private static string BuildSchedule(TaskListItem item, bool showWeekNumber)
+    // Open work whose day has already gone by. Completion is the only exemption that needs stating: an
+    // ahead-of-schedule recurring row is pinned to a future cycle, so it can never satisfy the date test.
+    private static bool IsPastDue(TaskListItem item, DateOnly today)
+        => !item.IsCompleted && item.WhenDate is { } when && when < today;
+
+    private static string BuildSchedule(TaskListItem item, bool showWeekNumber, DateOnly today)
     {
         if (item.WhenDate is not { } when)
             return string.Empty;
-        var label = item.WhenTime is { } time
-            ? $"{Day(when)} {Time(time)}"
-            : Day(when);
+        var day = Day(when, today, item.IsCompleted);
+        var label = item.WhenTime is { } time ? $"{day} {Time(time)}" : day;
         return showWeekNumber ? $"{label} · {Week(when)}" : label;
     }
 
     private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
 
-    private static string Day(DateOnly d) => d.ToString("M월 d일 (ddd)", Korean);
+    // How far back the "N일 지남" wording runs before an absolute date reads better. Past a week the count
+    // stops being a useful quantity ("312일 지남" says less than the date it was due), while inside a week
+    // it is exactly what the user wants to know.
+    private const int RelativeOverdueDayLimit = 7;
+
+    /// <summary>
+    /// The date as a row shows it: near days read as words so a glance separates today's work from what is
+    /// already late, and anything outside that window falls back to the absolute date.
+    /// </summary>
+    /// <remarks>
+    /// A <paramref name="isCompleted"/> row always gets the absolute date. Its When is history at that
+    /// point — the Logbook already groups it by the day it was finished — so "5일 지남" on a task that was
+    /// in fact done would read as an outstanding debt.
+    /// </remarks>
+    private static string Day(DateOnly d, DateOnly today, bool isCompleted)
+    {
+        if (isCompleted)
+            return Absolute(d);
+
+        var delta = d.DayNumber - today.DayNumber;
+        return delta switch
+        {
+            0 => "오늘",
+            1 => "내일",
+            2 => "모레",
+            -1 => "어제",
+            < -1 and > -RelativeOverdueDayLimit => $"{-delta}일 지남",
+            _ => Absolute(d),
+        };
+    }
+
+    private static string Absolute(DateOnly d) => d.ToString("M월 d일 (ddd)", Korean);
 
     private static string Time(TimeOnly t) => t.ToString("tt h:mm", Korean);
 

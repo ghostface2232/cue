@@ -58,6 +58,11 @@
             <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
             <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
             <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
+            <!-- Overdue schedule text on a task row. The 오늘 할 일 list carries past-due work forward, so
+                 this is what separates "due today" from "two weeks late" at a glance. Deliberately its own
+                 key rather than a reuse of CueDangerFillBrush: that tone means "this action destroys
+                 something", and the two must stay free to diverge. -->
+            <SolidColorBrush x:Key="CueOverdueBrush" Color="{ThemeResource SystemFillColorCritical}" />
             <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
@@ -84,6 +89,9 @@
             <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
             <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
             <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
+            <!-- High contrast conveys lateness through the wording ("3일 지남"), never color alone, so this
+                 stays the plain window text tone rather than introducing an off-palette red. -->
+            <SolidColorBrush x:Key="CueOverdueBrush" Color="{ThemeResource TextFillColorPrimary}" />
             <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
@@ -117,6 +125,9 @@
             <SolidColorBrush x:Key="CueTimelineCurrentBrush" Color="{ThemeResource TextFillColorSecondary}" />
             <SolidColorBrush x:Key="CueTimelineEndedBrush" Color="{ThemeResource TextFillColorSecondary}" />
             <SolidColorBrush x:Key="CueTimelineMutedBrush" Color="{ThemeResource TextFillColorTertiary}" />
+            <!-- Same literal red as the dark danger tone, for the same reason: the system critical color in
+                 dark is a washed-out pink that does not read as urgent against the dark rows. -->
+            <SolidColorBrush x:Key="CueOverdueBrush" Color="#E86366" />
             <SolidColorBrush x:Key="CueTimelineFutureBrush" Color="{ThemeResource TextFillColorDisabled}" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
