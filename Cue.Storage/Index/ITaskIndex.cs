@@ -170,6 +170,32 @@ public interface ITaskIndex
     /// </summary>
     Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default);
 
+    // Reminders (the notification reconcile loop)
+
+    /// <summary>
+    /// Live, open, non-recurring tasks carrying a timed date within the inclusive
+    /// <paramref name="rangeStart"/>..<paramref name="rangeEnd"/> day window and a reminder that is not
+    /// <see cref="Cue.Domain.ReminderTiming.None"/> — the candidate set the notification scheduler derives
+    /// its expected toasts from, so a reconcile pass reads no task files at all.
+    /// <para>
+    /// This is a <i>pre-filter</i>, not the final answer: the caller still computes each delivery instant
+    /// through <c>ReminderTimeCalculator</c> and applies the exact rolling window. Callers should therefore
+    /// pass a day range slightly wider than the window they care about (a pre-reminder can lead its task by
+    /// up to a day, and a calendar day in the task's own zone straddles the caller's UTC bounds); extra rows
+    /// are discarded in memory, whereas a too-narrow range would silently lose a reminder.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<ReminderCandidate>> GetReminderCandidatesAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every live, open task whose reminder is not <see cref="Cue.Domain.ReminderTiming.None"/>, as id +
+    /// repeats-or-not and nothing else. Deliberately <i>not</i> windowed: a delivered toast for a task whose
+    /// time has passed but which the user has not resolved is a legitimate reminder that must stay in the
+    /// notification center, so "still warrants a notification" cannot be a date test. The recurring entries
+    /// tell the recurring source which series files to load — the RRULE itself is not indexed.
+    /// </summary>
+    Task<IReadOnlyList<ReminderTaskRef>> GetReminderTaskRefsAsync(CancellationToken cancellationToken = default);
+
     // Recurrence history (the detail-panel timeline)
 
     /// <summary>

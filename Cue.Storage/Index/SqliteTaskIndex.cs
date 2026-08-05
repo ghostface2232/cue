@@ -91,7 +91,9 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
     // are dropped and recreated, then repopulated by the startup RebuildAsync — no data is lost.
-    private const long SchemaVersion = 9;
+    // v10 added when_utc/when_zone/reminder so the notification reconcile loop can build its expected
+    // set from the index instead of re-reading every task file on each pass.
+    private const long SchemaVersion = 10;
 
     private void EnsureSchema()
     {
@@ -124,11 +126,14 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                 when_kind       TEXT NOT NULL,
                 when_date       TEXT NULL,
                 when_time       TEXT NULL,
+                when_utc        TEXT NULL,
+                when_zone       TEXT NULL,
                 completed_at    TEXT NULL,
                 deleted_at      TEXT NULL,
                 priority        INTEGER NOT NULL DEFAULT 0,
                 sort_order      TEXT NOT NULL DEFAULT '',
-                is_recurring    INTEGER NOT NULL DEFAULT 0
+                is_recurring    INTEGER NOT NULL DEFAULT 0,
+                reminder        INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS task_tags (
                 task_id TEXT NOT NULL,
@@ -166,7 +171,10 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             CREATE INDEX IF NOT EXISTS ix_task_groups_active ON task_groups(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_tags_active ON tags(deleted_at);
             CREATE INDEX IF NOT EXISTS ix_occurrences_series ON recurrence_occurrences(series_id, deleted_at, occurrence_utc);
-            PRAGMA user_version = 9;
+            -- Serves both reminder queries: the windowed candidate scan seeks on (alive, open, reminder-on)
+            -- and then ranges over when_date, and the un-windowed ref sweep uses the same leading columns.
+            CREATE INDEX IF NOT EXISTS ix_tasks_reminder ON tasks(deleted_at, completed_at, reminder, when_date);
+            PRAGMA user_version = 10;
             """;
         cmd.ExecuteNonQuery();
     }
@@ -284,11 +292,11 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             cmd.CommandText =
                 """
                 INSERT INTO tasks
-                    (id, title, group_id, checklist, when_kind, when_date, when_time,
-                     completed_at, deleted_at, priority, sort_order, is_recurring)
+                    (id, title, group_id, checklist, when_kind, when_date, when_time, when_utc, when_zone,
+                     completed_at, deleted_at, priority, sort_order, is_recurring, reminder)
                 VALUES
-                    ($id, $title, $group, $checklist, $whenKind, $whenDate, $whenTime,
-                     $completed, $deleted, $priority, $sort, $recurring)
+                    ($id, $title, $group, $checklist, $whenKind, $whenDate, $whenTime, $whenUtc, $whenZone,
+                     $completed, $deleted, $priority, $sort, $recurring, $reminder)
                 ON CONFLICT(id) DO UPDATE SET
                     title           = excluded.title,
                     group_id        = excluded.group_id,
@@ -296,11 +304,14 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
                     when_kind       = excluded.when_kind,
                     when_date       = excluded.when_date,
                     when_time       = excluded.when_time,
+                    when_utc        = excluded.when_utc,
+                    when_zone       = excluded.when_zone,
                     completed_at    = excluded.completed_at,
                     deleted_at      = excluded.deleted_at,
                     priority        = excluded.priority,
                     sort_order      = excluded.sort_order,
-                    is_recurring    = excluded.is_recurring;
+                    is_recurring    = excluded.is_recurring,
+                    reminder        = excluded.reminder;
                 """;
             Bind(cmd, "$id", task.Id.ToString());
             Bind(cmd, "$title", task.Title);
@@ -313,6 +324,12 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             // An all-day (종일) date carries no meaningful time, so its time column is left NULL — the row
             // shows the day alone. Only a timed OnDate records a wall-clock time.
             Bind(cmd, "$whenTime", task.When.Kind == WhenKind.OnDate && !task.When.IsAllDay ? LocalTime(task.When.Date) : null);
+            // The zoned date's two halves, kept verbatim so the notification scheduler can rebuild the exact
+            // ZonedDateTime and hand it to ReminderTimeCalculator. when_date/when_time are the *local*
+            // projection (for display and day-range queries) and would round-trip ambiguously across a DST
+            // fold; the instant plus its zone id is lossless. Both stay fully derivable from the file.
+            Bind(cmd, "$whenUtc", task.When.Date is { } zoned ? Instant(zoned.Utc) : null);
+            Bind(cmd, "$whenZone", task.When.Date?.TimeZoneId);
             Bind(cmd, "$completed", Instant(task.CompletedAt));
             Bind(cmd, "$deleted", Instant(task.DeletedAt));
             Bind(cmd, "$priority", (int)task.Priority);
@@ -321,6 +338,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             // the file (the detail view loads the full task by id) — the index only needs the boolean so
             // a list row can show the repeat indicator. Fully rebuildable from the file.
             Bind(cmd, "$recurring", task.Recurrence is not null ? 1 : 0);
+            Bind(cmd, "$reminder", (int)task.Reminder);
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -640,6 +658,106 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             "AND t.when_date >= $start AND t.when_date <= $end ORDER BY t.when_date, t.sort_order;",
             cmd => { Bind(cmd, "$start", rangeStart.ToString("yyyy-MM-dd")); Bind(cmd, "$end", rangeEnd.ToString("yyyy-MM-dd")); }, cancellationToken);
 
+    // Reminders (the notification reconcile loop)
+
+    // The one-off half of the scheduler's expected set. Filters only on facts the index holds
+    // authoritatively — alive, open, non-recurring, reminder not disabled, a timed OnDate — and narrows by
+    // calendar day. The exact "delivers inside the rolling window" test stays in the scheduler, which
+    // re-derives the instant through ReminderTimeCalculator, so this range is deliberately allowed to be
+    // generous: it decides how many rows are read, never which ones survive.
+    //
+    // when_time IS NOT NULL is precisely "not all-day" — an all-day (종일) row stores a NULL time — and an
+    // all-day date would be rejected by ReminderTimeCalculator anyway, so the filter only saves the read.
+    public Task<IReadOnlyList<ReminderCandidate>> GetReminderCandidatesAsync(
+        DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
+        => QueryNonNullRecordsAsync(
+            "SELECT t.id, t.title, t.when_utc, t.when_zone, t.reminder, g.name AS group_name " +
+            "FROM tasks t LEFT JOIN task_groups g ON g.id = t.group_id AND g.deleted_at IS NULL " +
+            "WHERE t.deleted_at IS NULL AND t.completed_at IS NULL AND t.is_recurring = 0 " +
+            "AND t.reminder <> $none AND t.when_kind = 'OnDate' AND t.when_time IS NOT NULL " +
+            "AND t.when_utc IS NOT NULL AND t.when_zone IS NOT NULL " +
+            "AND t.when_date >= $start AND t.when_date <= $end;",
+            cmd =>
+            {
+                Bind(cmd, "$none", (int)ReminderTiming.None);
+                Bind(cmd, "$start", rangeStart.ToString("yyyy-MM-dd"));
+                Bind(cmd, "$end", rangeEnd.ToString("yyyy-MM-dd"));
+            },
+            MapReminderCandidate,
+            cancellationToken);
+
+    // Every live task that still warrants a notification, un-windowed and payload-free. The scheduler uses
+    // the non-recurring ids to decide whether an already-delivered toast is stale, and the recurring source
+    // uses the rest to load just those series files (the RRULE is not indexed) instead of the whole folder.
+    public Task<IReadOnlyList<ReminderTaskRef>> GetReminderTaskRefsAsync(CancellationToken cancellationToken = default)
+        => QueryRecordsAsync(
+            "SELECT id, is_recurring FROM tasks " +
+            "WHERE deleted_at IS NULL AND completed_at IS NULL AND reminder <> $none;",
+            cmd => Bind(cmd, "$none", (int)ReminderTiming.None),
+            r => new ReminderTaskRef(Guid.Parse(r.GetString(0)), r.GetInt64(1) != 0),
+            cancellationToken);
+
+    // Rebuilds the stored ZonedDateTime from the instant + zone the upsert wrote verbatim. A zone this
+    // machine cannot resolve would throw out of ToLocal() deep inside the scheduler, so it is rejected here
+    // instead: the row is dropped from the candidate set (a missing reminder), never allowed to fault the
+    // reconcile pass. The file-side converter already refuses such a record, so this is belt-and-braces for
+    // an index written before a zone-database change.
+    private static ReminderCandidate? MapReminderCandidate(SqliteDataReader r)
+    {
+        var zoneId = r.GetString(3);
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById(zoneId, out _))
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[Cue] Skipping reminder candidate '{r.GetString(0)}': unknown time zone '{zoneId}'.");
+            return null;
+        }
+
+        var utc = DateTimeOffset.Parse(r.GetString(2), null, System.Globalization.DateTimeStyles.RoundtripKind);
+        return new ReminderCandidate(
+            Id: Guid.Parse(r.GetString(0)),
+            Title: r.GetString(1),
+            TaskGroupName: r.IsDBNull(5) ? null : r.GetString(5),
+            // Always the timed factory: the query already excluded all-day rows (when_time IS NULL).
+            When: ScheduledWhen.On(ZonedDateTime.FromUtc(utc, zoneId)),
+            Reminder: (ReminderTiming)r.GetInt64(4));
+    }
+
+    // Write-path reference checks
+    //
+    // These are not part of the ITaskIndex read model — they exist for IndexedTaskStore's save path, which
+    // must decide whether a task's group/tag references still point at something alive. A live hit here is
+    // conclusive and lets the store skip a file read; anything else falls back to reading the record file,
+    // which is the only way to tell "absent" from "temporarily unreadable".
+
+    /// <summary>True when <paramref name="taskGroupId"/> is indexed and not tombstoned.</summary>
+    public async Task<bool> IsLiveTaskGroupAsync(Guid taskGroupId, CancellationToken cancellationToken = default)
+        => await QueryScalarAsync(
+            "SELECT COUNT(*) FROM task_groups WHERE id = $id AND deleted_at IS NULL;",
+            cmd => Bind(cmd, "$id", taskGroupId.ToString()), cancellationToken).ConfigureAwait(false) > 0;
+
+    /// <summary>The subset of <paramref name="candidates"/> that is indexed and not tombstoned, resolved in
+    /// one round trip rather than one per tag.</summary>
+    public Task<IReadOnlyList<Guid>> GetLiveTagIdsAsync(
+        IReadOnlyCollection<Guid> candidates, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        if (candidates.Count == 0)
+            return Task.FromResult<IReadOnlyList<Guid>>([]);
+
+        // Placeholders are generated from the candidate count and every value is bound, so the id text never
+        // reaches the SQL text.
+        var ids = candidates.ToArray();
+        var placeholders = string.Join(", ", ids.Select((_, i) => $"$id{i}"));
+        return QueryIdsAsync(
+            $"SELECT id FROM tags WHERE deleted_at IS NULL AND id IN ({placeholders});",
+            cmd =>
+            {
+                for (var i = 0; i < ids.Length; i++)
+                    Bind(cmd, $"$id{i}", ids[i].ToString());
+            },
+            cancellationToken);
+    }
+
     // Recurrence history (the detail-panel timeline)
 
     public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
@@ -716,6 +834,37 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
     private Task<IReadOnlyList<Guid>> QueryIdsAsync(
         string sql, Action<SqliteCommand> bind, CancellationToken cancellationToken)
         => QueryRecordsAsync(sql, bind, r => Guid.Parse(r.GetString(0)), cancellationToken);
+
+    /// <summary>As <see cref="QueryRecordsAsync{T}"/>, but a mapper may return <c>null</c> to drop a row it
+    /// cannot faithfully project (an unresolvable time zone). Skipping one row is the same corruption
+    /// isolation the file store applies — one bad record must not fail the whole query.</summary>
+    private async Task<IReadOnlyList<T>> QueryNonNullRecordsAsync<T>(
+        string sql,
+        Action<SqliteCommand> bind,
+        Func<SqliteDataReader, T?> map,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var cmd = _connection.CreateCommand();
+            cmd.CommandText = sql;
+            bind(cmd);
+            var results = new List<T>();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (map(reader) is { } mapped)
+                    results.Add(mapped);
+            }
+            return results;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     private async Task<IReadOnlyDictionary<Guid, int>> QueryCountsAsync(string sql, CancellationToken cancellationToken)
     {

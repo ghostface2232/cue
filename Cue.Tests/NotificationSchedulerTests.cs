@@ -1,6 +1,7 @@
 using Cue.Domain;
 using Cue.Services;
 using Cue.Storage;
+using Cue.Storage.Index;
 using Cue.Storage.Recurrence;
 
 namespace Cue.Tests;
@@ -402,7 +403,7 @@ public class NotificationSchedulerTests
         var store = new FakeTaskStore(tasks, []);
         var toasts = new FakeToastPresenter();
         var recurrence = new RecurringTaskService(store);
-        var source = new RecurringNotificationSource(store, recurrence);
+        var source = new RecurringNotificationSource(store, store, recurrence);
         var scheduler = new NotificationScheduler(
             store,
             store,
@@ -517,14 +518,95 @@ public class NotificationSchedulerTests
         }
     }
 
+    /// <summary>
+    /// Stands in for the store <i>and</i> its index. The scheduler builds its expected set from the index
+    /// (so a reconcile pass reads no record files), so the reminder projections here must mirror the SQL in
+    /// <c>SqliteTaskIndex</c> exactly — same predicate, same local-day range test — or these tests would
+    /// stop covering the filter that actually ships. Index members the notification path never touches
+    /// throw rather than returning a plausible empty list, so a future caller can't silently get nothing.
+    /// </summary>
     private sealed class FakeTaskStore(
         IEnumerable<TaskItem> tasks,
-        IEnumerable<TaskGroup> groups) : ITaskStore, ITaskStoreChangeSource
+        IEnumerable<TaskGroup> groups) : ITaskStore, ITaskStoreChangeSource, ITaskIndex
     {
         private readonly List<TaskItem> _tasks = tasks.ToList();
         private readonly List<TaskGroup> _groups = groups.ToList();
 
         public event EventHandler? Changed;
+
+        // ── ITaskIndex: the reminder surface the scheduler actually uses ──
+
+        // Mirrors GetReminderCandidatesAsync: alive, open, non-recurring, reminder not None, a timed
+        // OnDate, and the pinned local calendar day inside the inclusive range.
+        public Task<IReadOnlyList<ReminderCandidate>> GetReminderCandidatesAsync(
+            DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
+        {
+            var groupNames = _groups.Where(g => !g.IsDeleted).ToDictionary(g => g.Id, g => g.Name);
+            var candidates = _tasks
+                .Where(t => !t.IsDeleted && !t.IsCompleted && t.Recurrence is null &&
+                            t.Reminder != ReminderTiming.None &&
+                            t.When.Kind == WhenKind.OnDate && !t.When.IsAllDay && t.When.Date is not null)
+                .Where(t =>
+                {
+                    var day = DateOnly.FromDateTime(t.When.Date!.Value.ToLocal().DateTime);
+                    return day >= rangeStart && day <= rangeEnd;
+                })
+                .Select(t => new ReminderCandidate(
+                    t.Id,
+                    t.Title,
+                    t.TaskGroupId is { } gid && groupNames.TryGetValue(gid, out var name) ? name : null,
+                    t.When,
+                    t.Reminder))
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<ReminderCandidate>>(candidates);
+        }
+
+        // Mirrors GetReminderTaskRefsAsync: alive, open, reminder not None — deliberately un-windowed.
+        public Task<IReadOnlyList<ReminderTaskRef>> GetReminderTaskRefsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ReminderTaskRef>>(_tasks
+                .Where(t => !t.IsDeleted && !t.IsCompleted && t.Reminder != ReminderTiming.None)
+                .Select(t => new ReminderTaskRef(t.Id, t.Recurrence is not null))
+                .ToArray());
+
+        // The recurring source reads group names for the toast's second line; tombstones are excluded here
+        // just as the real query's "deleted_at IS NULL" does.
+        public Task<IReadOnlyList<TaskGroupListItem>> GetTaskGroupsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TaskGroupListItem>>(_groups
+                .Where(g => !g.IsDeleted)
+                .Select(g => new TaskGroupListItem(g.Id, g.Name, g.Icon, g.SortOrder))
+                .ToArray());
+
+        // ── ITaskIndex: everything the notification path never asks for ──
+
+        private static Task<T> Unused<T>([System.Runtime.CompilerServices.CallerMemberName] string member = "")
+            => throw new NotSupportedException($"{member} is not part of the notification path.");
+
+        public Task<IReadOnlyList<TagListItem>> GetTagsAsync(CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TagListItem>>();
+        public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTaskGroupAsync(CancellationToken cancellationToken = default) => Unused<IReadOnlyDictionary<Guid, int>>();
+        public Task<IReadOnlyDictionary<Guid, int>> GetOpenTaskCountsByTagAsync(CancellationToken cancellationToken = default) => Unused<IReadOnlyDictionary<Guid, int>>();
+        public Task<int> GetOpenTaskCountWithoutTaskGroupAsync(CancellationToken cancellationToken = default) => Unused<int>();
+        public Task<int> GetOpenTaskCountWithoutTagAsync(CancellationToken cancellationToken = default) => Unused<int>();
+        public Task<IReadOnlyList<TaskListItem>> GetAllActiveAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetByTaskGroupAsync(Guid taskGroupId, bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetByTagAsync(Guid tagId, bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetCompletedByTaskGroupAsync(Guid taskGroupId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetCompletedByTagAsync(Guid tagId, int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<int> GetCompletedCountByTaskGroupAsync(Guid taskGroupId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default) => Unused<int>();
+        public Task<int> GetCompletedCountByTagAsync(Guid tagId, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default) => Unused<int>();
+        public Task<IReadOnlyList<TaskListItem>> GetWithoutTaskGroupAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetWithoutTagAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetTodayAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetTodayCompletedAsync(int limit = int.MaxValue, int offset = 0, bool excludeKeptInPlace = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<int> GetTodayCompletedCountAsync(bool excludeKeptInPlace = false, CancellationToken cancellationToken = default) => Unused<int>();
+        public Task<IReadOnlyList<TaskListItem>> GetUpcomingAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetAnytimeAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetLogbookAsync(CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetByPriorityAsync(bool keepCompletedToday = false, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<TaskListItem>>();
+        public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default) => Unused<IReadOnlyList<OccurrenceListItem>>();
+        public Task<int> GetOccurrenceCountAsync(Guid seriesId, CancellationToken cancellationToken = default) => Unused<int>();
+
+        // ── ITaskStore ──
 
         public Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default)
             where T : RecordBase

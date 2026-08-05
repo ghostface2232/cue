@@ -3023,6 +3023,10 @@ public sealed class ViewModelRegressionTests
             => inner.GetByPriorityAsync(keepCompletedToday, cancellationToken);
         public Task<IReadOnlyList<TaskListItem>> GetTimelineRowsAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
             => inner.GetTimelineRowsAsync(rangeStart, rangeEnd, cancellationToken);
+        public Task<IReadOnlyList<ReminderCandidate>> GetReminderCandidatesAsync(DateOnly rangeStart, DateOnly rangeEnd, CancellationToken cancellationToken = default)
+            => inner.GetReminderCandidatesAsync(rangeStart, rangeEnd, cancellationToken);
+        public Task<IReadOnlyList<ReminderTaskRef>> GetReminderTaskRefsAsync(CancellationToken cancellationToken = default)
+            => inner.GetReminderTaskRefsAsync(cancellationToken);
         public Task<IReadOnlyList<OccurrenceListItem>> GetOccurrencesAsync(Guid seriesId, int limit = int.MaxValue, int offset = 0, CancellationToken cancellationToken = default)
             => inner.GetOccurrencesAsync(seriesId, limit, offset, cancellationToken);
         public Task<int> GetOccurrenceCountAsync(Guid seriesId, CancellationToken cancellationToken = default)
