@@ -50,6 +50,54 @@ public class NotificationSchedulerTests
             Assert.Empty(await scheduler.BuildExpectedAsync());
     }
 
+    /// <summary>
+    /// The index pre-filter narrows by calendar day, and a task's indexed day is the day in its <i>own</i>
+    /// zone — so at the far end of the window a pre-reminder's 24h lead and a far-eastern zone's +14h offset
+    /// stack. Slack that only paid for the lead dropped this task before the exact window test ever saw it.
+    /// </summary>
+    [Fact]
+    public async Task ExpectedSet_IncludesAFarEasternPreReminderInsideTheWindow()
+    {
+        // Now is 2026-07-02T12:00Z, so the window ends 2026-07-16T12:00Z. A UTC+14 task at 2026-07-18 01:00
+        // local is the instant 2026-07-17T11:00Z; OneDayBefore delivers 24h earlier, at 2026-07-16T11:00Z —
+        // one hour inside the window. Its indexed calendar day is 2026-07-18, two UTC days past the day the
+        // window end falls on.
+        var task = new TaskItem
+        {
+            Title = "먼 동쪽 시간대",
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 7, 18, 1, 0, 0), "Etc/GMT-14")),
+            Reminder = ReminderTiming.OneDayBefore,
+        };
+        var (scheduler, _) = Create(task);
+        await using (scheduler)
+        {
+            var entry = Assert.Single(await scheduler.BuildExpectedAsync());
+            Assert.Equal(
+                new DateTimeOffset(2026, 7, 16, 11, 0, 0, TimeSpan.Zero),
+                entry.Value.DeliveryTime.ToUniversalTime());
+        }
+    }
+
+    /// <summary>The counterpart: widening the pre-filter must not admit anything. The exact delivery test
+    /// still decides, so a far-eastern task now inside the wider day range but past the window is dropped
+    /// there instead.</summary>
+    [Fact]
+    public async Task ExpectedSet_StillExcludesAFarEasternPreReminderBeyondTheWindow()
+    {
+        // Same zone and the same indexed day as the test above (2026-07-18, so the widened pre-filter does
+        // let it through), two hours later on the clock: the instant is 2026-07-17T13:00Z and OneDayBefore
+        // delivers 2026-07-16T13:00Z — one hour past the window end.
+        var task = new TaskItem
+        {
+            Title = "창 밖",
+            When = ScheduledWhen.On(ZonedDateTime.FromLocal(new DateTime(2026, 7, 18, 3, 0, 0), "Etc/GMT-14")),
+            Reminder = ReminderTiming.OneDayBefore,
+        };
+        var (scheduler, _) = Create(task);
+        await using (scheduler)
+            Assert.Empty(await scheduler.BuildExpectedAsync());
+    }
+
     [Fact]
     public async Task ExpectedSet_LeavesRecurringTaskForExtensionSource()
     {

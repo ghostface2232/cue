@@ -45,11 +45,20 @@ public sealed class NotificationScheduler : IAsyncDisposable
     public static readonly TimeSpan DefaultDebounce = TimeSpan.FromMilliseconds(500);
     public static readonly TimeSpan DefaultPeriodicInterval = TimeSpan.FromMinutes(15);
 
-    // How far past the rolling window the candidate day-range reaches. A pre-reminder leads its task by at
-    // most a day (OneDayBefore), and a task's when_date is a calendar day in its *own* zone, which can sit
-    // a day either side of the UTC bounds. One day of slack on each end covers both; the per-candidate
-    // delivery test still decides membership, so the slack only widens what is read, never what is kept.
-    private static readonly TimeSpan CandidateRangeSlack = TimeSpan.FromDays(1);
+    // How far past the rolling window the candidate day-range reaches. Two effects stack at the far end and
+    // must both be paid for:
+    //
+    //   1. A pre-reminder leads its task by up to 24h (OneDayBefore), so a task sitting up to a day beyond
+    //      the window can still deliver inside it: when_instant <= windowEnd + 24h.
+    //   2. when_date is the calendar day in the *task's own* zone, which runs up to 14h ahead of UTC, so
+    //      that already-late task's indexed day can be later still: when_date <= date(windowEnd + 38h).
+    //
+    // One day of slack pays for the lead alone and silently dropped the reminder for a far-eastern task
+    // near the window edge (a UTC+14 task with OneDayBefore delivering inside the window, whose when_date
+    // lands two UTC days past the window end). Two days covers 24h + 14h with room to spare. Widening is
+    // free: this is a pre-filter over an indexed day column, and the per-candidate ReminderTimeCalculator
+    // test below still decides membership — extra rows are discarded, never scheduled.
+    private static readonly TimeSpan CandidateRangeSlack = TimeSpan.FromDays(2);
 
     private const string TaskTagPrefix = "task-";
     private const string OccurrenceTagPrefix = "occurrence-";
@@ -130,8 +139,9 @@ public sealed class NotificationScheduler : IAsyncDisposable
     }
 
     /// <summary>Queries the index for every task that could plausibly deliver inside the rolling window.
-    /// The day range is intentionally one day wider than the window at each end (see
-    /// <see cref="CandidateRangeSlack"/>); membership is decided per candidate below.</summary>
+    /// The day range is deliberately wider than the window at each end — enough to cover a pre-reminder's
+    /// lead <i>plus</i> a task zone's offset from UTC (see <see cref="CandidateRangeSlack"/>); membership is
+    /// decided per candidate below.</summary>
     private Task<IReadOnlyList<ReminderCandidate>> ReadCandidatesAsync(CancellationToken cancellationToken)
     {
         var now = _clock.GetUtcNow();
