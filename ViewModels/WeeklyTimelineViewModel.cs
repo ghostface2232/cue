@@ -380,7 +380,11 @@ public partial class WeeklyTimelineViewModel : ObservableObject
             // The card reuses the list-row projection; its checkbox toggle is routed to this VM's
             // completion command. Compact so group/tag chips reflow under the title to fit the card width;
             // the nested checklist is intentionally left empty so card heights stay tidy.
-            var card = new TaskRowViewModel(item, r => ToggleCompleteCommand.Execute(r), showWeekNumber: false)
+            var card = new TaskRowViewModel(
+                item,
+                r => ToggleCompleteCommand.Execute(r),
+                DateOnly.FromDateTime(LocalNow().DateTime),
+                showWeekNumber: false)
             {
                 IsCompact = true,
             };

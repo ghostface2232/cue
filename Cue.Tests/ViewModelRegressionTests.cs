@@ -10,6 +10,205 @@ namespace Cue.Tests;
 
 public sealed class ViewModelRegressionTests
 {
+    /// <summary>The reference "today" handed to a directly-constructed <see cref="TaskRowViewModel"/> —
+    /// Monday 2026-06-22, matching the instant the store-backed tests pin their clocks to.</summary>
+    private static readonly DateOnly RowToday = new(2026, 6, 22);
+
+    private static TaskListItem DatedRow(DateOnly when, bool completed = false) => new(
+        Guid.NewGuid(), "일정", null, WhenKind.OnDate, when, null, completed, Priority.None, "0|hzzzzz:",
+        CompletedAt: completed ? new DateTimeOffset(2026, 6, 22, 9, 0, 0, TimeSpan.Zero) : null);
+
+    [Theory]
+    [InlineData(0, "오늘")]
+    [InlineData(1, "내일")]
+    [InlineData(2, "모레")]
+    [InlineData(-1, "어제")]
+    [InlineData(-2, "2일 지남")]
+    [InlineData(-6, "6일 지남")]
+    public void Row_ReadsNearDatesAsWords(int dayOffset, string expected)
+    {
+        var row = new TaskRowViewModel(DatedRow(RowToday.AddDays(dayOffset)), _ => { }, RowToday);
+        Assert.Equal(expected, row.Schedule);
+    }
+
+    [Theory]
+    [InlineData(3)]     // beyond 모레
+    [InlineData(-7)]    // a week late — the count stops being the useful part
+    [InlineData(-400)]
+    public void Row_FallsBackToTheAbsoluteDateOutsideTheNearWindow(int dayOffset)
+    {
+        var day = RowToday.AddDays(dayOffset);
+        var row = new TaskRowViewModel(DatedRow(day), _ => { }, RowToday);
+        Assert.Equal(day.ToString("M월 d일 (ddd)", System.Globalization.CultureInfo.GetCultureInfo("ko-KR")), row.Schedule);
+    }
+
+    [Fact]
+    public void Row_KeepsTheTimeAlongsideARelativeDay()
+    {
+        var item = new TaskListItem(
+            Guid.NewGuid(), "회의", null, WhenKind.OnDate, RowToday, new TimeOnly(15, 0), false, Priority.None, "0|hzzzzz:");
+        var row = new TaskRowViewModel(item, _ => { }, RowToday);
+        Assert.StartsWith("오늘 ", row.Schedule);
+        Assert.Contains("3:00", row.Schedule);
+    }
+
+    [Fact]
+    public void Row_MarksOnlyOpenPastDueWorkOverdue()
+    {
+        Assert.True(new TaskRowViewModel(DatedRow(RowToday.AddDays(-1)), _ => { }, RowToday).IsOverdue);
+        Assert.False(new TaskRowViewModel(DatedRow(RowToday), _ => { }, RowToday).IsOverdue);
+        Assert.False(new TaskRowViewModel(DatedRow(RowToday.AddDays(1)), _ => { }, RowToday).IsOverdue);
+
+        // An undated task has nothing to be late for.
+        var undated = new TaskListItem(
+            Guid.NewGuid(), "언젠가", null, WhenKind.Unscheduled, null, null, false, Priority.None, "0|hzzzzz:");
+        Assert.False(new TaskRowViewModel(undated, _ => { }, RowToday).IsOverdue);
+    }
+
+    /// <summary>
+    /// Completed work is history: the Logbook already files it under the day it was finished, so its When
+    /// must not be re-narrated as an outstanding debt ("5일 지남") or tinted as late.
+    /// </summary>
+    [Fact]
+    public void Row_NeverCallsCompletedWorkLate()
+    {
+        var row = new TaskRowViewModel(DatedRow(RowToday.AddDays(-5), completed: true), _ => { }, RowToday);
+        Assert.False(row.IsOverdue);
+        Assert.DoesNotContain("지남", row.Schedule);
+        Assert.Equal("6월 17일 (수)", row.Schedule);
+    }
+
+    /// <summary>A day rollover re-renders through the owning list's reload, which patches rows in place —
+    /// so Update has to move the label and the tint on, not just the values it always refreshed.</summary>
+    [Fact]
+    public void Row_RerendersRelativeLabelWhenTheDayRollsOver()
+    {
+        var item = DatedRow(RowToday);
+        var row = new TaskRowViewModel(item, _ => { }, RowToday);
+        Assert.Equal("오늘", row.Schedule);
+        Assert.False(row.IsOverdue);
+
+        row.Update(item, RowToday.AddDays(1));
+
+        Assert.Equal("어제", row.Schedule);
+        Assert.True(row.IsOverdue);
+    }
+
+    /// <summary>Builds a list of manually ordered tasks named a, b, c… and returns its view model.</summary>
+    private static async Task<TaskListViewModel> ManualListAsync(IndexedTaskStore store, TimeProvider clock, params string[] titles)
+    {
+        var reorder = new ReorderService(store);
+        foreach (var title in titles)
+            await store.SaveAsync(new TaskItem { Title = title, SortOrder = reorder.AppendRank(await RanksAsync(store)) });
+
+        var vm = new TaskListViewModel(
+            store, store, new KoreanDateParser(), reorder, new RecurringTaskService(store),
+            clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(),
+            listPreferences: new StubListDisplayPreferences(sortMode: TaskSortMode.Manual));
+        vm.SetNavigation(new TaskListNavigation(TaskListMode.AllTasks));
+        await vm.LoadCommand.ExecuteAsync(null);
+        return vm;
+
+        static async Task<IEnumerable<string?>> RanksAsync(IndexedTaskStore s)
+            => (await s.GetAllAsync<TaskItem>()).Select(t => t.SortOrder);
+    }
+
+    [Fact]
+    public async Task Reorder_MovesARowAndPersistsTheNewOrder()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock, TimeZoneInfo.Utc);
+        var vm = await ManualListAsync(store, clock, "a", "b", "c");
+        Assert.Equal(new[] { "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
+
+        await vm.ReorderTaskCommand.ExecuteAsync(new ReorderRequest(0, 2));
+
+        // The reload after the move re-reads the index, so this is the persisted order, not the optimistic
+        // collection move — which is exactly the assertion worth making.
+        Assert.Equal(new[] { "b", "c", "a" }, vm.Tasks.Select(r => r.Title));
+    }
+
+    /// <summary>
+    /// Under a computed sort the ordering is recomputed on every refresh, so a move would write a rank and
+    /// then be immediately overruled — the row would spring back. The command has to decline rather than
+    /// half-work.
+    /// </summary>
+    [Theory]
+    [InlineData(TaskSortMode.Date)]
+    [InlineData(TaskSortMode.Name)]
+    [InlineData(TaskSortMode.Priority)]
+    public async Task Reorder_IsRefusedUnderAComputedSort(TaskSortMode mode)
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock, TimeZoneInfo.Utc);
+        var vm = await ManualListAsync(store, clock, "a", "b", "c");
+
+        await vm.SetSortModeCommand.ExecuteAsync(mode);
+        Assert.False(vm.CanReorder);
+
+        var before = vm.Tasks.Select(r => r.Title).ToArray();
+        await vm.ReorderTaskCommand.ExecuteAsync(new ReorderRequest(0, 2));
+        Assert.Equal(before, vm.Tasks.Select(r => r.Title));
+
+        // …and the keyboard path refuses through the same gate rather than reporting a move it never made.
+        Assert.False(await vm.MoveTaskByOffsetAsync(vm.Tasks[0].Id, 1));
+    }
+
+    [Fact]
+    public async Task Reorder_ByKeyboardOffset_StopsAtTheListEnds()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock, TimeZoneInfo.Utc);
+        var vm = await ManualListAsync(store, clock, "a", "b", "c");
+
+        var first = vm.Tasks[0].Id;
+        Assert.False(await vm.MoveTaskByOffsetAsync(first, -1));      // already at the top
+        Assert.Equal(new[] { "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
+
+        Assert.True(await vm.MoveTaskByOffsetAsync(first, 1));
+        Assert.Equal(new[] { "b", "a", "c" }, vm.Tasks.Select(r => r.Title));
+
+        var last = vm.Tasks[2].Id;
+        Assert.False(await vm.MoveTaskByOffsetAsync(last, 1));        // already at the bottom
+        Assert.Equal(new[] { "b", "a", "c" }, vm.Tasks.Select(r => r.Title));
+
+        // An id that is not on this list is not a move either.
+        Assert.False(await vm.MoveTaskByOffsetAsync(Guid.NewGuid(), 1));
+    }
+
+    /// <summary>Walking a row several steps must keep working — each move re-ranks against the order the
+    /// previous one persisted, which is what a held-down chord does.</summary>
+    [Fact]
+    public async Task Reorder_SurvivesRepeatedSteps()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock, TimeZoneInfo.Utc);
+        var vm = await ManualListAsync(store, clock, "a", "b", "c", "d");
+
+        var moved = vm.Tasks[3].Id;                                   // "d"
+        for (var i = 0; i < 3; i++)
+            Assert.True(await vm.MoveTaskByOffsetAsync(moved, -1));
+
+        Assert.Equal(new[] { "d", "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
+        Assert.False(await vm.MoveTaskByOffsetAsync(moved, -1));
+
+        // The order came back from the index each time, so it is what a fresh list would show too.
+        await vm.LoadCommand.ExecuteAsync(null);
+        Assert.Equal(new[] { "d", "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
+    }
+
     [Fact]
     public async Task DetailSavePreservesWhenTime()
     {
@@ -2162,7 +2361,8 @@ public sealed class ViewModelRegressionTests
             new TaskListItem(
                 Guid.NewGuid(), "tagged", null, WhenKind.Unscheduled, null, null, false, Priority.None, "0|hzzzzz:",
                 Tags: new[] { new TaskListTag("일", "#F1C40F") }),
-            _ => { });
+            _ => { },
+            RowToday);
 
         var notified = 0;
         row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Tags)) notified++; };
@@ -2180,10 +2380,10 @@ public sealed class ViewModelRegressionTests
         var item = new TaskListItem(
             Guid.NewGuid(), "회의", null, WhenKind.OnDate, new DateOnly(2026, 6, 29), null, false, Priority.None, "0|hzzzzz:");
 
-        var on = new TaskRowViewModel(item, _ => { }, showWeekNumber: true);
+        var on = new TaskRowViewModel(item, _ => { }, RowToday, showWeekNumber: true);
         Assert.Contains("W27", on.Schedule);
 
-        var off = new TaskRowViewModel(item, _ => { });
+        var off = new TaskRowViewModel(item, _ => { }, RowToday);
         Assert.DoesNotContain("W27", off.Schedule);
     }
 
@@ -2194,7 +2394,8 @@ public sealed class ViewModelRegressionTests
         var row = new TaskRowViewModel(
             new TaskListItem(
                 Guid.NewGuid(), "plain", null, WhenKind.Unscheduled, null, null, false, Priority.None, "0|hzzzzz:"),
-            _ => { });
+            _ => { },
+            RowToday);
 
         var notified = 0;
         row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(TaskRowViewModel.Tags)) notified++; };
@@ -2343,11 +2544,14 @@ public sealed class ViewModelRegressionTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class StubListDisplayPreferences(bool keepCompletedForToday = false, bool showWeekNumber = false) : IListDisplayPreferences
+    private sealed class StubListDisplayPreferences(
+        bool keepCompletedForToday = false,
+        bool showWeekNumber = false,
+        TaskSortMode sortMode = TaskSortMode.Date) : IListDisplayPreferences
     {
         public bool KeepCompletedForToday { get; } = keepCompletedForToday;
         public bool ShowWeekNumber { get; } = showWeekNumber;
-        public TaskSortMode SortMode { get; set; } = TaskSortMode.Date;
+        public TaskSortMode SortMode { get; set; } = sortMode;
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider

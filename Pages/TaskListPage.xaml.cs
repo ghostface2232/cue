@@ -231,17 +231,84 @@ public sealed partial class TaskListPage : Page
         await SelectTaskAndCenterTimelineAsync(parentId);
     }
 
-    /// <summary>Delete on a focused row soft-deletes that task (with confirmation).</summary>
+    /// <summary>Keys on a focused row: Delete soft-deletes it (with confirmation), and Ctrl+Shift+Arrow
+    /// nudges it up or down in a manually ordered list.</summary>
+    /// <remarks>
+    /// Ctrl+Shift+Arrow is the platform's own keyboard-reorder chord (what a ListView with reordering
+    /// enabled binds), so it needs no teaching and does not collide with the Alt- chords Windows reserves
+    /// for menu activation.
+    /// </remarks>
     private async void TaskSurface_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key != VirtualKey.Delete || sender is not FrameworkElement { Tag: Guid id } element)
+        if (sender is not FrameworkElement { Tag: Guid id } element)
             return;
+
+        if (e.Key == VirtualKey.Delete)
+        {
+            e.Handled = true;
+            await RunSafelyAsync(async () =>
+            {
+                if (await ConfirmDeleteTaskAsync(element))
+                    await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
+            });
+            return;
+        }
+
+        if (e.Key is not (VirtualKey.Up or VirtualKey.Down)) return;
+        if (!IsDown(VirtualKey.Control) || !IsDown(VirtualKey.Shift)) return;
+        // Only claim the chord where it can actually do something; otherwise leave the arrow to focus
+        // navigation so the list stays keyboard-traversable under a computed sort.
+        if (!ViewModel.CanReorder) return;
+
         e.Handled = true;
+        var offset = e.Key == VirtualKey.Up ? -1 : 1;
         await RunSafelyAsync(async () =>
         {
-            if (await ConfirmDeleteTaskAsync(element))
-                await ViewModel.DeleteTaskCommand.ExecuteAsync(id);
+            if (await ViewModel.MoveTaskByOffsetAsync(id, offset))
+                RestoreFocusToRow(id);
         });
+    }
+
+    private static bool IsDown(VirtualKey key)
+        => Microsoft.UI.Input.InputKeyboardSource
+            .GetKeyStateForCurrentThread(key)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    /// <summary>
+    /// Returns focus to a row after a reorder. The move reloads the list from the index, which re-realizes
+    /// containers, so without this the focus would drop to the list and a second Ctrl+Shift+Arrow would go
+    /// nowhere — the row could not be walked more than one step.
+    /// </summary>
+    private void RestoreFocusToRow(Guid id)
+    {
+        // Queued at a lower priority so the reload's container work has settled before the lookup.
+        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        {
+            if (FindRowSurface(id) is { } surface)
+                surface.Focus(FocusState.Programmatic);
+        });
+    }
+
+    /// <summary>The row's focusable surface is the template's root <c>Border</c> (a FrameworkElement with
+    /// <c>IsTabStop</c>, not a Control), so the search is typed to FrameworkElement — looking for a Control
+    /// would walk straight past every row.</summary>
+    private FrameworkElement? FindRowSurface(Guid id)
+    {
+        foreach (var element in FindVisualChildren<FrameworkElement>(TaskRepeater))
+            if (element is { Tag: Guid rowId } && rowId == id && element.IsTabStop)
+                return element;
+        return null;
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T typed) yield return typed;
+            foreach (var nested in FindVisualChildren<T>(child)) yield return nested;
+        }
     }
 
     /// <summary>Right-click on a row opens its context menu: move to a group, toggle tags, rename, delete.</summary>
