@@ -74,10 +74,7 @@ public partial class TaskListViewModel : ObservableObject
     /// null prefs (tests) mean off.</summary>
     private bool ShowWeekNumber => _listPreferences?.ShowWeekNumber ?? false;
 
-    // Serializes reorder persists so a fast run of drops — or a held-down Alt+Arrow — can't interleave
-    // their rank writes. Each move re-ranks against the neighbors it can actually see, so two in flight at
-    // once would compute both ranks from the same pre-move list and land one of them in the wrong gap.
-    private readonly SemaphoreSlim _reorderGate = new(1, 1);
+    // Serializes reorder persists so a fast run of drops can't interleave their rank writes.
 
     // Serializes completion toggles so concurrent/rapid checks can't reorder their saves.
     private readonly SemaphoreSlim _toggleGate = new(1, 1);
@@ -195,7 +192,6 @@ public partial class TaskListViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChooseSort))]
-    [NotifyPropertyChangedFor(nameof(CanReorder))]
     public partial bool IsStandardList { get; set; } = true;
 
     /// <summary>The active global sort for standard lists. Mirrors the persisted preference; the header
@@ -206,8 +202,6 @@ public partial class TaskListViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsSortByDate))]
     [NotifyPropertyChangedFor(nameof(IsSortByName))]
     [NotifyPropertyChangedFor(nameof(IsSortByPriority))]
-    [NotifyPropertyChangedFor(nameof(IsSortManual))]
-    [NotifyPropertyChangedFor(nameof(CanReorder))]
     public partial TaskSortMode SortMode { get; set; }
 
     /// <summary>The sort dropdown shows only on standard (flat) lists — the 중요도 / 완료한 일 views carry
@@ -218,22 +212,12 @@ public partial class TaskListViewModel : ObservableObject
     {
         TaskSortMode.Name => "이름순",
         TaskSortMode.Priority => "중요도순",
-        TaskSortMode.Manual => "직접 정렬",
         _ => "날짜순",
     };
 
     public bool IsSortByDate => SortMode == TaskSortMode.Date;
     public bool IsSortByName => SortMode == TaskSortMode.Name;
     public bool IsSortByPriority => SortMode == TaskSortMode.Priority;
-    public bool IsSortManual => SortMode == TaskSortMode.Manual;
-
-    /// <summary>
-    /// Whether rows on this list may be reordered. Only 직접 정렬 qualifies: every other mode recomputes the
-    /// order on each refresh, so a move would write a new rank and then be immediately overruled — the row
-    /// would spring back and the write would be invisible. The sectioned views (중요도 / 완료한 일) are out
-    /// for the same reason, via <see cref="IsStandardList"/>.
-    /// </summary>
-    public bool CanReorder => IsStandardList && IsSortManual;
 
     [ObservableProperty]
     public partial bool IsTaskGroupMode { get; set; }
@@ -467,6 +451,13 @@ public partial class TaskListViewModel : ObservableObject
         OffscreenTaskCreated?.Invoke();
     }
 
+    /// <summary>The current day in this list's time zone — the same reference the index uses to decide
+    /// Today/Upcoming/overdue membership, so a row's relative label and overdue tint agree with the query
+    /// that put it there. Read per row rather than cached: the midnight refresh reloads through
+    /// <see cref="LoadAsync"/>, and reading the clock keeps that reload from needing to invalidate state.</summary>
+    private DateOnly CurrentDay()
+        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone).DateTime);
+
     /// <summary>
     /// The wall-clock delay from now until just after the next local day boundary (00:00 in the list's own
     /// time zone, plus a one-second cushion so a timer firing on the tick lands inside the new day). The
@@ -476,13 +467,6 @@ public partial class TaskListViewModel : ObservableObject
     /// reloads unticked. Computed against the same clock + zone the index uses for "today", so the refresh
     /// fires exactly when the index's <c>IsAheadOfSchedule</c> comparison flips.
     /// </summary>
-    /// <summary>The current day in this list's time zone — the same reference the index uses to decide
-    /// Today/Upcoming/overdue membership, so a row's relative label and overdue tint agree with the query
-    /// that put it there. Read per row rather than cached: the midnight refresh reloads through
-    /// <see cref="LoadAsync"/>, and reading the clock keeps that reload from needing to invalidate state.</summary>
-    private DateOnly CurrentDay()
-        => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone).DateTime);
-
     public TimeSpan DelayUntilNextDay()
     {
         var nowLocal = TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), _timeZone);
@@ -939,66 +923,6 @@ public partial class TaskListViewModel : ObservableObject
 
     /// <summary>Active tags, for the row context menu's tag submenu.</summary>
     public Task<IReadOnlyList<TagListItem>> GetTagsAsync() => _index.GetTagsAsync();
-
-    /// <summary>
-    /// Moves a row to a new position in the list and persists the new order. Mirrors the pane's
-    /// group/tag reorder: the collection moves first so the UI answers immediately, the rank service
-    /// re-ranks only the moved record, and the list reloads from the index so the persisted order — the
-    /// source of truth — has the final say.
-    /// </summary>
-    /// <remarks>
-    /// A no-op unless <see cref="CanReorder"/>. Under a computed sort the move would write a rank the very
-    /// next refresh overrules, so the row would visibly spring back; refusing here is what keeps the
-    /// affordance honest rather than letting it half-work.
-    /// </remarks>
-    [RelayCommand]
-    public async Task ReorderTaskAsync(ReorderRequest request)
-    {
-        if (!CanReorder) return;
-        if (request.OldIndex == request.NewIndex) return;
-        if ((uint)request.OldIndex >= (uint)Tasks.Count || (uint)request.NewIndex >= (uint)Tasks.Count) return;
-
-        await _reorderGate.WaitAsync();
-        try
-        {
-            Tasks.Move(request.OldIndex, request.NewIndex);
-            var moved = Tasks[request.NewIndex];
-            var ordered = Tasks.Select(row => new RankedItem(row.Id, row.SortOrder)).ToList();
-            try { await _reorder.MoveAsync<TaskItem>(moved.Id, ordered); }
-            finally { await LoadAsync(); }
-        }
-        finally { _reorderGate.Release(); }
-    }
-
-    /// <summary>
-    /// Nudges a row <paramref name="offset"/> positions (−1 up, +1 down) — the keyboard path to reordering.
-    /// Resolving the row by id here rather than in the View keeps the index arithmetic, and its clamping at
-    /// the list ends, on the testable side of the boundary.
-    /// </summary>
-    /// <returns>True when a move was requested; false when the row is unknown, the list is not manually
-    /// ordered, or the row is already at the end it was pushed toward.</returns>
-    public async Task<bool> MoveTaskByOffsetAsync(Guid taskId, int offset)
-    {
-        if (!CanReorder || offset == 0) return false;
-
-        var oldIndex = IndexOfRow(taskId);
-        if (oldIndex < 0) return false;
-
-        var newIndex = oldIndex + offset;
-        // Silently at-rest at the boundary: a row at the top pushed further up has nowhere to go, and
-        // reporting that as a failure would make the caller surface an error for a normal key press.
-        if ((uint)newIndex >= (uint)Tasks.Count) return false;
-
-        await ReorderTaskAsync(new ReorderRequest(oldIndex, newIndex));
-        return true;
-    }
-
-    private int IndexOfRow(Guid taskId)
-    {
-        for (var i = 0; i < Tasks.Count; i++)
-            if (Tasks[i].Id == taskId) return i;
-        return -1;
-    }
 
     /// <summary>Moves a task into a group, or to the Cue home when <paramref name="taskGroupId"/> is
     /// null, then refreshes. A no-op if the task is gone or already there.</summary>

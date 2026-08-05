@@ -460,9 +460,6 @@
                         <RadioMenuFlyoutItem Tag="Date" Text="날짜순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByDate, Mode=OneWay}" />
                         <RadioMenuFlyoutItem Tag="Name" Text="이름순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByName, Mode=OneWay}" />
                         <RadioMenuFlyoutItem Tag="Priority" Text="중요도순" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortByPriority, Mode=OneWay}" />
-                        <!-- The only mode that lets a row be moved: every other one recomputes the order on
-                             the next refresh and would overrule the move. -->
-                        <RadioMenuFlyoutItem Tag="Manual" Text="직접 정렬" GroupName="SortMode" Click="SortOption_Click" IsChecked="{x:Bind ViewModel.IsSortManual, Mode=OneWay}" />
                     </MenuFlyout>
                 </DropDownButton.Flyout>
             </DropDownButton>
@@ -501,7 +498,6 @@
                 <ScrollViewer behaviors:ScrollBarAutoHide.IsEnabled="True" Visibility="{x:Bind ViewModel.IsStandardList, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <StackPanel>
                         <ItemsRepeater
-                            x:Name="TaskRepeater"
                             ElementClearing="TaskRepeater_ElementClearing"
                             ElementPrepared="TaskRepeater_ElementPrepared"
                             ItemTemplate="{StaticResource TaskRowTemplate}"

@@ -94,121 +94,6 @@ public sealed class ViewModelRegressionTests
         Assert.True(row.IsOverdue);
     }
 
-    /// <summary>Builds a list of manually ordered tasks named a, b, c… and returns its view model.</summary>
-    private static async Task<TaskListViewModel> ManualListAsync(IndexedTaskStore store, TimeProvider clock, params string[] titles)
-    {
-        var reorder = new ReorderService(store);
-        foreach (var title in titles)
-            await store.SaveAsync(new TaskItem { Title = title, SortOrder = reorder.AppendRank(await RanksAsync(store)) });
-
-        var vm = new TaskListViewModel(
-            store, store, new KoreanDateParser(), reorder, new RecurringTaskService(store),
-            clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(),
-            listPreferences: new StubListDisplayPreferences(sortMode: TaskSortMode.Manual));
-        vm.SetNavigation(new TaskListNavigation(TaskListMode.AllTasks));
-        await vm.LoadCommand.ExecuteAsync(null);
-        return vm;
-
-        static async Task<IEnumerable<string?>> RanksAsync(IndexedTaskStore s)
-            => (await s.GetAllAsync<TaskItem>()).Select(t => t.SortOrder);
-    }
-
-    [Fact]
-    public async Task Reorder_MovesARowAndPersistsTheNewOrder()
-    {
-        using var temp = new TempDirectory();
-        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
-        await using var store = await IndexedTaskStore.OpenAsync(
-            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
-            clock, TimeZoneInfo.Utc);
-        var vm = await ManualListAsync(store, clock, "a", "b", "c");
-        Assert.Equal(new[] { "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
-
-        await vm.ReorderTaskCommand.ExecuteAsync(new ReorderRequest(0, 2));
-
-        // The reload after the move re-reads the index, so this is the persisted order, not the optimistic
-        // collection move — which is exactly the assertion worth making.
-        Assert.Equal(new[] { "b", "c", "a" }, vm.Tasks.Select(r => r.Title));
-    }
-
-    /// <summary>
-    /// Under a computed sort the ordering is recomputed on every refresh, so a move would write a rank and
-    /// then be immediately overruled — the row would spring back. The command has to decline rather than
-    /// half-work.
-    /// </summary>
-    [Theory]
-    [InlineData(TaskSortMode.Date)]
-    [InlineData(TaskSortMode.Name)]
-    [InlineData(TaskSortMode.Priority)]
-    public async Task Reorder_IsRefusedUnderAComputedSort(TaskSortMode mode)
-    {
-        using var temp = new TempDirectory();
-        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
-        await using var store = await IndexedTaskStore.OpenAsync(
-            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
-            clock, TimeZoneInfo.Utc);
-        var vm = await ManualListAsync(store, clock, "a", "b", "c");
-
-        await vm.SetSortModeCommand.ExecuteAsync(mode);
-        Assert.False(vm.CanReorder);
-
-        var before = vm.Tasks.Select(r => r.Title).ToArray();
-        await vm.ReorderTaskCommand.ExecuteAsync(new ReorderRequest(0, 2));
-        Assert.Equal(before, vm.Tasks.Select(r => r.Title));
-
-        // …and the keyboard path refuses through the same gate rather than reporting a move it never made.
-        Assert.False(await vm.MoveTaskByOffsetAsync(vm.Tasks[0].Id, 1));
-    }
-
-    [Fact]
-    public async Task Reorder_ByKeyboardOffset_StopsAtTheListEnds()
-    {
-        using var temp = new TempDirectory();
-        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
-        await using var store = await IndexedTaskStore.OpenAsync(
-            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
-            clock, TimeZoneInfo.Utc);
-        var vm = await ManualListAsync(store, clock, "a", "b", "c");
-
-        var first = vm.Tasks[0].Id;
-        Assert.False(await vm.MoveTaskByOffsetAsync(first, -1));      // already at the top
-        Assert.Equal(new[] { "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
-
-        Assert.True(await vm.MoveTaskByOffsetAsync(first, 1));
-        Assert.Equal(new[] { "b", "a", "c" }, vm.Tasks.Select(r => r.Title));
-
-        var last = vm.Tasks[2].Id;
-        Assert.False(await vm.MoveTaskByOffsetAsync(last, 1));        // already at the bottom
-        Assert.Equal(new[] { "b", "a", "c" }, vm.Tasks.Select(r => r.Title));
-
-        // An id that is not on this list is not a move either.
-        Assert.False(await vm.MoveTaskByOffsetAsync(Guid.NewGuid(), 1));
-    }
-
-    /// <summary>Walking a row several steps must keep working — each move re-ranks against the order the
-    /// previous one persisted, which is what a held-down chord does.</summary>
-    [Fact]
-    public async Task Reorder_SurvivesRepeatedSteps()
-    {
-        using var temp = new TempDirectory();
-        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero));
-        await using var store = await IndexedTaskStore.OpenAsync(
-            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
-            clock, TimeZoneInfo.Utc);
-        var vm = await ManualListAsync(store, clock, "a", "b", "c", "d");
-
-        var moved = vm.Tasks[3].Id;                                   // "d"
-        for (var i = 0; i < 3; i++)
-            Assert.True(await vm.MoveTaskByOffsetAsync(moved, -1));
-
-        Assert.Equal(new[] { "d", "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
-        Assert.False(await vm.MoveTaskByOffsetAsync(moved, -1));
-
-        // The order came back from the index each time, so it is what a fresh list would show too.
-        await vm.LoadCommand.ExecuteAsync(null);
-        Assert.Equal(new[] { "d", "a", "b", "c" }, vm.Tasks.Select(r => r.Title));
-    }
-
     [Fact]
     public async Task DetailSavePreservesWhenTime()
     {
@@ -2544,14 +2429,11 @@ public sealed class ViewModelRegressionTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class StubListDisplayPreferences(
-        bool keepCompletedForToday = false,
-        bool showWeekNumber = false,
-        TaskSortMode sortMode = TaskSortMode.Date) : IListDisplayPreferences
+    private sealed class StubListDisplayPreferences(bool keepCompletedForToday = false, bool showWeekNumber = false) : IListDisplayPreferences
     {
         public bool KeepCompletedForToday { get; } = keepCompletedForToday;
         public bool ShowWeekNumber { get; } = showWeekNumber;
-        public TaskSortMode SortMode { get; set; } = sortMode;
+        public TaskSortMode SortMode { get; set; } = TaskSortMode.Date;
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider

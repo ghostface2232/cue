@@ -37,10 +37,8 @@ public static class TaskListOrdering
                 .ThenBy(i => i.Priority)
                 .ThenBy(i => i.SortOrder, StringComparer.Ordinal)
                 .ToList(),
-            // 직접 정렬 (Manual) — and the defensive fallback for any unmapped mode: the stored fractional
-            // rank, the same ordinal/byte order SQLite's BINARY collation sorts by. Under Manual this is the
-            // user's own arrangement rather than merely the order tasks were added, which is what makes a
-            // reorder stick across a refresh.
+            // Defensive fallback for any unmapped mode: the stored fractional rank (the order tasks were
+            // added), the same ordinal/byte order SQLite's BINARY collation sorts by.
             _ => items
                 .OrderBy(i => i.SortOrder, StringComparer.Ordinal)
                 .ToList(),
