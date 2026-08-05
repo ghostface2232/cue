@@ -1,8 +1,13 @@
 name: CI
 
-# Runs the cross-platform test suite (Cue.Tests + its net10.0 project
-# references). The WinUI app project (Cue.csproj) targets net10.0-windows and is
-# intentionally not built here — only the testable, cross-platform layers are.
+# Two gates, because the repo has two halves:
+#   • test (ubuntu)  — the cross-platform suite: Cue.Tests + its net10.0 project references
+#                      (domain, storage, parsing, view models, and the linked notification services).
+#   • app (windows)  — the WinUI app project (Cue.csproj, net10.0-windows). Nothing else compiles its
+#                      XAML, page code-behind, converters, or the app manifest, so without this job a
+#                      broken binding or a bad markup edit first surfaced on a release tag's Windows
+#                      build. It also launches the built app once, since a XAML file that compiles can
+#                      still fail at startup (an unresolvable ThemeResource, a missing asset).
 on:
   pull_request:
     branches: [main]
@@ -59,3 +64,86 @@ jobs:
           name: test-results
           path: TestResults
           if-no-files-found: ignore
+
+  app:
+    name: App (WinUI + XAML)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # The real gate: this is the only place App.xaml, the pages, the converters, and
+      # Package.appxmanifest are compiled. Restore is left to the build so both halves see the same
+      # Platform/RuntimeIdentifier.
+      - name: Build Cue.csproj
+        run: dotnet build Cue.csproj --configuration Release -p:Platform=x64 --nologo
+
+      # A XAML file that fails to compile does not fail the build on its own — the XAML compiler can be
+      # skipped when its inputs aren't picked up. Assert the compiled markup actually exists, so this job
+      # can never pass by not compiling XAML at all.
+      - name: Verify compiled XAML
+        shell: pwsh
+        run: |
+          $xbf = @(Get-ChildItem -Path 'bin' -Filter *.xbf -Recurse -ErrorAction SilentlyContinue)
+          if ($xbf.Count -eq 0) { throw 'No compiled XAML (*.xbf) under bin — the XAML compiler did not run.' }
+          $names = @($xbf | ForEach-Object Name)
+          foreach ($page in @('App.xbf', 'MainWindow.xbf', 'TaskListPage.xbf', 'WeeklyTimelinePage.xbf')) {
+            if ($names -notcontains $page) { throw "Compiled XAML is missing $page." }
+          }
+          Write-Host ("Compiled {0} XAML files." -f $xbf.Count)
+
+      # Startup verification. Published exactly the way the GitHub channel ships (self-contained + WinAppSDK
+      # self-contained + unpackaged), so the app under test is the one users launch. ReadyToRun is off here:
+      # it only affects cold-start speed and roughly doubles the publish time.
+      - name: Publish (self-contained, unpackaged)
+        run: >-
+          dotnet publish Cue.csproj --configuration Release -r win-x64 -p:Platform=x64
+          -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true
+          -p:PublishTrimmed=false -p:PublishReadyToRun=false
+          --output dist/ci-smoke --nologo
+
+      # Launch it once and require that it survives startup. This catches what compilation cannot: a
+      # resource key that doesn't resolve, a missing bundled asset, a failure inside the storage/DI
+      # bootstrap. The app is left running for a moment and then killed — it never needs to be interacted
+      # with, only to still be alive.
+      - name: Smoke test app startup
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path 'dist/ci-smoke/Cue.exe'
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 30
+          if ($process.HasExited) {
+            throw "Cue exited during startup (exit code $($process.ExitCode))."
+          }
+          Stop-Process -Id $process.Id -Force
+          Write-Host 'Cue started and stayed alive.'
+
+      # The store opens at startup, so a successful launch must have created the data root — and must NOT
+      # have put the SQLite index inside it. The index is a per-device disposable cache and Documents is
+      # commonly redirected into OneDrive, so an index.db under the data root would be a synced database
+      # file, which the storage invariants forbid.
+      - name: Verify index stayed out of the data root
+        shell: pwsh
+        run: |
+          $root = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Cue'
+          if (-not (Test-Path $root)) { throw "The data root '$root' was not created at startup." }
+          $stray = @(Get-ChildItem -Path $root -Filter *.db -Recurse -ErrorAction SilentlyContinue)
+          if ($stray.Count -gt 0) {
+            throw "SQLite index found inside the data root: $(($stray | ForEach-Object FullName) -join ', ')"
+          }
+          $index = @(Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Cue') -Filter 'index-*.db' -ErrorAction SilentlyContinue)
+          if ($index.Count -eq 0) { throw 'No index database under %LOCALAPPDATA%\Cue.' }
+          Write-Host ('Index: ' + (($index | ForEach-Object FullName) -join ', '))

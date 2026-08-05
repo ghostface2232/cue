@@ -42,7 +42,8 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     /// rebuilds the index from the files. The single entry point an app uses at startup. The index
     /// lives at <see cref="FileTaskStoreOptions.IndexPath"/> when set, else co-located at
     /// <c>{root}/index.db</c> — keep it local and off any synced data root, since it is a per-device
-    /// cache. <paramref name="timeProvider"/>/<paramref name="timeZone"/> define the "today" the
+    /// cache (<see cref="FileTaskStoreOptions.CreateDefault"/> pins it under LocalAppData for exactly
+    /// that reason). <paramref name="timeProvider"/>/<paramref name="timeZone"/> define the "today" the
     /// time-axis views compare against.
     /// </summary>
     public static async Task<IndexedTaskStore> OpenAsync(
@@ -54,6 +55,12 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         ArgumentNullException.ThrowIfNull(options);
 
         var indexPath = options.IndexPath ?? Path.Combine(options.RootPath, "index.db");
+
+        // Create the data root here rather than relying on the index database to do it: with the index
+        // pinned to local storage the two paths no longer share a parent, so nothing else would create
+        // the root until the first save.
+        Directory.CreateDirectory(options.RootPath);
+
         var files = new FileTaskStore(options, timeProvider);
         var index = new SqliteTaskIndex(indexPath, timeProvider, timeZone);
         var store = new IndexedTaskStore(files, index);

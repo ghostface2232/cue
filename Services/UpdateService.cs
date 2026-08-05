@@ -99,6 +99,9 @@ public sealed class UpdateService
             throw new UpdateException("업데이트 서버에 연결하지 못했어요. 네트워크 연결을 확인해 주세요.", exception);
         }
 
+        // Scoped from here on: the response owns a live connection, and every path below can throw.
+        using var scopedResponse = response;
+
         // No published, non-draft release yet → nothing to offer (not an error).
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             return new UpdateCheckResult(current, null, false, null, null, 0);
@@ -123,10 +126,36 @@ public sealed class UpdateService
         return Parse(body, current);
     }
 
-    private static UpdateCheckResult Parse(string body, Version current)
+    /// <summary>
+    /// Reads the release JSON into a result. Every failure here is a user-facing
+    /// <see cref="UpdateException"/>, never a raw parse exception: the settings page's entry point is an
+    /// <c>async void</c> handler that catches only <see cref="UpdateException"/>, so anything else reaches
+    /// the UI thread as an unhandled exception. A success status is no guarantee of a well-formed body —
+    /// a captive portal or an intercepting proxy answers 200 with its own HTML, and a truncated response
+    /// is malformed JSON — so <see cref="JsonDocument.Parse(string, JsonDocumentOptions)"/> and the
+    /// element reads below are wrapped rather than trusted.
+    /// </summary>
+    internal static UpdateCheckResult Parse(string body, Version current)
+    {
+        try
+        {
+            return ParseCore(body, current);
+        }
+        catch (Exception exception) when (exception is JsonException or FormatException or InvalidOperationException)
+        {
+            throw new UpdateException("업데이트 정보를 읽지 못했어요. 잠시 후 다시 시도해 주세요.", exception);
+        }
+    }
+
+    private static UpdateCheckResult ParseCore(string body, Version current)
     {
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
+
+        // A well-formed JSON body that isn't an object (GitHub always returns one) would make every
+        // TryGetProperty below throw InvalidOperationException; reject it as unreadable up front.
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new JsonException("The release response is not a JSON object.");
 
         var tag = root.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
         if (string.IsNullOrEmpty(tag) || !Version.TryParse(tag.TrimStart('v', 'V'), out var latest))

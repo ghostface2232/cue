@@ -1004,7 +1004,7 @@ public sealed partial class WeeklyTimelinePage : Page
                 row.Children.Add(new FontIcon
                 {
                     FontSize = 13,
-                    Glyph = item.IsChecked ? "" : "",
+                    Glyph = item.IsChecked ? "" : "", // CheckMark / unchecked box
                     Foreground = Cue.Services.ThemeResources.Brush(item.IsChecked ? "CueTimelineCompletedBrush" : "CueTimelineMutedBrush"),
                 });
                 row.Children.Add(new TextBlock
