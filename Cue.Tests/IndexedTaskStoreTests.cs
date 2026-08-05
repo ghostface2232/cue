@@ -831,6 +831,62 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         Assert.Contains(await store.GetTodayAsync(), t => t.Id == task.Id);
     }
 
+    /// <summary>
+    /// The upgrade path. An install that predates a configured index path already has a database sitting
+    /// in the data root; pointing the new cache elsewhere satisfies the invariant for the new file while
+    /// leaving the old one in what is commonly a OneDrive-redirected folder. Opening with an out-of-root
+    /// index must take the leftover (and its SQLite sidecars) with it.
+    /// </summary>
+    [Fact]
+    public async Task Open_DeletesTheLegacyCoLocatedIndex_WhenTheIndexMovedOutOfTheDataRoot()
+    {
+        var dataRoot = NewRoot();
+        var indexDir = NewRoot();
+        Directory.CreateDirectory(dataRoot);
+
+        // Stand in for the database (and write-ahead log) an older build left in the data root.
+        var legacy = Path.Combine(dataRoot, "index.db");
+        await File.WriteAllTextAsync(legacy, "legacy cache");
+        await File.WriteAllTextAsync(legacy + "-wal", "legacy wal");
+
+        var indexPath = Path.Combine(indexDir, "index-abc123.db");
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = dataRoot, IndexPath = indexPath },
+            new MutableTimeProvider(Now), TimeZoneInfo.Utc);
+
+        Assert.False(File.Exists(legacy));
+        Assert.False(File.Exists(legacy + "-wal"));
+        Assert.True(File.Exists(indexPath));
+
+        // The purge only removed a disposable cache: the store is fully usable, rebuilt from the files.
+        var task = new TaskItem { Title = "업그레이드 이후", When = OnDay(Today) };
+        await store.SaveAsync(task);
+        Assert.Contains(await store.GetTodayAsync(), t => t.Id == task.Id);
+    }
+
+    /// <summary>The guard on the purge: when the index <i>is</i> the co-located one, opening must not
+    /// delete the database it is about to use.</summary>
+    [Fact]
+    public async Task Open_KeepsTheCoLocatedIndex_WhenItIsTheConfiguredOne()
+    {
+        var root = NewRoot();
+
+        await using (var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = root }, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
+        {
+            await store.SaveAsync(new TaskItem { Title = "동일 위치 색인", When = OnDay(Today) });
+        }
+
+        var coLocated = Path.Combine(root, "index.db");
+        Assert.True(File.Exists(coLocated));
+
+        // Reopening the same root must not treat its own database as a leftover.
+        await using var reopened = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = root }, new MutableTimeProvider(Now), TimeZoneInfo.Utc);
+        Assert.True(File.Exists(coLocated));
+        Assert.Single(await reopened.GetTodayAsync());
+    }
+
     [Fact]
     public async Task Save_NormalizesMissingDeletedAndDuplicateReferences()
     {

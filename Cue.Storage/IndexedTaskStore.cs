@@ -60,6 +60,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         // pinned to local storage the two paths no longer share a parent, so nothing else would create
         // the root until the first save.
         Directory.CreateDirectory(options.RootPath);
+        PurgeLegacyCoLocatedIndex(options.RootPath, indexPath);
 
         var files = new FileTaskStore(options, timeProvider);
         var index = new SqliteTaskIndex(indexPath, timeProvider, timeZone);
@@ -67,6 +68,55 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await store.ResumeContainerDeletionsAsync(cancellationToken).ConfigureAwait(false);
         return store;
+    }
+
+    /// <summary>
+    /// Deletes the co-located <c>{root}/index.db</c> left behind by installs that predate a configured
+    /// <see cref="FileTaskStoreOptions.IndexPath"/>. Without this, an upgrade quietly satisfies the new
+    /// invariant for its own cache while the old monolithic database stays in the data root, where a
+    /// OneDrive-redirected Documents folder keeps syncing it — the exact file the invariant exists to
+    /// keep out of a synced folder. Deleting it is safe precisely because the index is disposable:
+    /// nothing in it exists outside the record files.
+    /// </summary>
+    /// <remarks>
+    /// Best effort by design — a locked or unreadable leftover must never stop the app from opening; the
+    /// next launch retries. The same-path guard biases toward <i>not</i> deleting (an unparseable path
+    /// compares equal), so it can never remove the database actually in use.
+    /// </remarks>
+    private static void PurgeLegacyCoLocatedIndex(string rootPath, string indexPath)
+    {
+        var legacy = Path.Combine(rootPath, "index.db");
+        if (IsSamePath(legacy, indexPath))
+            return;
+
+        // SQLite leaves its write-ahead log and shared-memory sidecars next to the database; a stray
+        // "index.db-wal" is the same synced-file problem in miniature, so they go with it.
+        foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
+        {
+            try
+            {
+                var path = legacy + suffix;
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Leave it for the next launch rather than failing startup over a disposable cache.
+            }
+        }
+    }
+
+    private static bool IsSamePath(string left, string right)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return true; // Can't tell them apart — treat as the live index and leave it alone.
+        }
     }
 
     /// <summary>
