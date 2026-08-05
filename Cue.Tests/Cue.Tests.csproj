@@ -35,6 +35,7 @@
     <Compile Include="..\Services\NotificationScheduler.cs" Link="AppServices\NotificationScheduler.cs" />
     <Compile Include="..\Services\ToastActivationPayload.cs" Link="AppServices\ToastActivationPayload.cs" />
     <Compile Include="..\Services\RecurringNotificationSource.cs" Link="AppServices\RecurringNotificationSource.cs" />
+    <Compile Include="..\Services\ToastCompletionService.cs" Link="AppServices\ToastCompletionService.cs" />
     <!-- Same idea for the updater: its release-response parsing is pure text→result logic with no WinUI
          dependency, and it is what decides whether a malformed body reaches the settings page's
          async void handler as an unhandled exception. -->
