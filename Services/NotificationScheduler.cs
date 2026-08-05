@@ -15,13 +15,28 @@ public sealed record ScheduledNotification(
     ReminderTiming Reminder,
     string CompletionArguments);
 
+/// <summary>What one recurring source contributes to a reconcile pass.</summary>
+/// <param name="Expected">The occurrence toasts that should be registered in the rolling window —
+/// windowed by delivery time, exactly like the one-off half of the expected set.</param>
+/// <param name="LiveTags">Every occurrence tag whose cycle is still unresolved, <i>including</i> cycles
+/// whose toast has already been delivered and therefore no longer appears in <paramref name="Expected"/>.
+/// This is the occurrence counterpart of the live task-tag set: the scheduler sweeps a delivered toast
+/// out of the notification center once its tag is absent here, which is what retires the reminder for a
+/// cycle the user has since completed, skipped, or deleted.</param>
+public sealed record RecurringNotificationSet(
+    IReadOnlyList<ScheduledNotification> Expected,
+    IReadOnlyCollection<string> LiveTags);
+
 /// <summary>
-/// Extension seam for recurring occurrences. The foundation scheduler excludes recurring tasks; the
-/// next step can contribute occurrence notifications here without changing one-off reconciliation.
+/// Extension seam for recurring occurrences. The foundation scheduler excludes recurring tasks; a
+/// recurring source contributes occurrence notifications here without changing one-off reconciliation.
+/// Because an occurrence's liveness is per-cycle knowledge only the source has (the series record holds
+/// one rule, not a row per cycle), the source also reports which occurrence tags are still live so the
+/// scheduler can retire the rest — see <see cref="RecurringNotificationSet"/>.
 /// </summary>
 public interface IRecurringNotificationSource
 {
-    Task<IReadOnlyList<ScheduledNotification>> GetExpectedAsync(
+    Task<RecurringNotificationSet> GetExpectedAsync(
         DateTimeOffset now,
         DateTimeOffset windowEnd,
         CancellationToken cancellationToken = default);
@@ -135,7 +150,7 @@ public sealed class NotificationScheduler : IAsyncDisposable
             return new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
 
         var candidates = await ReadCandidatesAsync(cancellationToken).ConfigureAwait(false);
-        return await BuildExpectedCoreAsync(candidates, cancellationToken).ConfigureAwait(false);
+        return (await BuildExpectedCoreAsync(candidates, cancellationToken).ConfigureAwait(false)).Expected;
     }
 
     /// <summary>Queries the index for every task that could plausibly deliver inside the rolling window.
@@ -152,12 +167,15 @@ public sealed class NotificationScheduler : IAsyncDisposable
     }
 
     /// <summary>Derives the expected set from an already-queried candidate list, so
-    /// <see cref="ReconcileAsync"/> can hit the index once and reuse the result.</summary>
-    private async Task<IReadOnlyDictionary<string, ScheduledNotification>> BuildExpectedCoreAsync(
+    /// <see cref="ReconcileAsync"/> can hit the index once and reuse the result. The live occurrence tags
+    /// the recurring sources report travel out with it, since the same pass is what produces them.</summary>
+    private async Task<(IReadOnlyDictionary<string, ScheduledNotification> Expected, HashSet<string> LiveOccurrenceTags)>
+        BuildExpectedCoreAsync(
         IReadOnlyList<ReminderCandidate> candidates,
         CancellationToken cancellationToken)
     {
         var expected = new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
+        var liveOccurrenceTags = new HashSet<string>(StringComparer.Ordinal);
 
         var now = _clock.GetUtcNow();
         var windowEnd = now + RollingWindow;
@@ -190,14 +208,15 @@ public sealed class NotificationScheduler : IAsyncDisposable
 
         foreach (var source in _recurringSources)
         {
-            foreach (var notification in await source.GetExpectedAsync(now, windowEnd, cancellationToken)
-                         .ConfigureAwait(false))
-            {
+            var contribution = await source.GetExpectedAsync(now, windowEnd, cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var notification in contribution.Expected)
                 expected[notification.Tag] = notification;
-            }
+            foreach (var tag in contribution.LiveTags)
+                liveOccurrenceTags.Add(tag);
         }
 
-        return expected;
+        return (expected, liveOccurrenceTags);
     }
 
     /// <summary>Diffs expected records against OS tags and applies only required changes.</summary>
@@ -216,9 +235,13 @@ public sealed class NotificationScheduler : IAsyncDisposable
                 ? await _index.GetReminderTaskRefsAsync(cancellationToken).ConfigureAwait(false)
                 : (IReadOnlyList<ReminderTaskRef>)[];
 
-            var expected = enabled
-                ? await BuildExpectedCoreAsync(candidates, cancellationToken).ConfigureAwait(false)
-                : new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
+            IReadOnlyDictionary<string, ScheduledNotification> expected =
+                new Dictionary<string, ScheduledNotification>(StringComparer.Ordinal);
+            var liveOccurrenceTags = new HashSet<string>(StringComparer.Ordinal);
+            if (enabled)
+                (expected, liveOccurrenceTags) =
+                    await BuildExpectedCoreAsync(candidates, cancellationToken).ConfigureAwait(false);
+
             var actual = _toasts.GetScheduledTags()
                 .Where(IsManagedTag)
                 .ToHashSet(StringComparer.Ordinal);
@@ -236,14 +259,19 @@ public sealed class NotificationScheduler : IAsyncDisposable
             // above never sees them. A toast that has already fired and whose task is THEN completed or
             // deleted in-app is in neither `expected` (dropped) nor `actual` (already gone from the
             // queue) — its stale toast would linger in the notification center, showing a reminder for a
-            // task the user has resolved. Compare the notification center against live task truth so a
-            // resolved task's delivered toast is revoked too. Scoped to task tags: a delivered toast for
-            // a live, still-incomplete task is a legitimate reminder and must stay. Occurrence tags are
-            // left to the recurring source, which owns per-cycle liveness.
-            var liveTaskTags = BuildLiveTaskTags(liveRefs);
+            // task the user has resolved. Compare the notification center against live truth so a
+            // resolved task's delivered toast is revoked too, while a delivered toast for a still-open
+            // task stays: that one is a legitimate reminder.
+            //
+            // Both tag kinds are swept the same way, from the same idea of "live", each sourced where the
+            // knowledge is: a one-off's liveness is one indexed row (BuildLiveTaskTags), while a cycle's
+            // liveness is per-occurrence and only the recurring source can compute it — completing a cycle
+            // advances the series past it, so its tag simply stops being reported. Sweeping task tags alone
+            // left a completed cycle's delivered toast in the notification center forever.
+            var live = BuildLiveTaskTags(liveRefs);
+            live.UnionWith(liveOccurrenceTags);
             foreach (var tag in _toasts.GetHistoryTags()
-                         .Where(tag => tag.StartsWith(TaskTagPrefix, StringComparison.Ordinal) &&
-                                       !liveTaskTags.Contains(tag))
+                         .Where(tag => IsManagedTag(tag) && !live.Contains(tag))
                          .ToArray())
             {
                 _toasts.RemoveFromHistory(tag);
@@ -284,8 +312,9 @@ public sealed class NotificationScheduler : IAsyncDisposable
     }
 
     /// <summary>Tags for tasks that still warrant a visible notification — alive, not completed, carrying a
-    /// reminder, and non-recurring (recurring series use occurrence tags). A delivered toast whose tag is
-    /// absent here refers to a task the user has since resolved, so its notification-center entry is stale.
+    /// reminder, and non-recurring (recurring series use occurrence tags, which the recurring source
+    /// reports as its live set). A delivered toast whose tag is absent from the union of the two sets
+    /// refers to work the user has since resolved, so its notification-center entry is stale.
     /// Not windowed: a live task's tag stays "live" even after its delivery time passes, which is exactly
     /// the fired-but-unresolved reminder that must remain in the notification center.</summary>
     private static HashSet<string> BuildLiveTaskTags(IReadOnlyList<ReminderTaskRef> refs)

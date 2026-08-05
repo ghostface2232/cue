@@ -33,6 +33,57 @@ public sealed class FileTaskStoreOptionsTests : IDisposable
         Assert.Equal(Path.Combine(documents, "Cue-Beta"), options.RootPath);
     }
 
+    /// <summary>
+    /// The index must never be co-located with the data root by default. The default root is Documents,
+    /// which Windows commonly redirects into OneDrive — a single database file rewritten on every save is
+    /// exactly the monolithic synced unit the invariants forbid, and it is the first thing to break when
+    /// the data root itself becomes a cloud folder.
+    /// </summary>
+    [Fact]
+    public void CreateDefault_PinsIndexToLocalAppData_NotTheDataRoot()
+    {
+        var options = FileTaskStoreOptions.CreateDefault();
+
+        Assert.NotNull(options.IndexPath);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        Assert.StartsWith(
+            Path.Combine(localAppData, "Cue") + Path.DirectorySeparatorChar,
+            options.IndexPath!,
+            StringComparison.Ordinal);
+        Assert.False(
+            options.IndexPath!.StartsWith(options.RootPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
+            $"Index '{options.IndexPath}' must not live inside the data root '{options.RootPath}'.");
+    }
+
+    /// <summary>Two data roots on one machine each need their own database rather than fighting over one,
+    /// and the same root must resolve to the same file on every launch (so the hash cannot be
+    /// <c>string.GetHashCode</c>, which .NET randomizes per process).</summary>
+    [Fact]
+    public void DefaultIndexPath_IsPerRoot_AndStable()
+    {
+        var first = FileTaskStoreOptions.DefaultIndexPath(Path.Combine("C:", "data", "cue-a"));
+        var second = FileTaskStoreOptions.DefaultIndexPath(Path.Combine("C:", "data", "cue-b"));
+
+        Assert.NotEqual(first, second);
+        Assert.Equal(first, FileTaskStoreOptions.DefaultIndexPath(Path.Combine("C:", "data", "cue-a")));
+        Assert.Equal(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cue"),
+            Path.GetDirectoryName(first));
+    }
+
+    /// <summary>A trailing separator and a case difference are the same Windows path, so they must not
+    /// produce two databases for one data root.</summary>
+    [Fact]
+    public void DefaultIndexPath_NormalizesCaseAndTrailingSeparator()
+    {
+        var plain = FileTaskStoreOptions.DefaultIndexPath(Path.Combine("C:", "Data", "Cue"));
+        var trailing = FileTaskStoreOptions.DefaultIndexPath(Path.Combine("C:", "Data", "Cue") + Path.DirectorySeparatorChar);
+        var lowercase = FileTaskStoreOptions.DefaultIndexPath(Path.Combine("C:", "data", "cue"));
+
+        Assert.Equal(plain, trailing);
+        Assert.Equal(plain, lowercase);
+    }
+
     [Fact]
     public async Task OpenAsync_CreatesRoot_AndInitializes_WhenRootMissing()
     {

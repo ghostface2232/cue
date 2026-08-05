@@ -25,6 +25,15 @@ namespace Cue.Services;
 /// only its reservation. Completing a cycle never touches the rest of the series.
 /// </para>
 /// <para>
+/// The expected set is windowed by <i>delivery</i> time, so an occurrence whose toast has already fired
+/// has left it — which is why the source also reports <see cref="RecurringNotificationSet.LiveTags"/>: the
+/// tags of every projected cycle, delivered or not. A delivered toast is only in the notification center,
+/// never in the schedule queue, so the scheduler's ordinary diff cannot see it; that live set is what tells
+/// the scheduler a fired cycle is still unresolved (keep it) or has been completed, skipped, or deleted
+/// (retire it). It is deliberately un-windowed at the near end for the same reason the one-off live-task
+/// set is: a fired-but-unfinished reminder must survive its own delivery time.
+/// </para>
+/// <para>
 /// An RRULE is not indexed (a list row only needs the <c>is_recurring</c> boolean), so unlike the one-off
 /// half of the loop this source does have to read record files. It reads only the ones it needs: the index
 /// names the live, reminder-bearing recurring series and those files are loaded by id, rather than
@@ -49,7 +58,7 @@ internal sealed class RecurringNotificationSource : IRecurringNotificationSource
         _recurrence = recurrence ?? throw new ArgumentNullException(nameof(recurrence));
     }
 
-    public async Task<IReadOnlyList<ScheduledNotification>> GetExpectedAsync(
+    public async Task<RecurringNotificationSet> GetExpectedAsync(
         DateTimeOffset now, DateTimeOffset windowEnd, CancellationToken cancellationToken = default)
     {
         // The index names the series worth looking at (alive, open, reminder not None); the per-task guard
@@ -70,11 +79,14 @@ internal sealed class RecurringNotificationSource : IRecurringNotificationSource
 
         var projectionEnd = windowEnd + MaxReminderLead;
         var expected = new List<ScheduledNotification>();
+        var liveTags = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var task in tasks)
         {
             // Only recurring series belong here — one-off tasks are the base scheduler's job. All-day series
             // carry no individual toast (the opt-in daily briefing covers them); None disables the series.
+            // A series excluded here reports no live tags either, so switching its reminder off (or ending
+            // or deleting the series) also retires whatever it had already delivered.
             if (task.IsDeleted || task.IsCompleted || task.Recurrence is null ||
                 task.Reminder == ReminderTiming.None || task.When.IsAllDay)
             {
@@ -85,15 +97,26 @@ internal sealed class RecurringNotificationSource : IRecurringNotificationSource
                 ? name
                 : null;
 
+            // The projection starts at the series' *current* cycle, so every cycle it yields is one the
+            // series has not advanced past yet — that is exactly the live set. Completing or skipping a
+            // cycle moves the current cycle forward, and the retired cycle stops being projected.
             foreach (var occurrence in _recurrence.ProjectOccurrencesInWindow(task.Recurrence, task.When, projectionEnd))
             {
                 var deliveryTime = ReminderTimeCalculator.Calculate(occurrence, task.Reminder);
-                if (deliveryTime is null || deliveryTime.Value <= now || deliveryTime.Value > windowEnd)
+                if (deliveryTime is null)
                     continue;
 
                 // The occurrence's stable id — the same one CompleteAsync derives — so a completed cycle's
                 // tag leaves the expected set once the series advances past it.
                 var occurrenceId = RecurrenceOccurrenceId.From(task.Id, occurrence.Date!.Value.Utc);
+                var tag = NotificationScheduler.TagForOccurrence(occurrenceId);
+
+                // Live regardless of the window: a cycle whose toast already fired is no longer schedulable
+                // but is still unresolved, so its notification-center entry must be kept.
+                liveTags.Add(tag);
+
+                if (deliveryTime.Value <= now || deliveryTime.Value > windowEnd)
+                    continue;
 
                 // Pre-reminders show the actual occurrence time on the toast's second line; an at-time
                 // reminder fires at the occurrence itself, so there is nothing extra to display.
@@ -103,7 +126,7 @@ internal sealed class RecurringNotificationSource : IRecurringNotificationSource
 
                 expected.Add(new ScheduledNotification(
                     deliveryTime.Value,
-                    NotificationScheduler.TagForOccurrence(occurrenceId),
+                    tag,
                     task.Title,
                     groupName,
                     scheduledTime,
@@ -113,6 +136,6 @@ internal sealed class RecurringNotificationSource : IRecurringNotificationSource
             }
         }
 
-        return expected;
+        return new RecurringNotificationSet(expected, liveTags);
     }
 }

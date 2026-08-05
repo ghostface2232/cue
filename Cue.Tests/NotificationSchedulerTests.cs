@@ -426,6 +426,99 @@ public class NotificationSchedulerTests
         }
     }
 
+    /// <summary>
+    /// The occurrence counterpart of <see cref="Reconcile_KeepsFiredToastInHistory_WhenTaskStillPending"/>:
+    /// a cycle whose toast has fired but which the user has not performed yet is still a legitimate
+    /// reminder, so it must survive the notification-center sweep.
+    /// </summary>
+    [Fact]
+    public async Task Reconcile_KeepsFiredOccurrenceInHistory_WhenCycleStillPending()
+    {
+        // The current cycle sits an hour in the past, so its delivery time has passed: it is no longer in
+        // the expected set, exactly like a toast the OS has already handed to the notification center.
+        var task = DailyRecurringTask(Now.AddHours(-1));
+        var (scheduler, toasts, _, _) = CreateWithRecurring(task);
+        await using (scheduler)
+        {
+            var firedTag = NotificationScheduler.TagForOccurrence(
+                RecurrenceOccurrenceId.From(task.Id, task.When.Date!.Value.Utc));
+            toasts.Fire(firedTag);
+
+            await scheduler.ReconcileAsync();
+
+            Assert.DoesNotContain(firedTag, toasts.HistoryRemovedTags);
+            Assert.Contains(firedTag, toasts.GetHistoryTags());
+        }
+    }
+
+    /// <summary>
+    /// The gap this closes: a delivered occurrence toast is in neither the expected set (its delivery has
+    /// passed) nor the schedule queue (the OS moved it to the notification center), so the ordinary diff
+    /// cannot reach it. Performing the cycle advances the series past that occurrence, which drops its tag
+    /// from the recurring source's live set — and that is what retires the notification.
+    /// </summary>
+    [Fact]
+    public async Task Reconcile_RemovesFiredOccurrenceFromHistory_WhenCycleCompleted()
+    {
+        var task = DailyRecurringTask(Now.AddHours(-1));
+        var (scheduler, toasts, _, recurrence) = CreateWithRecurring(task);
+        await using (scheduler)
+        {
+            var firedTag = NotificationScheduler.TagForOccurrence(
+                RecurrenceOccurrenceId.From(task.Id, task.When.Date!.Value.Utc));
+            toasts.Fire(firedTag);
+            await scheduler.ReconcileAsync();
+            Assert.Contains(firedTag, toasts.GetHistoryTags());
+
+            await recurrence.CompleteAsync(task.Id, Now);
+            await scheduler.ReconcileAsync();
+
+            Assert.Contains(firedTag, toasts.HistoryRemovedTags);
+            Assert.DoesNotContain(firedTag, toasts.GetHistoryTags());
+            // The rest of the series is untouched — completing one cycle retires only that cycle.
+            Assert.NotEmpty(toasts.Scheduled);
+        }
+    }
+
+    [Fact]
+    public async Task Reconcile_RemovesFiredOccurrenceFromHistory_WhenSeriesDeleted()
+    {
+        var task = DailyRecurringTask(Now.AddHours(-1));
+        var (scheduler, toasts, _, _) = CreateWithRecurring(task);
+        await using (scheduler)
+        {
+            var firedTag = NotificationScheduler.TagForOccurrence(
+                RecurrenceOccurrenceId.From(task.Id, task.When.Date!.Value.Utc));
+            toasts.Fire(firedTag);
+            await scheduler.ReconcileAsync();
+
+            task.DeletedAt = Now;
+            await scheduler.ReconcileAsync();
+
+            Assert.DoesNotContain(firedTag, toasts.GetHistoryTags());
+            Assert.Empty(toasts.Scheduled);
+        }
+    }
+
+    /// <summary>The source's own contract: live tags cover every projected cycle, including the one whose
+    /// delivery has already passed and therefore isn't schedulable.</summary>
+    [Fact]
+    public async Task RecurringSource_ReportsLiveTagForAnAlreadyDeliveredCycle()
+    {
+        var task = DailyRecurringTask(Now.AddHours(-1));
+        var store = new FakeTaskStore([task], []);
+        var source = new RecurringNotificationSource(store, store, new RecurringTaskService(store));
+
+        var contribution = await source.GetExpectedAsync(Now, Now + NotificationScheduler.RollingWindow);
+
+        var firedTag = NotificationScheduler.TagForOccurrence(
+            RecurrenceOccurrenceId.From(task.Id, task.When.Date!.Value.Utc));
+        Assert.Contains(firedTag, contribution.LiveTags);
+        Assert.DoesNotContain(firedTag, contribution.Expected.Select(notification => notification.Tag));
+        // Every schedulable occurrence is live too — the live set is a superset of the expected set.
+        Assert.All(contribution.Expected, notification => Assert.Contains(notification.Tag, contribution.LiveTags));
+    }
+
     private static TaskItem TimedTask(DateTimeOffset when) => new()
     {
         Title = "알림 테스트",
