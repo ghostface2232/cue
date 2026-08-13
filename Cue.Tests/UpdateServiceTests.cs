@@ -34,6 +34,39 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public void Parse_NewerReleaseWithoutChecksum_RefusesUnverifiedUpdate()
+    {
+        var exception = Assert.Throws<UpdateException>(() => UpdateService.Parse(
+            """
+            {
+              "tag_name": "v1.2.0",
+              "assets": [
+                { "name": "CueSetup-win-x64.exe", "browser_download_url": "https://example.test/setup.exe", "size": 1234 }
+              ]
+            }
+            """,
+            Current));
+
+        Assert.Contains("검증", exception.Message);
+    }
+
+    [Fact]
+    public async Task Download_WithoutChecksum_RefusesBeforeFetchingInstaller()
+    {
+        var update = new UpdateCheckResult(
+            Current,
+            new Version(1, 2, 0),
+            true,
+            "https://example.invalid/setup.exe",
+            null,
+            1234);
+
+        var exception = await Assert.ThrowsAsync<UpdateException>(() => new UpdateService().DownloadAsync(update));
+
+        Assert.Contains("검증", exception.Message);
+    }
+
+    [Fact]
     public void Parse_UnparseableTag_ReportsNoUpdateRatherThanFailing()
     {
         var result = UpdateService.Parse("""{ "tag_name": "nightly" }""", Current);

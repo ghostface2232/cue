@@ -10,10 +10,10 @@ namespace Cue.Services;
 /// <param name="Current">The running app's version (from the assembly).</param>
 /// <param name="Latest">The latest published release's version, or null if none could be read.</param>
 /// <param name="UpdateAvailable">True only when <paramref name="Latest"/> is strictly newer than
-/// <paramref name="Current"/> and a downloadable installer asset was found.</param>
+/// <paramref name="Current"/> and both the installer and its checksum assets were found.</param>
 /// <param name="DownloadUrl">The installer asset's download URL (when an update is available).</param>
-/// <param name="Sha256Url">The matching ".sha256" checksum asset's URL, or null if the release does
-/// not carry one (older releases predate it — verification is then skipped).</param>
+/// <param name="Sha256Url">The matching ".sha256" checksum asset's URL. A newer release without one
+/// is rejected rather than offered without integrity verification.</param>
 /// <param name="Size">The installer asset's size in bytes (0 if unknown), used to drive progress.</param>
 public sealed record UpdateCheckResult(
     Version Current,
@@ -30,8 +30,8 @@ public sealed class UpdateException(string message, Exception? inner = null)
 
 /// <summary>
 /// Drives the in-app updater: queries the GitHub Releases API for the latest published release,
-/// compares it to the running version, downloads the installer asset (verifying its SHA-256 when the
-/// release publishes a checksum), and hands off to the silent installer.
+/// compares it to the running version, downloads the installer asset, requires and verifies its
+/// SHA-256, and hands off to the silent installer.
 ///
 /// The app is unpackaged + self-contained and installed per-user by an Inno Setup installer
 /// (CueSetup-win-x64.exe). Because a running Cue holds locks on its own files, the installer can't
@@ -187,14 +187,20 @@ public sealed class UpdateService
             }
         }
 
-        // Only offer the update when it's strictly newer AND we actually have an installer to fetch.
-        var available = latest > current && installerUrl is not null;
+        // Never downgrade integrity for a malformed release. Older releases without checksums are harmless
+        // because they are not candidates; a newer installer without its checksum is a publishing error and
+        // must surface instead of silently turning verification off.
+        if (latest > current && installerUrl is not null && checksumUrl is null)
+            throw new UpdateException("업데이트 검증 정보를 찾지 못했어요. 잠시 후 다시 시도해 주세요.");
+
+        // Only offer an update when it is strictly newer and both required assets are present.
+        var available = latest > current && installerUrl is not null && checksumUrl is not null;
         return new UpdateCheckResult(current, latest, available, installerUrl, checksumUrl, installerSize);
     }
 
-    /// <summary>Downloads the installer to a temp file, reporting fractional progress (0–1), then —
-    /// when the release published a checksum — verifies the file's SHA-256 against it, deleting the
-    /// download and throwing on mismatch. Returns the local installer path on success.</summary>
+    /// <summary>Downloads the installer to a temp file, reporting fractional progress (0–1), then verifies
+    /// the file's SHA-256 against the required checksum, deleting the download and throwing on any
+    /// verification failure. Returns the local installer path on success.</summary>
     public async Task<string> DownloadAsync(
         UpdateCheckResult update,
         IProgress<double>? progress = null,
@@ -202,6 +208,8 @@ public sealed class UpdateService
     {
         if (update.DownloadUrl is null)
             throw new UpdateException("내려받을 설치 파일을 찾지 못했어요.");
+        if (update.Sha256Url is null)
+            throw new UpdateException("업데이트 검증 정보를 찾지 못했어요. 잠시 후 다시 시도해 주세요.");
 
         // A per-run temp folder keeps the installer out of the way and avoids clobbering a prior download.
         var folder = Path.Combine(Path.GetTempPath(), "Cue-Update", Guid.NewGuid().ToString("N"));
@@ -218,8 +226,7 @@ public sealed class UpdateService
             throw new UpdateException("업데이트를 내려받지 못했어요. 네트워크 연결을 확인해 주세요.", exception);
         }
 
-        if (update.Sha256Url is not null)
-            await VerifyChecksumAsync(installerPath, update.Sha256Url, cancellationToken);
+        await VerifyChecksumAsync(installerPath, update.Sha256Url, cancellationToken);
 
         return installerPath;
     }
