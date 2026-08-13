@@ -28,6 +28,8 @@ public sealed partial class MainWindow : Window
     private const int MinWindowHeight = 540;
 
     private TaskListNavigation? _currentNavigation;
+    private readonly TaskCompletionSource _navigationReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _suppressSelectionNavigation;
     // The nav item shown just before the Settings page was opened, so its back button can return there.
     private NavigationViewItem? _backTargetItem;
     private readonly DialogService _dialogs;
@@ -255,18 +257,27 @@ public sealed partial class MainWindow : Window
 
     private async void NavView_Loaded(object sender, RoutedEventArgs e)
     {
-        await RunSafelyAsync(async () =>
+        try
         {
-            await ViewModel.LoadCommand.ExecuteAsync(null);
-            RebuildLiveNavigation();
-            ApplyNavVisibility();
-            // WinUI realizes an expanded NavigationViewItem's children only once. Because the sections
-            // start expanded but are populated here (after that first realization), the freshly added
-            // group/tag rows don't appear until the user toggles the section. Force one re-expand now so
-            // they show on first launch. Later rebuilds hit an already-realized section and are fine.
-            RealizeExpandedSection(GroupsSection);
-            RealizeExpandedSection(TagsSection);
-        });
+            await RunSafelyAsync(async () =>
+            {
+                await ViewModel.LoadCommand.ExecuteAsync(null);
+                RebuildLiveNavigation();
+                ApplyNavVisibility();
+                // WinUI realizes an expanded NavigationViewItem's children only once. Because the sections
+                // start expanded but are populated here (after that first realization), the freshly added
+                // group/tag rows don't appear until the user toggles the section. Force one re-expand now so
+                // they show on first launch. Later rebuilds hit an already-realized section and are fine.
+                RealizeExpandedSection(GroupsSection);
+                RealizeExpandedSection(TagsSection);
+            });
+        }
+        finally
+        {
+            // A cold-start toast can arrive before Loaded. Release it only after initial selection/nav data
+            // have settled so the ordinary first-page navigation cannot overwrite the requested task.
+            _navigationReady.TrySetResult();
+        }
 
     }
 
@@ -290,7 +301,41 @@ public sealed partial class MainWindow : Window
 
     private async void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (_suppressSelectionNavigation) return;
         await RunSafelyAsync(() => HandleSelectionChangedAsync(args));
+    }
+
+    /// <summary>Stable shell entry point for a validated external task route (currently toast body clicks).
+    /// It preserves any focused autosave, aligns the sidebar selection, then lets TaskListPage load the
+    /// correct active/completed context and open the requested detail.</summary>
+    internal async Task NavigateToTaskAsync(TaskOpenRoute route)
+    {
+        await _navigationReady.Task;
+        await RunSafelyAsync(async () =>
+        {
+            if (NavFrame.Content is TaskListPage taskPage && taskPage.DetailViewModel is { IsOpen: true } taskDetail)
+            {
+                taskPage.CommitFocusedTextBox();
+                await taskPage.FlushDetailAsync();
+                taskDetail.Close();
+            }
+            else if (NavFrame.Content is WeeklyTimelinePage timelinePage && timelinePage.DetailViewModel is { IsOpen: true } timelineDetail)
+            {
+                timelinePage.CommitFocusedTextBox();
+                await timelinePage.FlushDetailAsync();
+                timelineDetail.Close();
+            }
+
+            var target = route.Navigation.Mode == TaskListMode.Logbook ? LogbookItem : CueItem;
+            _suppressSelectionNavigation = true;
+            try { NavView.SelectedItem = target; }
+            finally { _suppressSelectionNavigation = false; }
+
+            _backTargetItem = target;
+            _currentNavigation = route.Navigation;
+            NavFrame.Navigate(typeof(TaskListPage), route);
+            NavFrame.BackStack.Clear();
+        });
     }
 
     private async Task HandleSelectionChangedAsync(NavigationViewSelectionChangedEventArgs args)

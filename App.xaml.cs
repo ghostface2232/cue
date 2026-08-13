@@ -146,11 +146,12 @@ public partial class App : Application
                 await EnsureMainWindowAsync();
                 WindowForegroundHelper.BringToForeground(_window!);
 
-                if (request.Toast is { TaskId: var taskId })
+                if (request.Toast is { TaskId: var taskId } && _window is MainWindow mainWindow)
                 {
-                    // TODO(notification navigation): select taskId once shell-level task navigation has a
-                    // stable public entry point. The activation payload is preserved here until then.
-                    _ = taskId;
+                    var route = await Services.GetRequiredService<TaskOpenRouteResolver>()
+                        .ResolveAsync(taskId);
+                    if (route is not null)
+                        await mainWindow.NavigateToTaskAsync(route);
                 }
             });
         }

@@ -150,7 +150,8 @@ public sealed partial class TaskListPage : Page
         await RunSafelyAsync(async () =>
         {
             base.OnNavigatedTo(e);
-            var navigation = e.Parameter as TaskListNavigation;
+            var openRoute = e.Parameter as TaskOpenRoute;
+            var navigation = openRoute?.Navigation ?? e.Parameter as TaskListNavigation;
             if (navigation is null)
             {
                 var mode = Enum.TryParse<TaskListMode>(e.Parameter as string, ignoreCase: true, out var parsed)
@@ -160,6 +161,8 @@ public sealed partial class TaskListPage : Page
             }
             ViewModel.SetNavigation(navigation);
             await ViewModel.LoadCommand.ExecuteAsync(null);
+            if (openRoute is not null)
+                await ViewModel.SelectTaskCommand.ExecuteAsync(openRoute.TaskId);
             ScheduleDayRollover();
         });
     }

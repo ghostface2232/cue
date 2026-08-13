@@ -60,6 +60,7 @@ internal static class AppRuntimeBootstrapper
         // The headless 할 일 완료 path: guards a toast payload against a record that has moved on since
         // delivery, and finishes the interaction either way (see ToastCompletionService).
         services.AddSingleton<ToastCompletionService>();
+        services.AddSingleton<TaskOpenRouteResolver>();
         services.AddSingleton<DialogService>();
         services.AddSingleton<UpdateService>();
         services.AddSingleton<INavDataChangeNotifier, NavDataChangeNotifier>();
