@@ -152,9 +152,9 @@ public partial class WeeklyTimelineViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Creates a blank all-day task anchored to the start (Monday) of the given week column and opens it in
-    /// the detail panel right away — the double-click-empty-space affordance. The task lands on the week the
-    /// click fell in; the user fills in the title/exact day in the panel. No-op for an out-of-range index.
+    /// Opens an in-memory all-day task anchored to the start (Monday) of the given week column — the
+    /// double-click-empty-space affordance. It is persisted only after the user supplies a title, so closing
+    /// an untouched draft leaves no blank record. No-op for an out-of-range index.
     /// </summary>
     [RelayCommand]
     private async Task CreateTaskInWeekAsync(int weekIndex)
@@ -171,11 +171,12 @@ public partial class WeeklyTimelineViewModel : ObservableObject
             SortOrder = _reorder.AppendRank(Bands.SelectMany(band => band.Cards).Select(card => card.Row.SortOrder)),
         };
 
-        await _store.SaveAsync(task);
-        _navNotifier.NotifyCountsChanged();
-        await ReloadRowsAsync();
-        // Route through the same flush/close/open path as a card tap so the panel opens cleanly on the new task.
-        await SelectTaskAsync(task.Id);
+        if (Detail.IsOpen)
+        {
+            await Detail.FlushAsync();
+            Detail.Close();
+        }
+        await Detail.OpenNewAsync(task);
     }
 
     // --- Card context-menu / Delete-key operations (mirrors the list view; reloads the band grid in place) ---

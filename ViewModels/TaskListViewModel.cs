@@ -387,6 +387,11 @@ public partial class TaskListViewModel : ObservableObject
     private async Task SaveQuickAddAsync(QuickAddSubmission submission, string text)
     {
         var parsed = _parser.Parse(text, _clock.GetUtcNow(), _timeZoneId, submission.SuppressedSpans);
+        // When every non-space character was recognized as scheduling ("내일", "매주 월요일"), the
+        // parser deliberately restores the raw input as a safe title fallback. Use its original-coordinate
+        // tokens to distinguish that case from real title text and from an explicitly suppressed token.
+        if (!HasUntokenizedTitleText(text, parsed.Tokens))
+            return;
 
         // The parser's When is used as-is when it recognized any placement, including explicit
         // Unscheduled markers ("언젠가") and recurrence anchors. Only a genuinely dateless line gets
@@ -431,6 +436,25 @@ public partial class TaskListViewModel : ObservableObject
         // A new open task bumps its group/tag (or the 없음 bucket) count in the sidebar.
         _navNotifier.NotifyCountsChanged();
         NotifyIfCreatedOffscreen(task.Id, when);
+    }
+
+    private static bool HasUntokenizedTitleText(string input, IReadOnlyList<QuickAddToken> tokens)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        if (tokens.Count == 0) return true;
+
+        var consumed = new bool[input.Length];
+        foreach (var token in tokens)
+        {
+            var start = Math.Clamp(token.Start, 0, input.Length);
+            var end = Math.Clamp(token.Start + token.Length, start, input.Length);
+            for (var i = start; i < end; i++) consumed[i] = true;
+        }
+
+        for (var i = 0; i < input.Length; i++)
+            if (!consumed[i] && !char.IsWhiteSpace(input[i]))
+                return true;
+        return false;
     }
 
     /// <summary>After a quick-add reloads the list, warn (via <see cref="OffscreenTaskCreated"/>) when the

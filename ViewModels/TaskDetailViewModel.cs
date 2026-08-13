@@ -53,7 +53,9 @@ public sealed record TaskEditSnapshot(
     RecurrenceRule? Recurrence,
     Guid? TaskGroupId,
     IReadOnlyList<Guid> TagIds,
-    ReminderTiming Reminder);
+    ReminderTiming Reminder,
+    bool IsNewTask,
+    string SortOrder);
 
 public partial class TagEditorOption : ObservableObject
 {
@@ -165,6 +167,11 @@ public partial class TaskDetailViewModel : ObservableObject
     private int _visibleFutureCount = DefaultFutureWindow;
 
     private Guid? _taskId;
+    // A timeline empty-space add opens an in-memory task first. It becomes a real record only after the
+    // user supplies a non-blank title, so cancelling the panel (or a crash before typing) cannot leave an
+    // invisible blank JSON file behind. The immutable draft rank is carried by each save snapshot.
+    private bool _isNewTask;
+    private string _newTaskSortOrder = string.Empty;
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
     private WhenEditorMode _loadedWhenMode;
     private DateTimeOffset? _loadedWhenDate;
@@ -512,8 +519,25 @@ public partial class TaskDetailViewModel : ObservableObject
             return;
         }
 
+        await PopulateAsync(task, generation, isNewTask: false);
+    }
+
+    /// <summary>Opens a not-yet-persisted task created from the weekly timeline. The draft is promoted
+    /// through <see cref="ITaskStore"/> on the first valid (non-blank-title) flush; closing it untouched
+    /// leaves no file or index row.</summary>
+    public Task OpenNewAsync(TaskItem draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        var generation = ++_openGeneration;
+        return PopulateAsync(draft, generation, isNewTask: true);
+    }
+
+    private async Task PopulateAsync(TaskItem task, int generation, bool isNewTask)
+    {
         _isLoading = true;
         _taskId = task.Id;
+        _isNewTask = isNewTask;
+        _newTaskSortOrder = task.SortOrder;
         Title = task.Title;
         Notes = task.Notes ?? string.Empty;
         SelectedPriority = task.Priority;
@@ -567,6 +591,8 @@ public partial class TaskDetailViewModel : ObservableObject
         _openGeneration++;
         _isLoading = false;
         _taskId = null;
+        _isNewTask = false;
+        _newTaskSortOrder = string.Empty;
         IsOpen = false;
     }
 
@@ -671,17 +697,23 @@ public partial class TaskDetailViewModel : ObservableObject
     private TaskEditSnapshot? CaptureSnapshot()
     {
         if (_taskId is not { } id) return null;
+        var title = Title.Trim();
+        // A task without a title is not a valid user record. Existing tasks retain their last persisted
+        // title; new timeline drafts simply remain in memory until the user supplies one.
+        if (title.Length == 0) return null;
         var when = BuildWhen();
         return new TaskEditSnapshot(
             id,
-            Title.Trim(),
+            title,
             string.IsNullOrWhiteSpace(Notes) ? null : Notes,
             SelectedPriority,
             when,
             BuildRecurrence(when),
             SelectedTaskGroup?.Id,
             Tags.Where(tag => tag.IsSelected && tag.Id != Guid.Empty).Select(tag => tag.Id).ToList(),
-            SelectedReminder?.Timing ?? ReminderTiming.AtTime);
+            SelectedReminder?.Timing ?? ReminderTiming.AtTime,
+            _isNewTask,
+            _newTaskSortOrder);
     }
 
     /// <summary>Appends a save to the serial chain. Called on the UI thread, so the continuation captures
@@ -766,6 +798,27 @@ public partial class TaskDetailViewModel : ObservableObject
             task.Reminder = snapshot.Reminder;
             return true;
         });
+        if (saved is null && snapshot.IsNewTask)
+        {
+            // SaveAsync is the ordinary single write path and stamps CreatedAt/UpdatedAt. Save snapshots
+            // are serialized, so once this first write lands every later draft snapshot mutates it above.
+            saved = new TaskItem
+            {
+                Id = snapshot.Id,
+                Title = snapshot.Title,
+                Notes = snapshot.Notes,
+                Priority = snapshot.Priority,
+                When = snapshot.When,
+                Recurrence = snapshot.Recurrence,
+                TaskGroupId = snapshot.TaskGroupId,
+                TagIds = snapshot.TagIds.ToList(),
+                Reminder = snapshot.Reminder,
+                SortOrder = snapshot.SortOrder,
+            };
+            await _store.SaveAsync(saved);
+            if (_taskId == snapshot.Id)
+                _isNewTask = false;
+        }
         if (saved is not null)
         {
             await _refreshOwner();

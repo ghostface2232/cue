@@ -1045,6 +1045,29 @@ public sealed class ViewModelRegressionTests
         Assert.NotNull(task.WhenDate);
     }
 
+    [Theory]
+    [InlineData("내일")]
+    [InlineData("오늘 3시")]
+    [InlineData("매주 월요일")]
+    public async Task SubmitQuickAdd_WithSchedulingTokensOnly_KeepsInputAndCreatesNoTask(string input)
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier())
+        {
+            QuickAddText = input,
+        };
+
+        await vm.SubmitQuickAddAsync(QuickAddSubmission.Plain(input));
+
+        Assert.Empty(await store.GetAllAsync<TaskItem>());
+        Assert.Equal(input, vm.QuickAddText);
+    }
+
     [Fact]
     public async Task RapidDoubleSubmit_DuringTheSave_CreatesOnlyOneTask()
     {
@@ -1877,6 +1900,27 @@ public sealed class ViewModelRegressionTests
     }
 
     [Fact]
+    public async Task DetailTitle_BlankEdit_DoesNotOverwritePersistedTitle()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var task = new TaskItem { Title = "원래 제목" };
+        await store.SaveAsync(task);
+        var vm = new TaskListViewModel(store, store, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier());
+        await vm.Detail.OpenAsync(task.Id);
+
+        vm.Detail.Title = "   ";
+        await vm.Detail.FlushAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal("원래 제목", saved!.Title);
+    }
+
+    [Fact]
     public async Task OpeningTask_DoesNotSaveWhenNothingChanged()
     {
         using var temp = new TempDirectory();
@@ -2160,6 +2204,45 @@ public sealed class ViewModelRegressionTests
         var saved = await store.GetAsync<TaskItem>(task.Id);
         Assert.Equal("상세에서 편집", saved!.Title);
         Assert.Equal(second.Id, saved.TaskGroupId);
+    }
+
+    [Fact]
+    public async Task WeeklyEmptySpaceAdd_PersistsOnlyAfterDraftGetsATitle()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+        var vm = new WeeklyTimelineViewModel(
+            store,
+            store,
+            new ReorderService(store),
+            new RecurringTaskService(store),
+            clock,
+            TimeZoneInfo.Utc,
+            new NavDataChangeNotifier(),
+            new SaveFailureCoordinator());
+        await vm.LoadAsync();
+
+        await vm.CreateTaskInWeekCommand.ExecuteAsync(0);
+
+        Assert.True(vm.Detail.IsOpen);
+        Assert.Empty(await store.GetAllAsync<TaskItem>());
+
+        vm.Detail.Close();
+        Assert.Empty(await store.GetAllAsync<TaskItem>());
+
+        await vm.CreateTaskInWeekCommand.ExecuteAsync(0);
+
+        vm.Detail.Title = "주간 초안";
+        await vm.Detail.FlushAsync();
+
+        var saved = Assert.Single(await store.GetAllAsync<TaskItem>());
+        Assert.Equal("주간 초안", saved.Title);
+        Assert.True(saved.When.IsAllDay);
+        Assert.Equal(vm.Weeks[0].WeekStart, DateOnly.FromDateTime(saved.When.Date!.Value.ToLocal().DateTime));
     }
 
     [Fact]
