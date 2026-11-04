@@ -60,7 +60,8 @@ public enum TaskEditFields
 /// An immutable capture of an autosave, taken the moment an edit happens. Binding the target task id
 /// together with the field values means a queued save always persists the values that were on screen for
 /// <see cref="Id"/> — never whatever the panel shows by the time the save runs, even if the user has since
-/// switched to a different task. Only the fields named by <see cref="Fields"/> are written.
+/// switched to a different task. Only the fields named by <see cref="Fields"/> are written. <see cref="Before"/>
+/// holds the values these edits replaced, so a retry can tell when a field has since changed elsewhere.
 /// </summary>
 public sealed record TaskEditSnapshot(
     Guid Id,
@@ -74,7 +75,8 @@ public sealed record TaskEditSnapshot(
     ReminderTiming Reminder,
     bool IsNewTask,
     string SortOrder,
-    TaskEditFields Fields = TaskEditFields.All);
+    TaskEditFields Fields = TaskEditFields.All,
+    TaskEditSnapshot? Before = null);
 
 public partial class TagEditorOption : ObservableObject
 {
@@ -773,8 +775,33 @@ public partial class TaskDetailViewModel : ObservableObject
         var fields = _isNewTask ? TaskEditFields.All : ChangedFields(_baseline, current);
         if (fields == TaskEditFields.None) return null;
 
+        var before = _isNewTask ? null : _baseline;
         _baseline = current;
-        return current with { Fields = fields };
+        return current with { Fields = fields, Before = before };
+    }
+
+    /// <summary>The fields a retried save must leave alone: someone else changed them after this save was
+    /// captured, so its value is now the older one. A field already holding this save's own value isn't
+    /// included, since an attempt that wrote the file but failed afterwards still needs to finish.</summary>
+    private static TaskEditFields FieldsChangedElsewhere(TaskEditSnapshot snapshot, TaskItem onDisk)
+    {
+        var disk = new TaskEditSnapshot(
+            snapshot.Id,
+            onDisk.Title.Trim(),
+            string.IsNullOrWhiteSpace(onDisk.Notes) ? null : onDisk.Notes,
+            onDisk.Priority,
+            onDisk.When,
+            onDisk.Recurrence,
+            onDisk.TaskGroupId,
+            onDisk.TagIds.ToList(),
+            onDisk.Reminder,
+            snapshot.IsNewTask,
+            snapshot.SortOrder);
+        var changed = ChangedFields(snapshot.Before, disk) & ChangedFields(snapshot, disk);
+
+        // A rule's anchor follows its date, so writing only one of the two would leave them disagreeing.
+        const TaskEditFields schedule = TaskEditFields.When | TaskEditFields.Recurrence;
+        return (changed & schedule) != TaskEditFields.None ? changed | schedule : changed;
     }
 
     private static TaskEditFields ChangedFields(TaskEditSnapshot? before, TaskEditSnapshot after)
@@ -822,7 +849,13 @@ public partial class TaskDetailViewModel : ObservableObject
         // An earlier failed save may hold fields this one doesn't, so it gets another try first.
         RequeueFailedMetadataSaves();
         PendingSave save = null!;
-        save = new PendingSave(SaveOperationKind.Metadata, snapshot.Id, () => SaveSnapshotAsync(save.Snapshot!))
+        var attempted = false;
+        save = new PendingSave(SaveOperationKind.Metadata, snapshot.Id, () =>
+        {
+            var isRetry = attempted;
+            attempted = true;
+            return SaveSnapshotAsync(save.Snapshot!, isRetry);
+        })
         {
             Snapshot = snapshot,
         };
@@ -897,9 +930,9 @@ public partial class TaskDetailViewModel : ObservableObject
     /// <see cref="ITaskStore"/> (which stamps UpdatedAt). Because the values come from the snapshot rather
     /// than the live panel, a save still targets the task it was queued for even after the user switches
     /// tasks. A failed save is logged, not swallowed silently, and left for the next change or the close
-    /// flush to retry.
+    /// flush to retry. A retry can run long after its edit, so it skips any field changed elsewhere since.
     /// </summary>
-    private async Task SaveSnapshotAsync(TaskEditSnapshot snapshot)
+    private async Task SaveSnapshotAsync(TaskEditSnapshot snapshot, bool isRetry)
     {
         // Read-modify-write atomically: MutateAsync re-reads the live record under the store's write lock
         // and the closure replaces only the fields the user changed in the panel. Everything else — the
@@ -907,6 +940,11 @@ public partial class TaskDetailViewModel : ObservableObject
         var saved = await _store.MutateAsync<TaskItem>(snapshot.Id, task =>
         {
             var fields = snapshot.Fields;
+            if (isRetry)
+                fields &= ~FieldsChangedElsewhere(snapshot, task);
+            if (fields == TaskEditFields.None)
+                return false;
+
             if (fields.HasFlag(TaskEditFields.Title)) task.Title = snapshot.Title;
             if (fields.HasFlag(TaskEditFields.Notes)) task.Notes = snapshot.Notes;
             if (fields.HasFlag(TaskEditFields.Priority)) task.Priority = snapshot.Priority;
@@ -1486,37 +1524,50 @@ public partial class TaskDetailViewModel : ObservableObject
         if (_taskId is not { } id) return;
         // Capture synchronously (on the UI thread, before any await) so the edited values are bound to this
         // edit and survive a task switch, after which the live Checklist holds another task's rows.
-        var edits = CaptureChecklistEdits();
+        var edits = CaptureChecklistEdits(out var before);
         if (edits.Count == 0) return;
+        var attempted = false;
         _ = EnqueueChecklistOp(SaveOperationKind.ChecklistSnapshot, id, async () =>
         {
+            var isRetry = attempted;
+            attempted = true;
             var saved = await _store.MutateAsync<TaskItem>(id, task =>
             {
+                var applied = false;
                 foreach (var item in task.Checklist)
-                    if (edits.TryGetValue(item.Id, out var edited))
-                    {
+                {
+                    if (!edits.TryGetValue(item.Id, out var edited))
+                        continue;
+
+                    // A retry can run long after its edit, so it leaves alone a value changed elsewhere since.
+                    var was = isRetry ? before.GetValueOrDefault(item.Id) : null;
+                    if (was is null || item.Title.Trim() == was.Title)
                         item.Title = edited.Title;
+                    if (was is null || item.IsChecked == was.IsChecked)
                         item.IsChecked = edited.IsChecked;
-                    }
-                return true;
+                    applied = true;
+                }
+                return applied;
             });
             if (saved is not null) await _refreshOwner();
         }, edits);
     }
 
     /// <summary>The rows whose values differ from the last capture, as fresh <see cref="ChecklistItem"/>
-    /// values (read synchronously on the UI thread). Moves the baseline forward to what it returns.</summary>
-    private Dictionary<Guid, ChecklistItem> CaptureChecklistEdits()
+    /// values (read synchronously on the UI thread), with the values they replaced in
+    /// <paramref name="before"/>. Moves the baseline forward to what it returns.</summary>
+    private Dictionary<Guid, ChecklistItem> CaptureChecklistEdits(out Dictionary<Guid, ChecklistItem> before)
     {
         var edits = new Dictionary<Guid, ChecklistItem>();
+        before = new Dictionary<Guid, ChecklistItem>();
         foreach (var row in Checklist)
         {
             var current = new ChecklistItem { Id = row.Id, Title = row.Title.Trim(), IsChecked = row.IsChecked };
-            if (_checklistBaseline.TryGetValue(row.Id, out var before)
-                && before.Title == current.Title
-                && before.IsChecked == current.IsChecked)
+            if (_checklistBaseline.TryGetValue(row.Id, out var last))
             {
-                continue;
+                if (last.Title == current.Title && last.IsChecked == current.IsChecked)
+                    continue;
+                before[row.Id] = last;
             }
             _checklistBaseline[row.Id] = current;
             edits[row.Id] = current;

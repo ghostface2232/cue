@@ -3400,6 +3400,113 @@ public sealed class ViewModelRegressionTests
         Assert.Equal(1, coordinator.UnsavedTaskCount);
     }
 
+    [Fact]
+    public async Task FailedPanelMove_DoesNotOverwriteALaterOutsideMove()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var a = new TaskGroup { Name = "A" };
+        var b = new TaskGroup { Name = "B" };
+        var c = new TaskGroup { Name = "C" };
+        await store.SaveAsync(a);
+        await store.SaveAsync(b);
+        await store.SaveAsync(c);
+        var task = new TaskItem { Title = "일", TaskGroupId = a.Id };
+        await store.SaveAsync(task);
+
+        // The autosave (6 attempts) and the outside edit's own flush (6 more) both fail; then it recovers.
+        var vm = PanelViewModel(new FailingTaskStore(store, 12), store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.SelectedTaskGroup = vm.Detail.TaskGroups.First(option => option.Id == b.Id);
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+
+        await vm.MoveTaskToTaskGroupAsync(task.Id, c.Id);
+
+        Assert.Equal(c.Id, (await store.GetAsync<TaskItem>(task.Id))!.TaskGroupId);
+        Assert.Equal(c.Id, vm.Detail.SelectedTaskGroup?.Id);
+        Assert.False(vm.Detail.HasUnsavedFailures);
+    }
+
+    [Fact]
+    public async Task FailedPanelSave_Retry_SkipsOnlyTheFieldChangedElsewhere()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "원래", Priority = Priority.P4 };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(new FailingTaskStore(store, 6), store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.Title = "패널 제목";
+        vm.Detail.SelectedPriority = Priority.P1;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+
+        await store.MutateAsync<TaskItem>(task.Id, t => { t.Priority = Priority.P2; return true; });
+
+        await vm.Detail.RetrySaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal("패널 제목", saved!.Title);
+        Assert.Equal(Priority.P2, saved.Priority);
+        Assert.False(vm.Detail.HasUnsavedFailures);
+    }
+
+    [Fact]
+    public async Task FailedDateEdit_Retry_DoesNotUndoACycleAdvancedElsewhere()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var cycle = ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 9, 0, 0), "UTC");
+        var task = new TaskItem
+        {
+            Title = "매일 운동",
+            When = ScheduledWhen.On(cycle),
+            Recurrence = new RecurrenceRule("FREQ=DAILY", cycle),
+        };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(new FailingTaskStore(store, 6), store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.WhenDate = new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+
+        await new RecurringTaskService(store).CompleteAsync(task.Id, clock.GetUtcNow());
+        var advanced = await store.GetAsync<TaskItem>(task.Id);
+
+        await vm.Detail.RetrySaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(advanced!.When, saved!.When);
+        Assert.Equal(cycle, saved.Recurrence!.Anchor); // the date and the anchor stay together
+    }
+
+    [Fact]
+    public async Task FailedChecklistEdit_Retry_KeepsAValueChangedElsewhere()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "부모" };
+        task.Checklist.Add(new ChecklistItem { Title = "항목" });
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(new FailingTaskStore(store, 6), store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.Checklist[0].IsChecked = true;
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.DrainPendingSaveAsync());
+
+        // Renamed elsewhere: the panel's tick still applies, and the panel's old title doesn't come back.
+        await store.MutateAsync<TaskItem>(task.Id, t => { t.Checklist[0].Title = "밖에서 고친 항목"; return true; });
+        await vm.Detail.RetrySaveAsync();
+
+        var saved = (await store.GetAsync<TaskItem>(task.Id))!.Checklist[0];
+        Assert.True(saved.IsChecked);
+        Assert.Equal("밖에서 고친 항목", saved.Title);
+    }
+
     private sealed class FailingTaskStore(ITaskStore inner, int failCount) : ITaskStore
     {
         private int _failedAttempts = 0;
