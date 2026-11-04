@@ -85,8 +85,17 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             // OS file handle alive past Dispose, blocking a delete-and-rebuild of the cache on Windows.
             Pooling = false,
         }.ToString());
-        _connection.Open();
-        EnsureSchema();
+        try
+        {
+            _connection.Open();
+            EnsureSchema();
+        }
+        catch
+        {
+            // Release the file so a caller can delete a corrupt database and start over.
+            _connection.Dispose();
+            throw;
+        }
     }
 
     // Bump when the index table shape changes. On a mismatch the (disposable, file-derived) tables
@@ -213,17 +222,17 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             foreach (var task in tasks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await UpsertCoreAsync(task, tx, cancellationToken).ConfigureAwait(false);
+                await UpsertIsolatedAsync(task, () => UpsertCoreAsync(task, tx, cancellationToken)).ConfigureAwait(false);
             }
 
             foreach (var taskGroup in taskGroups)
-                await UpsertTaskGroupCoreAsync(taskGroup, tx, cancellationToken).ConfigureAwait(false);
+                await UpsertIsolatedAsync(taskGroup, () => UpsertTaskGroupCoreAsync(taskGroup, tx, cancellationToken)).ConfigureAwait(false);
             foreach (var tag in tags)
-                await UpsertTagCoreAsync(tag, tx, cancellationToken).ConfigureAwait(false);
+                await UpsertIsolatedAsync(tag, () => UpsertTagCoreAsync(tag, tx, cancellationToken)).ConfigureAwait(false);
             foreach (var occurrence in occurrences)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await UpsertOccurrenceCoreAsync(occurrence, tx, cancellationToken).ConfigureAwait(false);
+                await UpsertIsolatedAsync(occurrence, () => UpsertOccurrenceCoreAsync(occurrence, tx, cancellationToken)).ConfigureAwait(false);
             }
 
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -233,6 +242,29 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
             _gate.Release();
         }
     }
+
+    /// <summary>Indexes one record during a rebuild, leaving it out if it can't be indexed. One bad record must
+    /// not stop the app from opening, the same way one unreadable file doesn't. A database that is itself
+    /// broken still throws, so the caller can recreate it.</summary>
+    private static async Task UpsertIsolatedAsync(RecordBase record, Func<Task> upsert)
+    {
+        try
+        {
+            await upsert().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException && !IsCorruptDatabase(exception))
+        {
+            System.Diagnostics.Debug.WriteLine($"[Cue] Skipping record '{record.Id}' in the index rebuild: {exception.Message}");
+        }
+    }
+
+    /// <summary>Whether this exception means the database file itself is damaged, as opposed to a failed
+    /// statement or a temporary condition such as a lock or a full disk.</summary>
+    internal static bool IsCorruptDatabase(Exception exception)
+        => exception is SqliteException { SqliteErrorCode: SqliteCorrupt or SqliteNotADatabase };
+
+    private const int SqliteCorrupt = 11;
+    private const int SqliteNotADatabase = 26;
 
     /// <summary>
     /// Reflects a single record's current file state into the index after a store write. Handles

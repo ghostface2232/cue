@@ -22,6 +22,9 @@ public static class StoreSerialization
             // per-record files are genuinely human-readable. Safe here: these are local files, not
             // HTML-embedded output.
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            // A null where the model says never ("title": null) is a corrupt file, and must be reported as
+            // one when read rather than surfacing later as a failure in whatever uses the value.
+            RespectNullableAnnotations = true,
             // Drop computed/derived properties (IsCompleted, IsDeleted, HasDate, …) without the
             // domain ever knowing about serialization: they have no setter, so they are removed
             // from the contract here. Real fields (Notes, Priority, etc.) have a setter and stay.
