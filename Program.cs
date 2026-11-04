@@ -9,6 +9,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        AppLog.Initialize();
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
         ToolkitToastPresenter? toastServices = null;

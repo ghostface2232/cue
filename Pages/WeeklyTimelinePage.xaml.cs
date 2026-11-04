@@ -1277,6 +1277,7 @@ public sealed partial class WeeklyTimelinePage : Page
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.WriteLine($"[Cue] Timeline action failed: {exception}");
             ErrorInfoBar.Message = exception.Message;
             ErrorInfoBar.IsOpen = true;
         }

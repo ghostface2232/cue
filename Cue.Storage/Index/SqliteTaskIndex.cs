@@ -254,7 +254,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException && !IsCorruptDatabase(exception))
         {
-            System.Diagnostics.Debug.WriteLine($"[Cue] Skipping record '{record.Id}' in the index rebuild: {exception.Message}");
+            System.Diagnostics.Trace.WriteLine($"[Cue] Skipping record '{record.Id}' in the index rebuild: {exception.Message}");
         }
     }
 
@@ -739,7 +739,7 @@ public sealed class SqliteTaskIndex : ITaskIndex, IAsyncDisposable, IDisposable
         var zoneId = r.GetString(3);
         if (!TimeZoneInfo.TryFindSystemTimeZoneById(zoneId, out _))
         {
-            System.Diagnostics.Debug.WriteLine(
+            System.Diagnostics.Trace.WriteLine(
                 $"[Cue] Skipping reminder candidate '{r.GetString(0)}': unknown time zone '{zoneId}'.");
             return null;
         }

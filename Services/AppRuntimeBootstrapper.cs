@@ -44,6 +44,7 @@ internal static class AppRuntimeBootstrapper
         services.AddSingleton<IListDisplayPreferences>(preferences);
         services.AddSingleton<IDateParser, PreferenceDateParser>();
 
+        services.AddSingleton(store);
         services.AddSingleton<ITaskStore>(store);
         services.AddSingleton<ITaskStoreChangeSource>(store);
         services.AddSingleton<ITaskIndex>(store);

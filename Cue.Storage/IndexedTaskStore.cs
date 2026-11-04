@@ -28,6 +28,10 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     public event EventHandler? Changed;
 
+    /// <summary>Files in the record folders that were left out of the app's data.</summary>
+    public IReadOnlyList<SkippedFile> SkippedFiles
+        => _files is FileTaskStore fileStore ? fileStore.SkippedFiles : Array.Empty<SkippedFile>();
+
     public IndexedTaskStore(ITaskStore files, SqliteTaskIndex index)
     {
         _files = files ?? throw new ArgumentNullException(nameof(files));
@@ -352,7 +356,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
-            System.Diagnostics.Debug.WriteLine(
+            System.Diagnostics.Trace.WriteLine(
                 $"[Cue] Preserving unreadable {typeof(T).Name} reference '{id}': {ex.Message}");
             return new(ReferenceReadStatus.Unreadable, null);
         }
@@ -424,7 +428,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine(
+            System.Diagnostics.Trace.WriteLine(
                 $"[Cue] Skipping container-deletion resume; the journal is unreadable: {exception.Message}");
             return;
         }
@@ -442,7 +446,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine(
+                System.Diagnostics.Trace.WriteLine(
                     $"[Cue] Container deletion '{operation.Id}' could not resume and stays pending: {exception.Message}");
             }
         }
@@ -633,7 +637,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         {
             // A derived-cache consumer must never turn a successful source-of-truth write into a reported
             // save failure. Reconciliation has startup and periodic fallbacks if an observer misbehaves.
-            System.Diagnostics.Debug.WriteLine($"[Cue] Store change observer failed: {exception}");
+            System.Diagnostics.Trace.WriteLine($"[Cue] Store change observer failed: {exception}");
         }
     }
 }

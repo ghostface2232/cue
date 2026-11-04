@@ -49,6 +49,9 @@ public partial class App : Application
         _toastActivations = toastActivations;
         _wasToastActivated = toastActivations.WasCurrentProcessToastActivated;
         _toastActivations.Activated += OnToastActivated;
+        // Recorded only: the app still terminates as it would, rather than carrying on in an unknown state.
+        UnhandledException += (_, args) =>
+            System.Diagnostics.Trace.WriteLine($"[Cue] Unhandled UI exception: {args.Message}{Environment.NewLine}{args.Exception}");
 
         // A complete action deliberately skips App.xaml resource initialization. Open/normal launches
         // initialize lazily on the UI thread before creating a window.
@@ -157,6 +160,7 @@ public partial class App : Application
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.WriteLine($"[Cue] Activation failed: {exception}");
             if (_wasToastActivated && request.Toast is { Action: ToastAction.Complete })
             {
                 await ExitApplicationAsync().ConfigureAwait(false);
@@ -246,6 +250,8 @@ public partial class App : Application
             AppPreferences.ApplyTheme(_window, runtime.Preferences);
             AppPreferences.ApplyFocusVisuals(_window, runtime.Preferences);
             _window.Activate();
+            // CI's startup smoke test waits for this exact line.
+            System.Diagnostics.Trace.WriteLine("[Cue] Main window shown");
         }
         finally
         {
@@ -311,6 +317,8 @@ public partial class App : Application
 
     private void ShowStartupFailure(Exception exception)
     {
+        // CI's startup smoke test fails on this exact line.
+        System.Diagnostics.Trace.WriteLine($"[Cue] Startup failed: {exception}");
         _window = new Window
         {
             Title = "Cue 시작 오류",

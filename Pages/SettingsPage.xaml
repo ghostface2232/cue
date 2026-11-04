@@ -714,6 +714,52 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <Grid Style="{StaticResource SettingsRowStyle}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
+                                    <TextBlock Style="{StaticResource SettingsRowHeaderStyle}" Text="진단 기록" />
+                                    <TextBlock
+                                        Style="{StaticResource SettingsCaptionStyle}"
+                                        behaviors:WordWrapBehavior.KeepAllText="문제를 알릴 때 함께 보내 주세요. 이 PC에만 저장되고, 할 일 제목과 메모는 기록되지 않아요." />
+                                </StackPanel>
+                                <Button
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Click="OpenLogFolder_Click"
+                                    Content="로그 폴더 열기" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Only when record files were left out of the app's data (see UpdateSkippedFilesRow). -->
+                        <Border
+                            x:Name="SkippedFilesCard"
+                            Style="{StaticResource SettingsCardStyle}"
+                            Visibility="Collapsed">
+                            <Grid Style="{StaticResource SettingsRowStyle}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Style="{StaticResource SettingsLabelColumnStyle}">
+                                    <TextBlock
+                                        x:Name="SkippedFilesHeader"
+                                        Style="{StaticResource SettingsRowHeaderStyle}" />
+                                    <TextBlock
+                                        Style="{StaticResource SettingsCaptionStyle}"
+                                        behaviors:WordWrapBehavior.KeepAllText="이 파일에 든 할 일은 목록에 나타나지 않아요. 파일은 그대로 두었고, 경로는 로그에 있어요." />
+                                </StackPanel>
+                                <Button
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Click="RevealSkippedFile_Click"
+                                    Content="파일 위치 열기" />
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Grid>
             </ScrollViewer>

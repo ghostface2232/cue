@@ -1348,6 +1348,7 @@ public sealed partial class TaskListPage : Page
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.WriteLine($"[Cue] Task list action failed: {exception}");
             ErrorInfoBar.Message = exception.Message;
             ErrorInfoBar.IsOpen = true;
             await _dialogs.TryShowAsync(new ContentDialog

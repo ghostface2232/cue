@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Cue.Domain;
 using Cue.Storage.Serialization;
@@ -13,6 +14,7 @@ public sealed class FileTaskStore : ITaskStore
     private readonly string _root;
     private readonly TimeProvider _clock;
     private readonly JsonSerializerOptions _json;
+    private readonly ConcurrentDictionary<string, SkippedFileReason> _skipped = new(StringComparer.OrdinalIgnoreCase);
 
     public FileTaskStore(FileTaskStoreOptions options, TimeProvider? timeProvider = null)
     {
@@ -110,14 +112,24 @@ public sealed class FileTaskStore : ITaskStore
     /// <summary>A record file is named exactly <c>{guid}.json</c> (invariant 3). Anything else in a record
     /// folder — <c>{guid}-PCNAME.json</c> from a cloud provider's conflict handling, a stray file — is not a
     /// record: it is left untouched and never read as one.</summary>
-    private static bool TryGetRecordId(string path, out Guid id)
+    private bool TryGetRecordId(string path, out Guid id)
     {
         if (Guid.TryParseExact(Path.GetFileNameWithoutExtension(path), "D", out id))
             return true;
 
-        System.Diagnostics.Debug.WriteLine($"[Cue] Ignoring non-record file '{path}'.");
+        if (_skipped.TryAdd(path, SkippedFileReason.NotARecord))
+            System.Diagnostics.Trace.WriteLine($"[Cue] Ignoring non-record file '{path}'.");
         return false;
     }
+
+    /// <summary>Files left out of the app's data so far: a task in one of them doesn't appear anywhere, so
+    /// the user needs to be able to find out. An unreadable file that later reads successfully drops off.</summary>
+    public IReadOnlyList<SkippedFile> SkippedFiles
+        => _skipped
+            .Where(entry => File.Exists(entry.Key))
+            .Select(entry => new SkippedFile(entry.Key, entry.Value))
+            .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default)
         where T : RecordBase
@@ -190,6 +202,7 @@ public sealed class FileTaskStore : ITaskStore
             var record = Deserialize<T>(bytes);
             if (record is not null && TryGetRecordId(path, out var id) && record.Id != id)
                 throw new JsonException($"The file holds record '{record.Id}'.");
+            _skipped.TryRemove(path, out _);
             return record;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
@@ -198,7 +211,8 @@ public sealed class FileTaskStore : ITaskStore
             // permanently malformed after a partial sync. Isolate that one record for both full and
             // by-id reads; cancellation remains observable because OperationCanceledException is not
             // included in this filter.
-            System.Diagnostics.Debug.WriteLine($"[Cue] Skipping unreadable record file '{path}': {ex.Message}");
+            if (_skipped.TryAdd(path, SkippedFileReason.Unreadable))
+                System.Diagnostics.Trace.WriteLine($"[Cue] Skipping unreadable record file '{path}': {ex.Message}");
             return null;
         }
     }

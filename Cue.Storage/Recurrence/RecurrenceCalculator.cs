@@ -73,7 +73,7 @@ public static class RecurrenceCalculator
         {
             // Unrecognized/invalid RRULE, unknown zone, or an evaluator failure: don't blow up — the
             // caller treats this task as a plain, non-recurring one.
-            System.Diagnostics.Debug.WriteLine(
+            System.Diagnostics.Trace.WriteLine(
                 $"[Cue] Recurrence rule '{recurrence.Rule}' could not be evaluated: {ex.Message}");
             return null;
         }

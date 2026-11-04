@@ -135,7 +135,7 @@ public sealed class NotificationScheduler : IAsyncDisposable
         {
             // Toast registration is a derived-cache concern; it must not prevent the source-of-truth app
             // from opening. The periodic pass will retry after a transient OS notification failure.
-            Debug.WriteLine($"[Cue] Startup notification reconcile failed: {exception}");
+            Trace.WriteLine($"[Cue] Startup notification reconcile failed: {exception}");
         }
 
         if (_periodicInterval > TimeSpan.Zero && _periodicInterval != Timeout.InfiniteTimeSpan)
@@ -393,7 +393,7 @@ public sealed class NotificationScheduler : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            Debug.WriteLine($"[Cue] Notification reconcile failed: {exception}");
+            Trace.WriteLine($"[Cue] Notification reconcile failed: {exception}");
         }
         finally
         {
@@ -417,7 +417,7 @@ public sealed class NotificationScheduler : IAsyncDisposable
                 catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { return; }
                 catch (Exception exception)
                 {
-                    Debug.WriteLine($"[Cue] Periodic notification reconcile failed: {exception}");
+                    Trace.WriteLine($"[Cue] Periodic notification reconcile failed: {exception}");
                 }
             }
         }

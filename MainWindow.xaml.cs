@@ -121,6 +121,7 @@ public sealed partial class MainWindow : Window
         TagsSection.IsExpanded = _tagsExpanded;
 
         NavView.Loaded += NavView_Loaded;
+        ShowSkippedFilesNotice();
         NavView.DisplayModeChanged += (_, _) => UpdateNavRowInsets();
         NavView.Expanding += NavView_Expanding;
         // The pane collapses its expandable sections as it closes and restores them as it opens. Track those
@@ -1375,6 +1376,22 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>A task in a file Cue couldn't read simply isn't listed anywhere, so say so once at startup
+    /// rather than leaving the user to wonder where it went.</summary>
+    private void ShowSkippedFilesNotice()
+    {
+        var count = App.Services.GetRequiredService<IndexedTaskStore>().SkippedFiles.Count;
+        if (count == 0) return;
+        SkippedFilesInfoBar.Message = $"파일 {count}개를 읽지 못해서 일부 할 일이 보이지 않을 수 있어요.";
+        SkippedFilesInfoBar.IsOpen = true;
+    }
+
+    private void RevealSkippedFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.Services.GetRequiredService<IndexedTaskStore>().SkippedFiles.FirstOrDefault() is { } file)
+            AppLog.RevealFile(file.Path);
+    }
+
     private async Task RunSafelyAsync(Func<Task> operation)
     {
         try
@@ -1383,6 +1400,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.WriteLine($"[Cue] Sidebar action failed: {exception}");
             var dialog = new ContentDialog
             {
                 XamlRoot = NavView.XamlRoot,

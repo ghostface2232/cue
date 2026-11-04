@@ -83,11 +83,27 @@ public sealed partial class SettingsPage : Page
         WeekRollForwardSwitch.IsOn = _preferences.WeekNumberPastRollsToNextYear;
         WeekRollForwardSwitch.IsEnabled = _preferences.ShowWeekNumber;
         VersionText.Text = $"버전 {AppVersion()}";
+        UpdateSkippedFilesRow();
         _defaultButtonStyle = UpdateButton.Style;
         ApplyUpdateChannelExposure();
         ApplySelectedSection();
         _loading = false;
     }
+
+    private void UpdateSkippedFilesRow()
+    {
+        var count = App.Services.GetRequiredService<Cue.Storage.IndexedTaskStore>().SkippedFiles.Count;
+        SkippedFilesHeader.Text = $"읽지 못한 파일 {count}개";
+        SkippedFilesCard.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void RevealSkippedFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.Services.GetRequiredService<Cue.Storage.IndexedTaskStore>().SkippedFiles.FirstOrDefault() is { } file)
+            AppLog.RevealFile(file.Path);
+    }
+
+    private void OpenLogFolder_Click(object sender, RoutedEventArgs e) => AppLog.RevealLogFile();
 
     /// <summary>The app's display version, read from the assembly so it always matches what was shipped.
     /// Prefers the informational version (the csproj's &lt;Version&gt;, e.g. "0.1.0"), trimming any

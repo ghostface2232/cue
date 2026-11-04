@@ -1035,6 +1035,7 @@ public partial class TaskDetailViewModel : ObservableObject
 
         if (!success && lastException is not null)
         {
+            System.Diagnostics.Trace.WriteLine($"[Cue] Save of task '{save.TaskId}' ({save.Kind}) failed after retries: {lastException}");
             throw lastException;
         }
     }

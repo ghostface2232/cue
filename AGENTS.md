@@ -155,6 +155,13 @@ Domain types are pure data holders with no clock or persistence access: they nev
 - Completing a task from a toast must still go through the single `ITaskStore.Save` mutation path.
 - **A toast's 할 일 완료 button must never end in a silent no-op — it is the whole interaction, because there is no window.** `ToastCompletionService` owns this path. A delivered toast sits in the notification center indefinitely while the record behind it moves on, so by the time the button is pressed the payload can name a task that is completed, deleted, or gone, or a cycle the series has already advanced past (`occurrenceId` no longer matching the series' current cycle). Refusing to write on a stale payload is correct — it would stamp a second completion or the wrong cycle — but the refusal must still *finish the interaction*: retire the tag that produced it (`CancelScheduled` + `RemoveFromHistory`), run a reconcile pass so its equally-stale siblings go too (nothing swept them; the app has been closed or the work was resolved between passes), and show a short toast saying the notification was a stale one. Returning early with no write and no feedback reads as a broken button, not as "already done". The outcome is reported back to `App` so only a real completion refreshes lists and badges.
 - `Microsoft.Toolkit.Uwp.Notifications` is in maintenance mode. App code must not reference it directly; isolate it behind an adapter interface in the App layer so the implementation remains replaceable.
+## Diagnostics
+
+- Every layer logs through `System.Diagnostics.Trace` (never `Debug`, which is compiled out of Release, and with no logging abstraction for the storage layer to depend on). `Services/AppLog` attaches `RollingFileTraceListener` first thing in `Program.Main`, writing to `%LOCALAPPDATA%\Cue\logs\cue.log` (1 MB, two older files kept), and records unhandled and unobserved exceptions. An unhandled UI exception is logged and still terminates the app.
+- **The log never leaves the machine, and nothing may write a task title or note to it.** `docs/privacy.md` promises this.
+- Files left out of the app's data are exposed as `IndexedTaskStore.SkippedFiles` and surfaced by a startup `InfoBar` and a row in Settings → 정보, because a task in one of them otherwise just silently isn't listed.
+- CI's startup smoke test reads the log, failing on `Startup failed` and requiring `Main window shown`. Keep those two lines in `App.xaml.cs` as they are.
+
 ## Gotchas
  
 - The first successful run must be `dotnet run` or `winapp run` before using F5 or the debugger. The debugger looks for an executable that does not exist until the first run produces it.
