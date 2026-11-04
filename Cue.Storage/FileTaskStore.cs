@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Cue.Domain;
 using Cue.Storage.Serialization;
@@ -13,6 +14,7 @@ public sealed class FileTaskStore : ITaskStore
     private readonly string _root;
     private readonly TimeProvider _clock;
     private readonly JsonSerializerOptions _json;
+    private readonly ConcurrentDictionary<string, SkippedFileReason> _skipped = new(StringComparer.OrdinalIgnoreCase);
 
     public FileTaskStore(FileTaskStoreOptions options, TimeProvider? timeProvider = null)
     {
@@ -28,6 +30,8 @@ public sealed class FileTaskStore : ITaskStore
     /// <summary>The configured root folder. Exposed mainly for diagnostics and tests.</summary>
     public string RootPath => _root;
 
+    internal TimeProvider Clock => _clock;
+
     public async Task<IReadOnlyList<T>> GetAllAsync<T>(CancellationToken cancellationToken = default)
         where T : RecordBase
     {
@@ -38,8 +42,9 @@ public sealed class FileTaskStore : ITaskStore
         var results = new List<T>();
         foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
         {
-            // Guard against the wildcard also matching a stray "*.json*" temp.
-            if (!file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            // Guard against the wildcard also matching a stray "*.json*" temp, and against files that were
+            // not written as records (a cloud provider's conflict copy, a user's stray file).
+            if (!file.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || !TryGetRecordId(file, out _))
                 continue;
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -71,7 +76,10 @@ public sealed class FileTaskStore : ITaskStore
     internal async Task<T> ReadForReferenceValidationAsync<T>(Guid id, CancellationToken cancellationToken)
         where T : RecordBase
     {
-        return await ReadRequiredAsync<T>(PathFor(typeof(T), id), cancellationToken).ConfigureAwait(false);
+        var record = await ReadRequiredAsync<T>(PathFor(typeof(T), id), cancellationToken).ConfigureAwait(false);
+        return record.Id == id
+            ? record
+            : throw new JsonException($"The file for record '{id}' holds record '{record.Id}'.");
     }
 
     /// <summary>
@@ -89,13 +97,39 @@ public sealed class FileTaskStore : ITaskStore
         var records = new List<T>();
         foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
         {
-            if (!file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            if (!file.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || !TryGetRecordId(file, out var id))
                 continue;
             cancellationToken.ThrowIfCancellationRequested();
-            records.Add(await ReadRequiredAsync<T>(file, cancellationToken).ConfigureAwait(false));
+            var record = await ReadRequiredAsync<T>(file, cancellationToken).ConfigureAwait(false);
+            // A record saved from here is written to {record.Id}.json, so a file holding some other id must
+            // never take part: saving it would overwrite that record with this file's contents.
+            if (record.Id == id)
+                records.Add(record);
         }
         return records;
     }
+
+    /// <summary>A record file is named exactly <c>{guid}.json</c> (invariant 3). Anything else in a record
+    /// folder — <c>{guid}-PCNAME.json</c> from a cloud provider's conflict handling, a stray file — is not a
+    /// record: it is left untouched and never read as one.</summary>
+    private bool TryGetRecordId(string path, out Guid id)
+    {
+        if (Guid.TryParseExact(Path.GetFileNameWithoutExtension(path), "D", out id))
+            return true;
+
+        if (_skipped.TryAdd(path, SkippedFileReason.NotARecord))
+            System.Diagnostics.Trace.WriteLine($"[Cue] Ignoring non-record file '{path}'.");
+        return false;
+    }
+
+    /// <summary>Files left out of the app's data so far: a task in one of them doesn't appear anywhere, so
+    /// the user needs to be able to find out. An unreadable file that later reads successfully drops off.</summary>
+    public IReadOnlyList<SkippedFile> SkippedFiles
+        => _skipped
+            .Where(entry => File.Exists(entry.Key))
+            .Select(entry => new SkippedFile(entry.Key, entry.Value))
+            .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public async Task SaveAsync<T>(T record, CancellationToken cancellationToken = default)
         where T : RecordBase
@@ -165,7 +199,11 @@ public sealed class FileTaskStore : ITaskStore
         try
         {
             var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<T>(bytes, _json);
+            var record = Deserialize<T>(bytes);
+            if (record is not null && TryGetRecordId(path, out var id) && record.Id != id)
+                throw new JsonException($"The file holds record '{record.Id}'.");
+            _skipped.TryRemove(path, out _);
+            return record;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -173,7 +211,8 @@ public sealed class FileTaskStore : ITaskStore
             // permanently malformed after a partial sync. Isolate that one record for both full and
             // by-id reads; cancellation remains observable because OperationCanceledException is not
             // included in this filter.
-            System.Diagnostics.Debug.WriteLine($"[Cue] Skipping unreadable record file '{path}': {ex.Message}");
+            if (_skipped.TryAdd(path, SkippedFileReason.Unreadable))
+                System.Diagnostics.Trace.WriteLine($"[Cue] Skipping unreadable record file '{path}': {ex.Message}");
             return null;
         }
     }
@@ -182,8 +221,24 @@ public sealed class FileTaskStore : ITaskStore
         where T : RecordBase
     {
         var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<T>(bytes, _json)
+        return Deserialize<T>(bytes)
             ?? throw new JsonException("The record payload deserialized to null.");
+    }
+
+    /// <summary>Deserializes a record, reporting every failure as a <see cref="JsonException"/>. The value
+    /// converters rebuild domain types through validating factories, which throw their own exception types
+    /// (an unknown enum name, an invalid rule, a time zone this machine lacks). All of them mean the same
+    /// thing here: this file's content is not a record we can use.</summary>
+    private T? Deserialize<T>(byte[] bytes) where T : RecordBase
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(bytes, _json);
+        }
+        catch (Exception ex) when (ex is not JsonException)
+        {
+            throw new JsonException(ex.Message, ex);
+        }
     }
 
     private static string FolderName(Type recordType) => recordType switch

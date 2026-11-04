@@ -288,7 +288,7 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CascadeDeletionStaysPendingWhileAChildIsUnreadable_ThenResumes()
+    public async Task CascadeDeletion_FailedOnAnUnreadableChild_DoesNotHappenLater()
     {
         var root = NewRoot();
         var options = new FileTaskStoreOptions { RootPath = root, IndexPath = Path.Combine(root, "index.db") };
@@ -300,23 +300,66 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
             await seed.SaveAsync(task);
         }
 
+        var added = new TaskItem { Title = "실패 후 추가한 일", TaskGroupId = project.Id };
         var taskPath = Path.Combine(root, "tasks", task.Id + ".json");
-        await using (var locked = new FileStream(taskPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         await using (var store = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
         {
-            await Assert.ThrowsAsync<IOException>(() =>
-                store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks));
+            await using (var locked = new FileStream(taskPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                await Assert.ThrowsAsync<IOException>(() =>
+                    store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks));
+            }
             Assert.False((await store.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
 
-            var journalPath = Assert.Single(Directory.EnumerateFiles(Path.Combine(root, "meta", "operations"), "*.json"));
-            Assert.Contains("\"isCompleted\": false", await File.ReadAllTextAsync(journalPath));
+            // The user was told it failed and the group is still there, so they keep using it.
+            await store.SaveAsync(added);
         }
 
-        await using var recovered = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc);
-        Assert.True((await recovered.GetAsync<TaskItem>(task.Id))!.IsDeleted);
+        await using var reopened = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc);
+        Assert.False((await reopened.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+        Assert.False((await reopened.GetAsync<TaskItem>(task.Id))!.IsDeleted);
+        Assert.False((await reopened.GetAsync<TaskItem>(added.Id))!.IsDeleted);
+    }
+
+    /// <summary>Leaves a journal entry as a crash mid-deletion would.</summary>
+    private static async Task WritePendingCascadeAsync(string root, Guid taskGroupId, DateTimeOffset createdAt)
+    {
+        var operations = Path.Combine(root, "meta", "operations");
+        Directory.CreateDirectory(operations);
+        var id = Guid.NewGuid();
+        await File.WriteAllTextAsync(
+            Path.Combine(operations, id + ".json"),
+            $$"""
+            { "id": "{{id}}", "createdAt": "{{createdAt:O}}", "updatedAt": "{{createdAt:O}}", "schemaVersion": 1,
+              "kind": 0, "targetId": "{{taskGroupId}}", "cascadeTasks": true, "isCompleted": false }
+            """);
+    }
+
+    [Fact]
+    public async Task InterruptedCascade_Resumes_ButKeepsTasksEditedSince()
+    {
+        var root = NewRoot();
+        var options = new FileTaskStoreOptions { RootPath = root, IndexPath = Path.Combine(root, "index.db") };
+        var clock = new MutableTimeProvider(Now);
+        var project = new TaskGroup { Name = "그룹" };
+        var old = new TaskItem { Title = "삭제 대상", TaskGroupId = project.Id };
+        var newer = new TaskItem { Title = "중단 후 추가", TaskGroupId = project.Id };
+        await using (var seed = await IndexedTaskStore.OpenAsync(options, clock, TimeZoneInfo.Utc))
+        {
+            await seed.SaveAsync(project);
+            await seed.SaveAsync(old);
+            clock.Now = Now.AddHours(2);
+            await seed.SaveAsync(newer);
+        }
+        await WritePendingCascadeAsync(root, project.Id, Now.AddHours(1));
+
+        await using var recovered = await IndexedTaskStore.OpenAsync(options, clock, TimeZoneInfo.Utc);
+
+        Assert.True((await recovered.GetAsync<TaskItem>(old.Id))!.IsDeleted);
         Assert.True((await recovered.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
-        var completedJournal = Assert.Single(Directory.EnumerateFiles(Path.Combine(root, "meta", "operations"), "*.json"));
-        Assert.Contains("\"isCompleted\": true", await File.ReadAllTextAsync(completedJournal));
+        var kept = await recovered.GetAsync<TaskItem>(newer.Id);
+        Assert.False(kept!.IsDeleted);
+        Assert.Null(kept.TaskGroupId);
     }
 
     [Fact]
@@ -331,16 +374,11 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
             await seed.SaveAsync(project);
             await seed.SaveAsync(task);
         }
+        await WritePendingCascadeAsync(root, project.Id, Now.AddHours(1));
 
         var taskPath = Path.Combine(root, "tasks", task.Id + ".json");
         await using (var locked = new FileStream(taskPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
-            await using (var store = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
-            {
-                await Assert.ThrowsAsync<IOException>(() =>
-                    store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks));
-            }
-
             // The child is STILL unreadable at the next launch — the resume must be contained, leaving the
             // operation pending for a later run, not turn into a startup failure.
             await using (var blocked = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc))
@@ -355,6 +393,128 @@ public sealed class IndexedTaskStoreTests : IAsyncLifetime
         await using var recovered = await IndexedTaskStore.OpenAsync(options, new MutableTimeProvider(Now), TimeZoneInfo.Utc);
         Assert.True((await recovered.GetAsync<TaskItem>(task.Id))!.IsDeleted);
         Assert.True((await recovered.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+    }
+
+    [Fact]
+    public async Task UnreadableFileContents_SkipOnlyThatRecordAtStartup()
+    {
+        foreach (var (name, corrupt) in new (string, Func<string, string>)[]
+        {
+            ("unknown when kind", json => System.Text.RegularExpressions.Regex.Replace(json, "\"kind\": \"\\w+\"", "\"kind\": \"Future\"")),
+            ("null title", json => System.Text.RegularExpressions.Regex.Replace(json, "\"title\": \"[^\"]*\"", "\"title\": null")),
+            ("null tag list", json => System.Text.RegularExpressions.Regex.Replace(json, "\"tagIds\": \\[[^\\]]*\\]", "\"tagIds\": null")),
+            ("unknown time zone", json => json.Replace("\"timeZoneId\": \"UTC\"", "\"timeZoneId\": \"Not/AZone\"")),
+            ("empty rule", json => json.Replace("\"rule\": \"FREQ=DAILY\"", "\"rule\": \"\"")),
+        })
+        {
+            var root = NewRoot();
+            var cycle = OnDayZoned(Today);
+            var damaged = new TaskItem
+            {
+                Title = "손상될 일",
+                When = ScheduledWhen.On(cycle),
+                Recurrence = new RecurrenceRule("FREQ=DAILY", cycle),
+            };
+            var healthy = new TaskItem { Title = "멀쩡한 일" };
+            await using (var seed = await OpenAsync(root, new MutableTimeProvider(Now)))
+            {
+                await seed.SaveAsync(damaged);
+                await seed.SaveAsync(healthy);
+            }
+
+            var path = Path.Combine(root, "tasks", damaged.Id + ".json");
+            var original = await File.ReadAllTextAsync(path);
+            var edited = corrupt(original);
+            Assert.True(original != edited, name);
+            await File.WriteAllTextAsync(path, edited);
+
+            await using var reopened = await OpenAsync(root, new MutableTimeProvider(Now));
+            Assert.Equal(healthy.Id, Assert.Single(await reopened.GetAllActiveAsync()).Id);
+            Assert.Equal(edited, await File.ReadAllTextAsync(path)); // left in place, untouched
+        }
+    }
+
+    [Fact]
+    public async Task DamagedIndexDatabase_IsRebuiltFromTheFiles()
+    {
+        var root = NewRoot();
+        var task = new TaskItem { Title = "남아 있어야 할 일" };
+        await using (var seed = await OpenAsync(root, new MutableTimeProvider(Now)))
+            await seed.SaveAsync(task);
+
+        await File.WriteAllBytesAsync(Path.Combine(root, "index.db"), System.Text.Encoding.UTF8.GetBytes(new string('x', 8192)));
+
+        await using var reopened = await OpenAsync(root, new MutableTimeProvider(Now));
+        Assert.Equal(task.Id, Assert.Single(await reopened.GetAllActiveAsync()).Id);
+    }
+
+    [Fact]
+    public async Task ConflictCopies_AreNotReadAsRecords()
+    {
+        foreach (var copyName in new[] { "{0}-MYPC.json", "{0}_copy.json", "{0} (1).json" })
+        {
+            var root = NewRoot();
+            var project = new TaskGroup { Name = "그룹" };
+            var task = new TaskItem { Title = "옛 제목", TaskGroupId = project.Id };
+            await using (var seed = await OpenAsync(root, new MutableTimeProvider(Now)))
+            {
+                await seed.SaveAsync(project);
+                await seed.SaveAsync(task);
+            }
+
+            var path = Path.Combine(root, "tasks", task.Id + ".json");
+            var staleJson = await File.ReadAllTextAsync(path);
+            await using (var store = await OpenAsync(root, new MutableTimeProvider(Now)))
+                await store.MutateAsync<TaskItem>(task.Id, t => { t.Title = "최신 제목"; t.TaskGroupId = null; return true; });
+            var copy = Path.Combine(root, "tasks", string.Format(copyName, task.Id));
+            await File.WriteAllTextAsync(copy, staleJson);
+
+            await using var reopened = await OpenAsync(root, new MutableTimeProvider(Now));
+
+            Assert.Equal("최신 제목", Assert.Single(await reopened.GetAllActiveAsync()).Title);
+            Assert.Single(await reopened.GetAllAsync<TaskItem>());
+
+            // Deleting the group the stale copy still names must not write that copy over the record.
+            await reopened.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.Reparent);
+            Assert.Equal("최신 제목", (await reopened.GetAsync<TaskItem>(task.Id))!.Title);
+            Assert.Equal(staleJson, await File.ReadAllTextAsync(copy)); // left for the user, untouched
+        }
+    }
+
+    [Fact]
+    public async Task RecordFileHoldingAnotherId_IsNotRead()
+    {
+        var root = NewRoot();
+        var task = new TaskItem { Title = "진짜" };
+        await using (var seed = await OpenAsync(root, new MutableTimeProvider(Now)))
+            await seed.SaveAsync(task);
+
+        var otherId = Guid.NewGuid();
+        var otherPath = Path.Combine(root, "tasks", otherId + ".json");
+        File.Copy(Path.Combine(root, "tasks", task.Id + ".json"), otherPath);
+
+        await using var reopened = await OpenAsync(root, new MutableTimeProvider(Now));
+
+        Assert.Single(await reopened.GetAllAsync<TaskItem>());
+        Assert.Null(await reopened.GetAsync<TaskItem>(otherId));
+        Assert.Equal(task.Id, Assert.Single(await reopened.GetAllActiveAsync()).Id);
+    }
+
+    [Fact]
+    public async Task StrayJsonFile_DoesNotBlockGroupDeletion()
+    {
+        var root = NewRoot();
+        await using var store = await OpenAsync(root, new MutableTimeProvider(Now));
+        var project = new TaskGroup { Name = "그룹" };
+        await store.SaveAsync(project);
+        await store.SaveAsync(new TaskItem { Title = "일" });
+        var stray = Path.Combine(root, "tasks", "desktop-junk.json");
+        await File.WriteAllTextAsync(stray, "not json");
+
+        await store.DeleteTaskGroupAsync(project.Id, TaskGroupDeletionMode.DeleteTasks);
+
+        Assert.True((await store.GetAsync<TaskGroup>(project.Id))!.IsDeleted);
+        Assert.True(File.Exists(stray));
     }
 
     [Fact]

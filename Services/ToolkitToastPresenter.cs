@@ -104,7 +104,7 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
         }
         catch (Exception exception)
         {
-            Debug.WriteLine($"[Cue] Toast notifications unavailable ({failureHint}); scheduling disabled: {exception.Message}");
+            Trace.WriteLine($"[Cue] Toast notifications unavailable ({failureHint}); scheduling disabled: {exception.Message}");
             try { ToastNotificationManagerCompat.OnActivated -= OnToolkitActivated; }
             catch { /* best-effort unsubscribe; registration never completed */ }
             return false;
@@ -190,7 +190,7 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
         try { ToastNotificationManagerCompat.History.Remove(tag); }
         catch (Exception exception)
         {
-            Debug.WriteLine($"[Cue] Failed to remove toast from history: {exception.Message}");
+            Trace.WriteLine($"[Cue] Failed to remove toast from history: {exception.Message}");
         }
     }
 
@@ -220,7 +220,7 @@ internal sealed class ToolkitToastPresenter : IToastPresenter, IToastActivationS
         }
         catch (Exception exception)
         {
-            Debug.WriteLine($"[Cue] Failed to read toast history: {exception.Message}");
+            Trace.WriteLine($"[Cue] Failed to read toast history: {exception.Message}");
             return [];
         }
     }

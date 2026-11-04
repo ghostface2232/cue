@@ -651,9 +651,9 @@ public partial class TaskListViewModel : ObservableObject
         {
             // Atomic read-modify-write through the store: flip just this item on the latest persisted
             // task, so a concurrent detail-panel metadata save (a different save path) can't clobber the
-            // checklist, nor this toggle the metadata. MutateAsync returns null when the task or item is
-            // gone, in which case the checkbox is put back.
-            var saved = await _store.MutateAsync<TaskItem>(row.ParentTaskId, task =>
+            // checklist, nor this toggle the metadata. Returns null when the task or item is gone, in which
+            // case the checkbox is put back.
+            var saved = await Detail.ApplyOutsideEditAsync(row.ParentTaskId, task =>
             {
                 var item = task.Checklist.FirstOrDefault(i => i.Id == row.Id);
                 if (item is null) return false;
@@ -955,7 +955,7 @@ public partial class TaskListViewModel : ObservableObject
         // Atomic read-modify-write so moving the task touches only TaskGroupId on the latest record,
         // never overwriting a field a concurrent save path changed. Returning false leaves it a no-op
         // (and skips the reload) when the task is already in the target group.
-        var moved = await _store.MutateAsync<TaskItem>(taskId, task =>
+        var moved = await Detail.ApplyOutsideEditAsync(taskId, task =>
         {
             if (task.TaskGroupId == taskGroupId) return false;
             task.TaskGroupId = taskGroupId;
@@ -976,7 +976,7 @@ public partial class TaskListViewModel : ObservableObject
     {
         // Atomic read-modify-write so the tag change touches only TagIds on the latest record. Tags are
         // a multi-select set: flipping this one must not disturb the others, so we add or remove just it.
-        var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
+        var changed = await Detail.ApplyOutsideEditAsync(taskId, task =>
         {
             if (!task.TagIds.Remove(tagId)) task.TagIds.Add(tagId);
             return true;
@@ -996,7 +996,7 @@ public partial class TaskListViewModel : ObservableObject
     {
         // Unlike a toggle, this only ever removes: if a concurrent edit already dropped the tag we leave
         // it gone rather than re-adding it.
-        var changed = await _store.MutateAsync<TaskItem>(taskId, task => task.TagIds.Remove(tagId));
+        var changed = await Detail.ApplyOutsideEditAsync(taskId, task => task.TagIds.Remove(tagId));
         if (changed is not null)
         {
             await LoadAsync();
@@ -1007,7 +1007,7 @@ public partial class TaskListViewModel : ObservableObject
     /// <summary>Removes every tag from the task, then refreshes. A no-op (no reload) if it had none.</summary>
     public async Task ClearTaskTagsAsync(Guid taskId)
     {
-        var changed = await _store.MutateAsync<TaskItem>(taskId, task =>
+        var changed = await Detail.ApplyOutsideEditAsync(taskId, task =>
         {
             if (task.TagIds.Count == 0) return false;
             task.TagIds.Clear();
@@ -1026,7 +1026,7 @@ public partial class TaskListViewModel : ObservableObject
         var trimmed = title.Trim();
         if (trimmed.Length == 0) return;
         // Atomic read-modify-write so the rename touches only Title on the latest record.
-        var renamed = await _store.MutateAsync<TaskItem>(taskId, task => { task.Title = trimmed; return true; });
+        var renamed = await Detail.ApplyOutsideEditAsync(taskId, task => { task.Title = trimmed; return true; });
         if (renamed is not null) await LoadAsync();
     }
 
@@ -1143,7 +1143,7 @@ public partial class TaskListViewModel : ObservableObject
                 // Un-completing a terminal row (from a 완료한 일 section, one-off or ended series): atomic
                 // read-modify-write so clearing completion touches only CompletedAt on the latest record,
                 // then reload so it returns to the open list.
-                await _store.MutateAsync<TaskItem>(row.Id, task => { task.CompletedAt = null; return true; });
+                await Detail.ApplyOutsideEditAsync(row.Id, task => { task.CompletedAt = null; return true; });
                 _navNotifier.NotifyCountsChanged();
                 await LoadAsync();
             }
@@ -1192,27 +1192,34 @@ public partial class TaskListViewModel : ObservableObject
         await LoadAsync();
     }
 
-    /// <summary>Keeps the detail panel in sync after a list-driven recurrence change to <paramref name="taskId"/>
-    /// (a completion advanced it, or an undo rolled it back). When the panel shows that task and the series is
-    /// still open, reopen it so its 반복 기록 strip, current cycle, and reset checklist reflect the new state;
-    /// when the task has left the active list (a one-off done, or a series ended/exhausted) close the panel
-    /// rather than let it linger on a gone task. A no-op when the panel is closed or showing something else.</summary>
+    /// <summary>Reloads after a task changed outside any of this page's own actions (a toast's 완료 button
+    /// while the window is open): the open detail panel first, then the rows.</summary>
+    public async Task ReloadAfterExternalChangeAsync()
+    {
+        if (Detail.CurrentTaskId is { } id)
+            await SyncOpenDetailForRowAsync(id);
+        await LoadAsync();
+    }
+
+    /// <summary>Keeps the detail panel in sync after <paramref name="taskId"/> changed outside it (a completion
+    /// advanced the series, or an undo rolled it back). When the panel shows that task and it is still open,
+    /// reload it so its 반복 기록 strip, current cycle, and reset checklist reflect the new state; when the
+    /// task has left the active list (a one-off done, or a series ended/exhausted) close the panel rather
+    /// than let it linger on a gone task. A no-op when the panel is closed or showing something else.</summary>
     private async Task SyncOpenDetailForRowAsync(Guid taskId)
     {
         if (!Detail.IsOpen || Detail.CurrentTaskId != taskId)
             return;
 
         var task = await _store.GetAsync<TaskItem>(taskId);
-        if (task is { IsDeleted: false, IsCompleted: false, Recurrence: not null })
+        if (task is { IsDeleted: false, IsCompleted: false })
         {
-            // OpenAsync flushes any in-flight detail edit first, so this can't race the panel's own
-            // (serialized) save chains.
-            await Detail.OpenAsync(taskId);
+            await Detail.ReloadFromStoreAsync(taskId);
         }
         else
         {
             // Flush first so any in-flight edit is persisted before the panel tears down.
-            await Detail.FlushAsync();
+            await Detail.FlushKeepingFailuresAsync();
             Detail.Close();
         }
     }
@@ -1226,7 +1233,7 @@ public partial class TaskListViewModel : ObservableObject
         await _toggleGate.WaitAsync();
         try
         {
-            await _store.MutateAsync<TaskItem>(row.Id, task => { task.CompletedAt = null; return true; });
+            await Detail.ApplyOutsideEditAsync(row.Id, task => { task.CompletedAt = null; return true; });
             _navNotifier.NotifyCountsChanged();
         }
         finally

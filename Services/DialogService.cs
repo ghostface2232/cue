@@ -30,6 +30,6 @@ public sealed class DialogService
     public async Task TryShowAsync(ContentDialog dialog)
     {
         try { await ShowAsync(dialog); }
-        catch (Exception exception) { System.Diagnostics.Debug.WriteLine($"[Cue] Unable to show dialog: {exception}"); }
+        catch (Exception exception) { System.Diagnostics.Trace.WriteLine($"[Cue] Unable to show dialog: {exception}"); }
     }
 }

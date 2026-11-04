@@ -4,6 +4,7 @@ using System.Linq;
 using Cue.Domain;
 using Cue.Parsing;
 using Cue.ViewModels;
+using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -13,6 +14,7 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.System;
 using Windows.UI;
+using Windows.UI.Core;
 using Windows.UI.ViewManagement;
 
 namespace Cue.Controls;
@@ -29,9 +31,9 @@ public sealed partial class OmniInputBox : UserControl
     private bool _syncingDocument;            // we are writing the document; ignore the TextChanged it raises
     private bool _updatingTextFromDocument;   // we are writing the Text DP from the document; don't write back
 
-    // IME composition state — set from the composition events. While true we never reformat (Step 3) and
-    // never treat Enter as a task commit (the IME owns that keystroke to finalize the syllable).
-    private bool _isComposing;
+    // IME composition state — fed from the composition events. While composing we never reformat (Step 3);
+    // an Enter pressed mid-composition finishes the syllable and commits the line in one press.
+    private readonly ImeEnterGate _imeEnter = new();
 
     // Bumped on every real (visible) text change; re-tint re-parses at most once per version.
     private long _documentVersion;
@@ -54,6 +56,8 @@ public sealed partial class OmniInputBox : UserControl
     private ReminderTiming _reminder = ReminderTiming.AtTime;
 
     // The reminder choices offered in the time-token popover — the same five the detail panel lists.
+    private const uint EnterScanCode = 0x1C;
+
     private static readonly (ReminderTiming Timing, string Label)[] ReminderChoices =
     {
         (ReminderTiming.AtTime, "정시에"),
@@ -73,7 +77,7 @@ public sealed partial class OmniInputBox : UserControl
         InitializeComponent();
 
         Box.TextChanged += OnBoxTextChanged;
-        Box.TextCompositionStarted += (_, _) => _isComposing = true;
+        Box.TextCompositionStarted += (_, _) => _imeEnter.CompositionStarted();
         Box.TextCompositionEnded += OnBoxCompositionEnded;
         // PreviewKeyDown (tunneling) — RichEditBox inserts the newline in its own KeyDown handling, so a
         // bubbling KeyDown handler is too late; we must intercept Enter on the way down.
@@ -83,7 +87,7 @@ public sealed partial class OmniInputBox : UserControl
         // never fires — register with handledEventsToo so the token correct/revert popover still gets the tap.
         Box.AddHandler(UIElement.TappedEvent, new TappedEventHandler(OnBoxTapped), handledEventsToo: true);
 
-        _idle.Tick += (_, _) => { _idle.Stop(); if (!_isComposing) ReTint(); };
+        _idle.Tick += (_, _) => { _idle.Stop(); if (!_imeEnter.IsComposing) ReTint(); };
         // CharacterFormat does not auto-flip with the theme — re-apply the accent/default on theme change.
         ActualThemeChanged += (_, _) => ReTint(force: true);
 
@@ -95,8 +99,8 @@ public sealed partial class OmniInputBox : UserControl
         };
     }
 
-    /// <summary>Raised when the user commits the line (Enter while not composing). Carries the raw text and
-    /// the editor-held reverts so the VM re-parses at the current clock honouring them (plan §5.2).</summary>
+    /// <summary>Raised when the user commits the line with Enter. Carries the raw text and the editor-held
+    /// reverts so the VM re-parses at the current clock honouring them (plan §5.2).</summary>
     public event EventHandler<QuickAddSubmission>? Submit;
 
     /// <summary>Supplies the recognized tokens for the raw line, given the spans the user has reverted (so a
@@ -154,7 +158,9 @@ public sealed partial class OmniInputBox : UserControl
 
     // ---- VM <-> Document bridge ----------------------------------------------------------------
 
-    private void OnBoxTextChanged(object sender, RoutedEventArgs e)
+    private void OnBoxTextChanged(object sender, RoutedEventArgs e) => SyncTextFromDocument();
+
+    private void SyncTextFromDocument()
     {
         if (_syncingDocument)
             return; // our own SetText — not a user edit
@@ -176,7 +182,7 @@ public sealed partial class OmniInputBox : UserControl
         // Re-tint trigger (unified rules): never while composing (that path re-tints on
         // TextCompositionEnded); space is a hard delimiter → now; otherwise debounce via idle.
         _idle.Stop();
-        if (_isComposing)
+        if (_imeEnter.IsComposing)
             return;
         if (text.EndsWith(" ", StringComparison.Ordinal))
             ReTint(text, force: false);
@@ -244,15 +250,30 @@ public sealed partial class OmniInputBox : UserControl
 
     private void OnBoxKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key != VirtualKey.Enter)
+        // While an IME owns the keystroke, Key reads as the IME's own process key; OriginalKey and the scan
+        // code still name the physical key.
+        if (e.Key != VirtualKey.Enter && e.OriginalKey != VirtualKey.Enter && e.KeyStatus.ScanCode != EnterScanCode)
             return;
 
-        // Enter while composing finalizes the IME syllable only — it must not commit the task (and the
-        // platform usually consumes this keystroke for the IME anyway). The next Enter commits.
-        if (_isComposing)
-            return;
+        switch (_imeEnter.EnterPressed(Environment.TickCount64))
+        {
+            case ImeEnterAction.PassToIme:
+                return; // the IME finishes the syllable; OnBoxCompositionEnded commits the line
+            case ImeEnterAction.Swallow:
+                e.Handled = true; // the same press already committed — don't insert a newline either
+                return;
+            default:
+                e.Handled = true; // also prevents a newline being inserted into the single-line box
+                CommitLine();
+                return;
+        }
+    }
 
-        e.Handled = true; // also prevents a newline being inserted into the single-line box
+    private void CommitLine()
+    {
+        // The VM clears the box only when its text still matches what was submitted, so bring it up to date
+        // first in case the finished syllable's TextChanged hasn't been handled yet.
+        SyncTextFromDocument();
         Submit?.Invoke(this, BuildSubmission());
     }
 
@@ -283,16 +304,28 @@ public sealed partial class OmniInputBox : UserControl
 
     private void OnBoxCompositionEnded(RichEditBox sender, TextCompositionEndedEventArgs args)
     {
-        _isComposing = false;
+        var enterIsDown = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Enter)
+            .HasFlag(CoreVirtualKeyStates.Down);
+        var commitPending = _imeEnter.CompositionEnded(enterIsDown);
         _idle.Stop();   // the commit is our trigger; don't let a queued idle double it
         ReTint();       // a syllable just finalized — paint the now-committed text
+
+        if (commitPending)
+        {
+            // Low priority: run after the finished syllable has reached the document.
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (_imeEnter.TryTakePendingCommit(Environment.TickCount64))
+                    CommitLine();
+            });
+        }
     }
 
     // ---- Click-to-correct popover (Step 5): tap a token → alternatives / revert -------------------
 
     private void OnBoxTapped(object sender, TappedRoutedEventArgs e)
     {
-        if (_isComposing)
+        if (_imeEnter.IsComposing)
             return; // don't interrupt an in-flight syllable
 
         // A non-space edit defers its re-tint to the idle timer (500ms), so _tokens can still hold the
@@ -467,7 +500,7 @@ public sealed partial class OmniInputBox : UserControl
 
     private void ReTint(string raw, bool force)
     {
-        if (_isComposing)
+        if (_imeEnter.IsComposing)
             return; // never format a composing (incomplete) syllable
         if (!force && _lastTintedVersion == _documentVersion)
             return; // already tinted this exact text — collapses space+CompositionEnded+idle into one parse

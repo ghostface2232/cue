@@ -29,6 +29,7 @@
        into this cross-platform test assembly so its expected-set/diff core can use fakes without making
        the entire test project reference the Windows executable. -->
   <ItemGroup>
+    <Compile Include="..\Services\RollingFileTraceListener.cs" Link="AppServices\RollingFileTraceListener.cs" />
     <Compile Include="..\Services\INotificationPreferences.cs" Link="AppServices\INotificationPreferences.cs" />
     <Compile Include="..\Services\JsonSettingsFile.cs" Link="AppServices\JsonSettingsFile.cs" />
     <Compile Include="..\Services\IToastPresenter.cs" Link="AppServices\IToastPresenter.cs" />

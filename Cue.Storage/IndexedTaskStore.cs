@@ -28,12 +28,16 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     public event EventHandler? Changed;
 
+    /// <summary>Files in the record folders that were left out of the app's data.</summary>
+    public IReadOnlyList<SkippedFile> SkippedFiles
+        => _files is FileTaskStore fileStore ? fileStore.SkippedFiles : Array.Empty<SkippedFile>();
+
     public IndexedTaskStore(ITaskStore files, SqliteTaskIndex index)
     {
         _files = files ?? throw new ArgumentNullException(nameof(files));
         _index = index ?? throw new ArgumentNullException(nameof(index));
         _deletionJournal = files is FileTaskStore fileStore
-            ? new ContainerDeletionJournal(fileStore.RootPath)
+            ? new ContainerDeletionJournal(fileStore.RootPath, fileStore.Clock)
             : null;
     }
 
@@ -62,12 +66,35 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         Directory.CreateDirectory(options.RootPath);
         PurgeLegacyCoLocatedIndex(options.RootPath, indexPath);
 
-        var files = new FileTaskStore(options, timeProvider);
-        var index = new SqliteTaskIndex(indexPath, timeProvider, timeZone);
-        var store = new IndexedTaskStore(files, index);
-        await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        await store.ResumeContainerDeletionsAsync(cancellationToken).ConfigureAwait(false);
-        return store;
+        try
+        {
+            return await OpenCoreAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (SqliteTaskIndex.IsCorruptDatabase(exception))
+        {
+            // The index holds nothing that isn't in the files, so a damaged database (a crash or power loss
+            // mid-write) is simply thrown away and rebuilt rather than blocking every launch from here on.
+            DeleteIndexFiles(indexPath);
+            return await OpenCoreAsync().ConfigureAwait(false);
+        }
+
+        async Task<IndexedTaskStore> OpenCoreAsync()
+        {
+            var files = new FileTaskStore(options, timeProvider);
+            var index = new SqliteTaskIndex(indexPath, timeProvider, timeZone);
+            var store = new IndexedTaskStore(files, index);
+            try
+            {
+                await store.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                await store.ResumeContainerDeletionsAsync(cancellationToken).ConfigureAwait(false);
+                return store;
+            }
+            catch
+            {
+                await store.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
     }
 
     /// <summary>
@@ -89,13 +116,18 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         if (IsSamePath(legacy, indexPath))
             return;
 
+        DeleteIndexFiles(legacy);
+    }
+
+    private static void DeleteIndexFiles(string databasePath)
+    {
         // SQLite leaves its write-ahead log and shared-memory sidecars next to the database; a stray
         // "index.db-wal" is the same synced-file problem in miniature, so they go with it.
         foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
         {
             try
             {
-                var path = legacy + suffix;
+                var path = databasePath + suffix;
                 if (File.Exists(path))
                     File.Delete(path);
             }
@@ -324,7 +356,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
-            System.Diagnostics.Debug.WriteLine(
+            System.Diagnostics.Trace.WriteLine(
                 $"[Cue] Preserving unreadable {typeof(T).Name} reference '{id}': {ex.Message}");
             return new(ReferenceReadStatus.Unreadable, null);
         }
@@ -369,9 +401,14 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
 
     private async Task RunContainerDeletionCoreAsync(ContainerDeletionKind kind, Guid id, bool cascadeTasks, CancellationToken cancellationToken)
     {
+        // Read before journaling. If this fails nothing has changed and the caller reports the failure, so
+        // no intent is left behind: the user was told the deletion didn't happen, and it must not quietly
+        // happen on a later launch.
+        var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
+
         var operation = new ContainerDeletionOperation { Kind = kind, TargetId = id, CascadeTasks = cascadeTasks };
         if (_deletionJournal is not null) await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
-        await ApplyContainerDeletionAsync(operation, cancellationToken).ConfigureAwait(false);
+        await ApplyContainerDeletionAsync(operation, tasks, keepTasksEditedAfter: null, cancellationToken).ConfigureAwait(false);
         operation.IsCompleted = true;
         if (_deletionJournal is not null) await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
     }
@@ -380,10 +417,10 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
     {
         if (_deletionJournal is null) return;
 
-        // Resuming is best-effort: the exact condition that leaves an operation pending (an unreadable
-        // child file) can persist across launches, and an unreadable journal is the same class of
-        // trouble — neither may turn into a startup failure. A contained operation simply stays pending
-        // (its journal entry keeps isCompleted: false) and is retried on the next open.
+        // Resuming is best-effort: the condition that interrupted an operation (a file that can't be read
+        // or written) can persist across launches, and an unreadable journal is the same class of trouble —
+        // neither may turn into a startup failure. A contained operation simply stays pending (its journal
+        // entry keeps isCompleted: false) and is retried on the next open.
         IReadOnlyList<ContainerDeletionOperation> pending;
         try
         {
@@ -391,7 +428,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine(
+            System.Diagnostics.Trace.WriteLine(
                 $"[Cue] Skipping container-deletion resume; the journal is unreadable: {exception.Message}");
             return;
         }
@@ -400,24 +437,31 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         {
             try
             {
-                await ApplyContainerDeletionAsync(operation, cancellationToken).ConfigureAwait(false);
+                var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
+                // Work done since the interruption is not what the user asked to delete: if the deletion
+                // failed part-way they saw an error and the group stayed, so they may have kept using it.
+                await ApplyContainerDeletionAsync(operation, tasks, keepTasksEditedAfter: operation.CreatedAt, cancellationToken).ConfigureAwait(false);
                 operation.IsCompleted = true;
                 await _deletionJournal.WriteAsync(operation, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine(
+                System.Diagnostics.Trace.WriteLine(
                     $"[Cue] Container deletion '{operation.Id}' could not resume and stays pending: {exception.Message}");
             }
         }
     }
 
-    private Task ApplyContainerDeletionAsync(ContainerDeletionOperation operation, CancellationToken cancellationToken)
+    private Task ApplyContainerDeletionAsync(
+        ContainerDeletionOperation operation,
+        IReadOnlyList<TaskItem> tasks,
+        DateTimeOffset? keepTasksEditedAfter,
+        CancellationToken cancellationToken)
         => operation.Kind switch
         {
-            ContainerDeletionKind.TaskGroup when operation.CascadeTasks => DeleteTaskGroupCascadingTasksAsync(operation.TargetId, cancellationToken),
-            ContainerDeletionKind.TaskGroup => ReparentTaskGroupTasksAndDeleteAsync(operation.TargetId, cancellationToken),
-            ContainerDeletionKind.Tag => DeleteTagAsync(operation.TargetId, cancellationToken),
+            ContainerDeletionKind.TaskGroup when operation.CascadeTasks => DeleteTaskGroupCascadingTasksAsync(operation.TargetId, tasks, keepTasksEditedAfter, cancellationToken),
+            ContainerDeletionKind.TaskGroup => ReparentTaskGroupTasksAndDeleteAsync(operation.TargetId, tasks, cancellationToken),
+            ContainerDeletionKind.Tag => DeleteTagAsync(operation.TargetId, tasks, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(operation.Kind)),
         };
 
@@ -441,12 +485,11 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
             await ReflectAsync(tombstone, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task ReparentTaskGroupTasksAndDeleteAsync(Guid taskGroupId, CancellationToken cancellationToken)
+    private async Task ReparentTaskGroupTasksAndDeleteAsync(Guid taskGroupId, IReadOnlyList<TaskItem> tasks, CancellationToken cancellationToken)
     {
         // Least-destructive default ("그룹만 제거"): preserve user work by ungrouping every live task
         // (clear TaskGroupId) rather than cascading task tombstones. The task stays visible in the home
         // "모든 할 일" (AllTasks) list. With sections gone the reparent is a single step.
-        var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
         foreach (var task in tasks.Where(task => !task.IsDeleted && task.TaskGroupId == taskGroupId))
         {
             task.TaskGroupId = null;
@@ -456,23 +499,35 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         await SoftDeleteAndReflectAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task DeleteTaskGroupCascadingTasksAsync(Guid taskGroupId, CancellationToken cancellationToken)
+    private async Task DeleteTaskGroupCascadingTasksAsync(
+        Guid taskGroupId,
+        IReadOnlyList<TaskItem> tasks,
+        DateTimeOffset? keepTasksEditedAfter,
+        CancellationToken cancellationToken)
     {
         // Opt-in destructive deletion: tombstone every task filed under the group (open and completed)
-        // before the group itself. Idempotent — already-tombstoned tasks are excluded by the index
-        // query, so a resumed crash re-runs cleanly.
-        var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
+        // before the group itself. Idempotent — already-tombstoned tasks are excluded, so a resumed crash
+        // re-runs cleanly. A task edited after the deletion was requested survives, ungrouped.
         foreach (var task in tasks.Where(task => !task.IsDeleted && task.TaskGroupId == taskGroupId))
-            await SoftDeleteAndReflectAsync<TaskItem>(task.Id, cancellationToken).ConfigureAwait(false);
+        {
+            if (task.UpdatedAt > keepTasksEditedAfter)
+            {
+                task.TaskGroupId = null;
+                await SaveCoreAsync(task, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await SoftDeleteAndReflectAsync<TaskItem>(task.Id, cancellationToken).ConfigureAwait(false);
+            }
+        }
 
         await SoftDeleteAndReflectAsync<TaskGroup>(taskGroupId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task DeleteTagAsync(Guid tagId, CancellationToken cancellationToken)
+    private async Task DeleteTagAsync(Guid tagId, IReadOnlyList<TaskItem> tasks, CancellationToken cancellationToken)
     {
         // Tags are cross-cutting metadata. Delete only the tag record and remove its references;
         // never delete or relocate a task merely because one of its tags was removed.
-        var tasks = await ReadAllTasksForContainerMutationAsync(cancellationToken).ConfigureAwait(false);
         foreach (var task in tasks.Where(task => !task.IsDeleted && task.TagIds.Contains(tagId)))
         {
             if (task.TagIds.RemoveAll(id => id == tagId) == 0) continue;
@@ -582,7 +637,7 @@ public sealed class IndexedTaskStore : ITaskStore, ITaskIndex, IContainerDeletio
         {
             // A derived-cache consumer must never turn a successful source-of-truth write into a reported
             // save failure. Reconciliation has startup and periodic fallbacks if an observer misbehaves.
-            System.Diagnostics.Debug.WriteLine($"[Cue] Store change observer failed: {exception}");
+            System.Diagnostics.Trace.WriteLine($"[Cue] Store change observer failed: {exception}");
         }
     }
 }

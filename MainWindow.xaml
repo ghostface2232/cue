@@ -254,5 +254,24 @@
                 <Button Content="모든 할 일로 이동" Click="OffscreenGoAllTasks_Click" />
             </InfoBar.ActionButton>
         </InfoBar>
+
+        <!-- Shown at startup when record files were left out of the app's data (see ShowSkippedFilesNotice). -->
+        <InfoBar
+            x:Name="SkippedFilesInfoBar"
+            Grid.Row="1"
+            CornerRadius="{StaticResource CueRadiusCard}"
+            MaxWidth="{StaticResource CueSnackbarMaxWidth}"
+            Margin="{StaticResource CuePadPage}"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Right"
+            IsOpen="False"
+            Severity="Warning"
+            Title="읽지 못한 파일이 있어요"
+            IsClosable="True"
+            Canvas.ZIndex="999">
+            <InfoBar.ActionButton>
+                <Button Content="파일 위치 열기" Click="RevealSkippedFile_Click" />
+            </InfoBar.ActionButton>
+        </InfoBar>
     </Grid>
 </Window>

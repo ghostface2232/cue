@@ -99,7 +99,12 @@ public sealed partial class WeeklyTimelinePage : Page
         => await RunSafelyAsync(() => ViewModel.Detail.ReloadNavOptionsAsync());
 
     private async void OnTasksChangedExternally(object? sender, EventArgs e)
-        => await RunSafelyAsync(() => ViewModel.LoadAsync());
+        => await RunSafelyAsync(async () =>
+        {
+            if (ViewModel.Detail.CurrentTaskId is { } id)
+                await ViewModel.Detail.ReloadFromStoreAsync(id);
+            await ViewModel.LoadAsync();
+        });
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
@@ -1272,6 +1277,7 @@ public sealed partial class WeeklyTimelinePage : Page
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.WriteLine($"[Cue] Timeline action failed: {exception}");
             ErrorInfoBar.Message = exception.Message;
             ErrorInfoBar.IsOpen = true;
         }

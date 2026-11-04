@@ -1,14 +1,18 @@
 name: CI
 
 # Two gates, because the repo has two halves:
-#   • test (ubuntu)  — the cross-platform suite: Cue.Tests + its net10.0 project references
-#                      (domain, storage, parsing, view models, and the linked notification services).
+#   • test (ubuntu + windows) — the net10.0 suite: Cue.Tests + its project references (domain, storage,
+#                      parsing, view models, and the linked notification services). Windows is the platform
+#                      users run, and its file locking is what the storage layer has to cope with.
 #   • app (windows)  — the WinUI app project (Cue.csproj, net10.0-windows). Nothing else compiles its
 #                      XAML, page code-behind, converters, or the app manifest, so without this job a
 #                      broken binding or a bad markup edit first surfaced on a release tag's Windows
 #                      build. It also launches the built app once, since a XAML file that compiles can
 #                      still fail at startup (an unresolvable ThemeResource, a missing asset).
 on:
+  # Day-to-day work is committed straight to main, so this is what actually gates it.
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   release:
@@ -16,15 +20,19 @@ on:
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
 
-# Cancel superseded runs on the same PR branch to save runner minutes.
+# Cancel superseded runs on the same branch to save runner minutes.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    name: Test (net10.0)
-    runs-on: ubuntu-latest
+    name: Test (net10.0, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,7 +69,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ matrix.os }}
           path: TestResults
           if-no-files-found: ignore
 
@@ -118,27 +126,44 @@ jobs:
           -p:PublishTrimmed=false -p:PublishReadyToRun=false
           --output dist/ci-smoke --nologo
 
-      # Launch it once and require that it survives startup. This catches what compilation cannot: a
-      # resource key that doesn't resolve, a missing bundled asset, a failure inside the storage/DI
-      # bootstrap. The app is left running for a moment and then killed — it never needs to be interacted
-      # with, only to still be alive.
+      # Launch it once and require that the main window actually came up and stayed up. Staying alive isn't
+      # enough on its own: a resource key that doesn't resolve, a missing bundled asset, or a failure inside
+      # the storage/DI bootstrap lands in the recovery window, and that process stays alive too. So this reads
+      # the app's own log, where it records one line or the other.
       - name: Smoke test app startup
         shell: pwsh
         timeout-minutes: 3
         run: |
           $exe = Resolve-Path 'dist/ci-smoke/Cue.exe'
+          $log = Join-Path $env:LOCALAPPDATA 'Cue/logs/cue.log'
           # Redirect the app's streams to files: a launched process that inherits the runner's log pipe
           # keeps the step open even after the shell returns.
           $process = Start-Process -FilePath $exe -PassThru `
             -RedirectStandardOutput 'dist/app-stdout.txt' -RedirectStandardError 'dist/app-stderr.txt'
-          Start-Sleep -Seconds 30
+
+          $deadline = (Get-Date).AddSeconds(90)
+          $text = ''
+          while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
+            if (Test-Path $log) { $text = Get-Content $log -Raw }
+            if ($text -match 'Startup failed|Main window shown') { break }
+            Start-Sleep -Seconds 2
+          }
+          # The first frames run after the window is shown, so give those a chance to fail too.
+          if (-not $process.HasExited) { Start-Sleep -Seconds 15 }
           $exited = $process.HasExited
           if (-not $exited) { Stop-Process -Id $process.Id -Force }
+          if (Test-Path $log) { $text = Get-Content $log -Raw }
+          Write-Host '--- cue.log ---'
+          Write-Host $text
+
           if ($exited) {
             Get-Content 'dist/app-stderr.txt' -ErrorAction SilentlyContinue | Write-Host
             throw "Cue exited during startup (exit code $($process.ExitCode))."
           }
-          Write-Host 'Cue started and stayed alive.'
+          if ($text -match 'Startup failed') { throw 'Cue showed its startup failure window.' }
+          if ($text -notmatch 'Main window shown') { throw 'The main window never came up.' }
+          if ($text -match 'Unhandled') { throw 'Cue logged an unhandled exception during startup.' }
+          Write-Host 'Cue showed its main window and stayed alive.'
 
       # The store opens at startup, so a successful launch must have created the data root — and must NOT
       # have put the SQLite index inside it. The index is a per-device disposable cache and Documents is
