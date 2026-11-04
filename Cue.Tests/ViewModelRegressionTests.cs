@@ -3152,6 +3152,254 @@ public sealed class ViewModelRegressionTests
         Assert.Equal(Priority.P2, (await store.GetAsync<TaskItem>(taskB.Id))!.Priority);
     }
 
+    private static Task<IndexedTaskStore> OpenPanelStoreAsync(TempDirectory temp, TimeProvider clock)
+        => IndexedTaskStore.OpenAsync(
+            new FileTaskStoreOptions { RootPath = temp.Path, IndexPath = Path.Combine(temp.Path, "index.db") },
+            clock,
+            TimeZoneInfo.Utc);
+
+    private static TaskListViewModel PanelViewModel(ITaskStore store, ITaskIndex index, TimeProvider clock, SaveFailureCoordinator? coordinator = null)
+        => new(store, index, new KoreanDateParser(), new ReorderService(store), new RecurringTaskService(store), clock, TimeZoneInfo.Utc, new NavDataChangeNotifier(), coordinator);
+
+    [Fact]
+    public async Task Panel_FlushWithoutEdits_DoesNotRewriteTheRecord()
+    {
+        using var temp = new TempDirectory();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "그대로", Notes = "메모", Priority = Priority.P2 };
+        await store.SaveAsync(task);
+        var before = (await store.GetAsync<TaskItem>(task.Id))!.UpdatedAt;
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+        clock.Now = clock.Now.AddHours(1);
+        await vm.Detail.FlushAsync();
+
+        Assert.Equal(before, (await store.GetAsync<TaskItem>(task.Id))!.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task Panel_FlushAfterSeriesAdvancedElsewhere_DoesNotRollItBack()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var cycle = ZonedDateTime.FromLocal(new DateTime(2026, 6, 23, 9, 0, 0), "UTC");
+        var task = new TaskItem
+        {
+            Title = "매일 운동",
+            When = ScheduledWhen.On(cycle),
+            Recurrence = new RecurrenceRule("FREQ=DAILY", cycle),
+        };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+
+        // A toast or a timeline card performs the cycle while the panel still shows it.
+        await new RecurringTaskService(store).CompleteAsync(task.Id, clock.GetUtcNow());
+        var advanced = (await store.GetAsync<TaskItem>(task.Id))!.When;
+        Assert.NotEqual(task.When, advanced);
+
+        await vm.Detail.FlushAsync();
+
+        Assert.Equal(advanced, (await store.GetAsync<TaskItem>(task.Id))!.When);
+    }
+
+    [Fact]
+    public async Task Panel_EditWritesOnlyTheChangedField()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var group = new TaskGroup { Name = "그룹" };
+        await store.SaveAsync(group);
+        var task = new TaskItem { Title = "원래 제목" };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+
+        await store.MutateAsync<TaskItem>(task.Id, t => { t.Title = "밖에서 바꾼 제목"; t.TaskGroupId = group.Id; return true; });
+
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.FlushAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(Priority.P1, saved!.Priority);
+        Assert.Equal("밖에서 바꾼 제목", saved.Title);
+        Assert.Equal(group.Id, saved.TaskGroupId);
+    }
+
+    [Fact]
+    public async Task Panel_EditRevertedToItsLoadedValue_IsStillWritten()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "A" };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+
+        vm.Detail.Title = "B";
+        await vm.Detail.FlushAsync();
+        vm.Detail.Title = "A";
+        await vm.Detail.FlushAsync();
+
+        Assert.Equal("A", (await store.GetAsync<TaskItem>(task.Id))!.Title);
+    }
+
+    [Fact]
+    public async Task Panel_BlankTitle_KeepsThePersistedTitleButSavesOtherEdits()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "제목" };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+
+        vm.Detail.Title = "  ";
+        vm.Detail.SelectedPriority = Priority.P3;
+        await vm.Detail.FlushAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal("제목", saved!.Title);
+        Assert.Equal(Priority.P3, saved.Priority);
+    }
+
+    [Fact]
+    public async Task Panel_ChecklistTick_KeepsAnItemTickedElsewhere()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "부모" };
+        task.Checklist.Add(new ChecklistItem { Title = "하나" });
+        task.Checklist.Add(new ChecklistItem { Title = "둘" });
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+
+        await store.MutateAsync<TaskItem>(task.Id, t => { t.Checklist[0].IsChecked = true; return true; });
+
+        vm.Detail.Checklist[1].IsChecked = true;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.True(saved!.Checklist[0].IsChecked);
+        Assert.True(saved.Checklist[1].IsChecked);
+    }
+
+    [Fact]
+    public async Task ListMenu_MoveWhilePanelOpen_SurvivesClosingThePanel_AndKeepsPendingEdit()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var first = new TaskGroup { Name = "A" };
+        var second = new TaskGroup { Name = "B" };
+        await store.SaveAsync(first);
+        await store.SaveAsync(second);
+        var task = new TaskItem { Title = "원래", TaskGroupId = first.Id };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+        vm.Detail.Title = "입력 중";
+
+        await vm.MoveTaskToTaskGroupAsync(task.Id, second.Id);
+
+        Assert.Equal(second.Id, vm.Detail.SelectedTaskGroup?.Id);
+        Assert.Equal("입력 중", vm.Detail.Title);
+        await vm.Detail.FlushAsync();
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal(second.Id, saved!.TaskGroupId);
+        Assert.Equal("입력 중", saved.Title);
+    }
+
+    [Fact]
+    public async Task ExternalChange_ReloadsThePanel_AndClosesItWhenTheTaskIsDone()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "제목" };
+        await store.SaveAsync(task);
+
+        var vm = PanelViewModel(store, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+
+        await store.MutateAsync<TaskItem>(task.Id, t => { t.Priority = Priority.P2; return true; });
+        await vm.ReloadAfterExternalChangeAsync();
+        Assert.True(vm.Detail.IsOpen);
+        Assert.Equal(Priority.P2, vm.Detail.SelectedPriority);
+
+        await store.MutateAsync<TaskItem>(task.Id, t => { t.CompletedAt = clock.GetUtcNow(); return true; });
+        await vm.ReloadAfterExternalChangeAsync();
+        Assert.False(vm.Detail.IsOpen);
+    }
+
+    [Fact]
+    public async Task FailedSave_StaysOwed_WhenALaterSaveWritesADifferentField()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "원래" };
+        await store.SaveAsync(task);
+
+        // The title save exhausts its 6 attempts; the store then recovers.
+        var failing = new FailingTaskStore(store, 6);
+        var vm = PanelViewModel(failing, store, clock);
+        await vm.Detail.OpenAsync(task.Id);
+
+        vm.Detail.Title = "새 제목";
+        await Assert.ThrowsAsync<IOException>(() => vm.Detail.FlushAsync());
+        Assert.True(vm.Detail.HasUnsavedFailures);
+
+        // The next edit writes another field and carries the failed one along with it.
+        vm.Detail.SelectedPriority = Priority.P1;
+        await vm.Detail.DrainPendingSaveAsync();
+
+        Assert.False(vm.Detail.HasUnsavedFailures);
+        var saved = await store.GetAsync<TaskItem>(task.Id);
+        Assert.Equal("새 제목", saved!.Title);
+        Assert.Equal(Priority.P1, saved.Priority);
+    }
+
+    [Fact]
+    public async Task Coordinator_SaveOfAnotherField_DoesNotDropAnotherPagesFailure()
+    {
+        using var temp = new TempDirectory();
+        var clock = new FixedTimeProvider(new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero));
+        await using var store = await OpenPanelStoreAsync(temp, clock);
+        var task = new TaskItem { Title = "원래" };
+        await store.SaveAsync(task);
+
+        var coordinator = new SaveFailureCoordinator();
+        var vmA = PanelViewModel(new FailingTaskStore(store, 100), store, clock, coordinator);
+        var vmB = PanelViewModel(store, store, clock, coordinator);
+
+        await vmA.Detail.OpenAsync(task.Id);
+        vmA.Detail.Title = "A에서 고친 제목";
+        await Assert.ThrowsAsync<IOException>(() => vmA.Detail.FlushAsync());
+        vmA.Detail.Close();
+
+        await vmB.Detail.OpenAsync(task.Id);
+        vmB.Detail.SelectedPriority = Priority.P3;
+        await vmB.Detail.DrainPendingSaveAsync();
+
+        Assert.True(vmA.Detail.HasUnsavedFailures);
+        Assert.Equal(1, coordinator.UnsavedTaskCount);
+    }
+
     private sealed class FailingTaskStore(ITaskStore inner, int failCount) : ITaskStore
     {
         private int _failedAttempts = 0;

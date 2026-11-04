@@ -38,11 +38,29 @@ public sealed record RecurrenceEditorOption(string? Rule, string Name);
 /// Meaningful only for a timed When — the dropdown hides for 종일/미지정 (see <see cref="TaskDetailViewModel.ShowReminder"/>).</summary>
 public sealed record ReminderEditorOption(ReminderTiming Timing, string Name);
 
+/// <summary>The metadata fields an autosave can write. A save carries only the ones the user changed in the
+/// panel, so a value changed elsewhere (a list menu, a toast, a timeline card) is never overwritten by the
+/// panel's older copy of it.</summary>
+[Flags]
+public enum TaskEditFields
+{
+    None = 0,
+    Title = 1 << 0,
+    Notes = 1 << 1,
+    Priority = 1 << 2,
+    When = 1 << 3,
+    Recurrence = 1 << 4,
+    TaskGroup = 1 << 5,
+    Tags = 1 << 6,
+    Reminder = 1 << 7,
+    All = Title | Notes | Priority | When | Recurrence | TaskGroup | Tags | Reminder,
+}
+
 /// <summary>
-/// An immutable capture of everything an autosave writes, taken the moment an edit happens. Binding the
-/// target task id together with all field values means a queued save always persists the values that were
-/// on screen for <see cref="Id"/> — never whatever the panel shows by the time the save runs, even if the
-/// user has since switched to a different task.
+/// An immutable capture of an autosave, taken the moment an edit happens. Binding the target task id
+/// together with the field values means a queued save always persists the values that were on screen for
+/// <see cref="Id"/> — never whatever the panel shows by the time the save runs, even if the user has since
+/// switched to a different task. Only the fields named by <see cref="Fields"/> are written.
 /// </summary>
 public sealed record TaskEditSnapshot(
     Guid Id,
@@ -55,7 +73,8 @@ public sealed record TaskEditSnapshot(
     IReadOnlyList<Guid> TagIds,
     ReminderTiming Reminder,
     bool IsNewTask,
-    string SortOrder);
+    string SortOrder,
+    TaskEditFields Fields = TaskEditFields.All);
 
 public partial class TagEditorOption : ObservableObject
 {
@@ -172,6 +191,11 @@ public partial class TaskDetailViewModel : ObservableObject
     // invisible blank JSON file behind. The immutable draft rank is carried by each save snapshot.
     private bool _isNewTask;
     private string _newTaskSortOrder = string.Empty;
+    // The panel's values as of the last load or captured save. A capture diffs against these to find what
+    // the user actually changed: nothing changed means nothing is written, and a save never carries a
+    // field the user didn't touch.
+    private TaskEditSnapshot? _baseline;
+    private readonly Dictionary<Guid, ChecklistItem> _checklistBaseline = new();
     private ScheduledWhen _originalWhen = ScheduledWhen.Unscheduled;
     private WhenEditorMode _loadedWhenMode;
     private DateTimeOffset? _loadedWhenDate;
@@ -580,6 +604,7 @@ public partial class TaskDetailViewModel : ObservableObject
         if (generation != _openGeneration)
             return;
 
+        _baseline = BuildEditValues(task.Id, Title.Trim());
         IsOpen = true;
         _isLoading = false;
     }
@@ -593,6 +618,7 @@ public partial class TaskDetailViewModel : ObservableObject
         _taskId = null;
         _isNewTask = false;
         _newTaskSortOrder = string.Empty;
+        _baseline = null;
         IsOpen = false;
     }
 
@@ -640,8 +666,44 @@ public partial class TaskDetailViewModel : ObservableObject
         // While OpenAsync is mid-fill the panel's fields are a mix of the outgoing and incoming task, so
         // there is no user edit to capture — capturing would persist one task's fields onto another.
         // Only drain what is already queued (RequestAutoSave applies the same _isLoading gate).
-        if (!_isLoading && CaptureSnapshot() is { } snapshot) Enqueue(snapshot);
+        if (!_isLoading)
+        {
+            if (CaptureSnapshot() is { } snapshot) Enqueue(snapshot);
+            else RequeueFailedMetadataSaves(); // no new edit, but a close or switch still retries a failed one
+        }
         return DrainPendingSaveAsync();
+    }
+
+    /// <summary><see cref="FlushAsync"/> for callers that carry on regardless: a save that fails stays in
+    /// <see cref="HasUnsavedFailures"/> for the retry and close prompts rather than throwing here.</summary>
+    public async Task FlushKeepingFailuresAsync()
+    {
+        try { await FlushAsync(); }
+        catch { /* recorded in _pendingFailures */ }
+    }
+
+    /// <summary>Applies an edit made outside the panel (a row or card menu) to a task. If the panel is showing
+    /// that task, its pending edits land first and it reloads afterwards, so what it shows stays true.
+    /// Returns null when nothing changed.</summary>
+    public async Task<TaskItem?> ApplyOutsideEditAsync(Guid taskId, Func<TaskItem, bool> mutate)
+    {
+        if (IsOpen && _taskId == taskId)
+            await FlushKeepingFailuresAsync();
+
+        var changed = await _store.MutateAsync(taskId, mutate);
+        if (changed is not null)
+            await ReloadFromStoreAsync(taskId);
+        return changed;
+    }
+
+    /// <summary>Reloads the panel after <paramref name="taskId"/> changed outside it, keeping any edit still
+    /// in progress. A no-op unless the panel is showing that task.</summary>
+    public async Task ReloadFromStoreAsync(Guid taskId)
+    {
+        if (!IsOpen || _taskId != taskId) return;
+        await FlushKeepingFailuresAsync();
+        if (IsOpen && _taskId == taskId)
+            await OpenAsync(taskId);
     }
 
     /// <summary>
@@ -691,16 +753,52 @@ public partial class TaskDetailViewModel : ObservableObject
         throw new AggregateException("저장하지 못했어요.", exceptions);
     }
 
-    /// <summary>Captures the panel's current edits as an immutable snapshot, or <c>null</c> when no task is
-    /// open. Reads every field (and resolves When via <see cref="BuildWhen"/>) on the calling thread so the
-    /// values can't shift under a later save.</summary>
+    /// <summary>Captures what the user changed since the last capture as an immutable snapshot, or <c>null</c>
+    /// when no task is open or nothing changed. Reads every field (and resolves When via
+    /// <see cref="BuildWhen"/>) on the calling thread so the values can't shift under a later save.</summary>
     private TaskEditSnapshot? CaptureSnapshot()
     {
         if (_taskId is not { } id) return null;
         var title = Title.Trim();
-        // A task without a title is not a valid user record. Existing tasks retain their last persisted
-        // title; new timeline drafts simply remain in memory until the user supplies one.
-        if (title.Length == 0) return null;
+        // A task without a title is not a valid user record. New timeline drafts remain in memory until the
+        // user supplies one; an existing task keeps its last persisted title while its other edits still save.
+        if (title.Length == 0)
+        {
+            if (_isNewTask) return null;
+            title = _baseline?.Title ?? title;
+        }
+
+        var current = BuildEditValues(id, title);
+        // A draft has no record yet, so its first write must carry everything.
+        var fields = _isNewTask ? TaskEditFields.All : ChangedFields(_baseline, current);
+        if (fields == TaskEditFields.None) return null;
+
+        _baseline = current;
+        return current with { Fields = fields };
+    }
+
+    private static TaskEditFields ChangedFields(TaskEditSnapshot? before, TaskEditSnapshot after)
+    {
+        if (before is null) return TaskEditFields.None;
+        var fields = TaskEditFields.None;
+        if (before.Title != after.Title) fields |= TaskEditFields.Title;
+        if (before.Notes != after.Notes) fields |= TaskEditFields.Notes;
+        if (before.Priority != after.Priority) fields |= TaskEditFields.Priority;
+        if (before.When != after.When) fields |= TaskEditFields.When;
+        if (!SameRecurrence(before.Recurrence, after.Recurrence)) fields |= TaskEditFields.Recurrence;
+        if (before.TaskGroupId != after.TaskGroupId) fields |= TaskEditFields.TaskGroup;
+        if (!before.TagIds.ToHashSet().SetEquals(after.TagIds)) fields |= TaskEditFields.Tags;
+        if (before.Reminder != after.Reminder) fields |= TaskEditFields.Reminder;
+        return fields;
+    }
+
+    private static bool SameRecurrence(RecurrenceRule? left, RecurrenceRule? right)
+        => left is null || right is null
+            ? left is null && right is null
+            : left.Rule == right.Rule && left.Anchor == right.Anchor;
+
+    private TaskEditSnapshot BuildEditValues(Guid id, string title)
+    {
         var when = BuildWhen();
         return new TaskEditSnapshot(
             id,
@@ -721,8 +819,36 @@ public partial class TaskDetailViewModel : ObservableObject
     /// returned tail (<see cref="_saveChain"/>) waits for this save and every save queued before it.</summary>
     private void Enqueue(TaskEditSnapshot snapshot)
     {
-        _saveChain = ChainSaveAsync(_saveChain, snapshot);
+        // An earlier failed save may hold fields this one doesn't, so it gets another try first.
+        RequeueFailedMetadataSaves();
+        PendingSave save = null!;
+        save = new PendingSave(SaveOperationKind.Metadata, snapshot.Id, () => SaveSnapshotAsync(save.Snapshot!))
+        {
+            Snapshot = snapshot,
+        };
+        AppendToSaveChain(save);
+    }
+
+    private void AppendToSaveChain(PendingSave save)
+    {
+        _saveChain = ChainSaveAsync(_saveChain, save);
         ObserveTask(_saveChain);
+    }
+
+    /// <summary>Puts the open task's failed metadata saves back on the chain. A failed save holds only its own
+    /// fields, so it can't be folded into the next capture the way a whole-record snapshot could.</summary>
+    private void RequeueFailedMetadataSaves()
+    {
+        List<PendingSave> failed;
+        lock (this)
+        {
+            failed = _pendingFailures
+                .Where(p => p.Kind == SaveOperationKind.Metadata && p.TaskId == _taskId)
+                .ToList();
+            _pendingFailures.RemoveAll(failed.Contains);
+        }
+        foreach (var save in failed)
+            AppendToSaveChain(save);
     }
 
     private static void ObserveTask(Task task)
@@ -736,22 +862,16 @@ public partial class TaskDetailViewModel : ObservableObject
         }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
-    private async Task ChainSaveAsync(Task previous, TaskEditSnapshot snapshot)
+    private async Task ChainSaveAsync(Task previous, PendingSave save)
     {
         // This method swallows its own failures (below), so the predecessor never faults; the guard is pure
         // belt-and-braces so one bad link can never stall the queue behind it.
         try { await previous; }
         catch { /* logged by the failing save itself */ }
-        // A metadata write persists the whole snapshot, so a later one fully supersedes an earlier failed
-        // one (see RecordOutcome): only the latest failed snapshot for this task is ever retained. The
-        // failure is recorded in _pendingFailures there; swallow any throw here so the chain itself always
-        // completes successfully. A faulted chain would otherwise resurface on the next DrainPendingSaveAsync
-        // even after a retry has cleared the failure — the regression this guards against.
-        try
-        {
-            await RunSaveOperationWithRetryAsync(
-                new PendingSave(SaveOperationKind.Metadata, snapshot.Id, () => SaveSnapshotAsync(snapshot)));
-        }
+        // The failure is recorded in _pendingFailures (see RecordOutcome); swallow any throw here so the
+        // chain itself always completes successfully. A faulted chain would otherwise resurface on the next
+        // DrainPendingSaveAsync even after a retry has cleared the failure — the regression this guards against.
+        try { await RunSaveOperationWithRetryAsync(save); }
         catch { /* recorded in _pendingFailures; the chain must not fault */ }
     }
 
@@ -776,26 +896,25 @@ public partial class TaskDetailViewModel : ObservableObject
     /// by the snapshot's id, applies the snapshot's captured fields, and saves through
     /// <see cref="ITaskStore"/> (which stamps UpdatedAt). Because the values come from the snapshot rather
     /// than the live panel, a save still targets the task it was queued for even after the user switches
-    /// tasks. The dirty-check in <see cref="BuildWhen"/> (run when the snapshot was captured) means a save
-    /// that never touched the date preserves the original When's exact instant and time zone. A failed
-    /// save is logged, not swallowed silently, and left for the next change or the close flush to retry.
+    /// tasks. A failed save is logged, not swallowed silently, and left for the next change or the close
+    /// flush to retry.
     /// </summary>
     private async Task SaveSnapshotAsync(TaskEditSnapshot snapshot)
     {
-        // Read-modify-write the metadata fields atomically: MutateAsync re-reads the live record
-        // under the store's write lock and the closure replaces only the snapshot's fields. The
-        // embedded checklist is left untouched, so a checklist save that committed in between is
-        // preserved rather than overwritten with the copy this save happened to load.
+        // Read-modify-write atomically: MutateAsync re-reads the live record under the store's write lock
+        // and the closure replaces only the fields the user changed in the panel. Everything else — the
+        // checklist, or a value changed elsewhere since the panel loaded — stays as it is on disk.
         var saved = await _store.MutateAsync<TaskItem>(snapshot.Id, task =>
         {
-            task.Title = snapshot.Title;
-            task.Notes = snapshot.Notes;
-            task.Priority = snapshot.Priority;
-            task.When = snapshot.When;
-            task.Recurrence = snapshot.Recurrence;
-            task.TaskGroupId = snapshot.TaskGroupId;
-            task.TagIds = snapshot.TagIds.ToList();
-            task.Reminder = snapshot.Reminder;
+            var fields = snapshot.Fields;
+            if (fields.HasFlag(TaskEditFields.Title)) task.Title = snapshot.Title;
+            if (fields.HasFlag(TaskEditFields.Notes)) task.Notes = snapshot.Notes;
+            if (fields.HasFlag(TaskEditFields.Priority)) task.Priority = snapshot.Priority;
+            if (fields.HasFlag(TaskEditFields.When)) task.When = snapshot.When;
+            if (fields.HasFlag(TaskEditFields.Recurrence)) task.Recurrence = snapshot.Recurrence;
+            if (fields.HasFlag(TaskEditFields.TaskGroup)) task.TaskGroupId = snapshot.TaskGroupId;
+            if (fields.HasFlag(TaskEditFields.Tags)) task.TagIds = snapshot.TagIds.ToList();
+            if (fields.HasFlag(TaskEditFields.Reminder)) task.Reminder = snapshot.Reminder;
             return true;
         });
         if (saved is null && snapshot.IsNewTask)
@@ -828,10 +947,10 @@ public partial class TaskDetailViewModel : ObservableObject
         }
     }
 
-    /// <summary>Which save path a queued operation belongs to. A failure can be superseded only by a later
-    /// save of the <i>same kind for the same task</i>: <see cref="Metadata"/> and <see cref="ChecklistSnapshot"/>
-    /// each rewrite their whole slice (so only the latest failed one matters), while <see cref="ChecklistMutation"/>
-    /// add/remove edits are independent and tracked one-by-one.</summary>
+    /// <summary>Which save path a queued operation belongs to. <see cref="Metadata"/> writes the fields the
+    /// user changed and <see cref="ChecklistSnapshot"/> writes the items the user changed, so a later save
+    /// supersedes only the overlapping part of an earlier failure. <see cref="ChecklistMutation"/> add/remove
+    /// edits are independent and tracked one-by-one.</summary>
     private enum SaveOperationKind
     {
         Metadata,
@@ -839,14 +958,21 @@ public partial class TaskDetailViewModel : ObservableObject
         ChecklistMutation,
     }
 
-    /// <summary>One queued save: the work to run, the task it targets, and its kind. (Kind, TaskId) drives
-    /// supersession of whole-slice writes; object identity distinguishes individual checklist mutations
-    /// (this is a reference type, so a pending failure is matched by the exact instance).</summary>
+    /// <summary>One queued save: the work to run, the task it targets, its kind, and what it writes.
+    /// Object identity distinguishes individual checklist mutations (this is a reference type, so a pending
+    /// failure is matched by the exact instance).</summary>
     private sealed class PendingSave(SaveOperationKind kind, Guid taskId, Func<Task> operation)
     {
         public SaveOperationKind Kind { get; } = kind;
         public Guid TaskId { get; } = taskId;
         public Func<Task> Operation { get; } = operation;
+
+        /// <summary>The metadata this save writes. Narrowed while the save sits as a failure and a later
+        /// save persists some of the same fields.</summary>
+        public TaskEditSnapshot? Snapshot { get; set; }
+
+        /// <summary>The checklist items this save writes, by id. Narrowed the same way.</summary>
+        public Dictionary<Guid, ChecklistItem>? ChecklistEdits { get; init; }
 
         /// <summary>The exception from this save's last exhausted attempt, set when it is recorded as a
         /// pending failure. DrainPendingSaveAsync rethrows it so a caller still observes the original error
@@ -900,11 +1026,11 @@ public partial class TaskDetailViewModel : ObservableObject
         }
 
         // Notify the coordinator outside the lock: it may call back into other view models (which take their
-        // own lock), so holding this view model's lock across the call could deadlock. A successful whole-slice
-        // write supersedes a stale failure for the same task on another page; either way the registry re-reads
-        // this view model's current failure state.
+        // own lock), so holding this view model's lock across the call could deadlock. A successful write
+        // supersedes the overlapping part of a stale failure for the same task on another page; either way
+        // the registry re-reads this view model's current failure state.
         if (success && save.Kind is SaveOperationKind.Metadata or SaveOperationKind.ChecklistSnapshot)
-            _coordinator?.OnTaskPersisted(this, save.TaskId);
+            _coordinator?.OnTaskPersisted(this, save.TaskId, save.Snapshot?.Fields ?? TaskEditFields.None, ChecklistIds(save));
         _coordinator?.Update(this);
 
         if (!success && lastException is not null)
@@ -917,39 +1043,56 @@ public partial class TaskDetailViewModel : ObservableObject
     /// 저장 실패 status and the global retry. Held under <c>lock (this)</c> like the save counters.</summary>
     private readonly List<PendingSave> _pendingFailures = new();
 
-    /// <summary>Folds one settled save attempt into <see cref="_pendingFailures"/>. A whole-slice write —
-    /// task metadata or a full checklist snapshot — persists the entire slice, so a later one of the same
-    /// kind for the same task supersedes the earlier: on success it clears any pending failure (a newer
-    /// success never leaves a stale snapshot behind that a retry could replay over it), on failure it
-    /// replaces it so only the latest failed snapshot is ever retained. Incremental checklist add/remove
-    /// mutations don't subsume one another, so each is tracked and cleared on its own identity.</summary>
+    /// <summary>Folds one settled save attempt into <see cref="_pendingFailures"/>. A newer save of a field or
+    /// checklist item supersedes an older failed save of the same one, so a retry can never replay a stale
+    /// value over it — but the older failure's other fields stay owed to disk. Incremental checklist
+    /// add/remove mutations don't subsume one another, so each is tracked on its own identity.</summary>
     private void RecordOutcome(PendingSave save, bool success)
     {
+        _pendingFailures.Remove(save);
         if (save.Kind is SaveOperationKind.Metadata or SaveOperationKind.ChecklistSnapshot)
-        {
-            _pendingFailures.RemoveAll(p => p.Kind == save.Kind && p.TaskId == save.TaskId);
-            if (!success) _pendingFailures.Add(save);
-        }
-        else // ChecklistMutation — independent, keyed by its own reference
-        {
-            _pendingFailures.Remove(save);
-            if (!success) _pendingFailures.Add(save);
-        }
+            NarrowFailures(save.TaskId, save.Snapshot?.Fields ?? TaskEditFields.None, ChecklistIds(save));
+        if (!success) _pendingFailures.Add(save);
     }
 
-    /// <summary>Drops this view model's whole-slice failures (task metadata / full checklist snapshot) for
-    /// <paramref name="taskId"/> because another page's view model just persisted that whole task — replaying
-    /// this stale snapshot would overwrite the newer write. Incremental checklist add/remove failures are
-    /// independent operations and are left intact. Called by the <see cref="SaveFailureCoordinator"/> on a
-    /// different instance than the one that saved.</summary>
-    internal void DropWholeSliceFailures(Guid taskId)
+    private static IReadOnlyCollection<Guid> ChecklistIds(PendingSave save)
+        => save.ChecklistEdits is { } edits ? edits.Keys.ToArray() : Array.Empty<Guid>();
+
+    /// <summary>Removes <paramref name="fields"/> and <paramref name="checklistIds"/> from the failures held for
+    /// <paramref name="taskId"/>, dropping any failure left with nothing to write. Returns whether anything
+    /// changed. Caller holds <c>lock (this)</c>.</summary>
+    private bool NarrowFailures(Guid taskId, TaskEditFields fields, IReadOnlyCollection<Guid> checklistIds)
+    {
+        var changed = false;
+        foreach (var failure in _pendingFailures.Where(p => p.TaskId == taskId).ToList())
+        {
+            if (failure.Snapshot is { } snapshot && (snapshot.Fields & fields) != TaskEditFields.None)
+            {
+                failure.Snapshot = snapshot with { Fields = snapshot.Fields & ~fields };
+                changed = true;
+                if (failure.Snapshot.Fields == TaskEditFields.None)
+                    _pendingFailures.Remove(failure);
+            }
+            else if (failure.ChecklistEdits is { } edits && checklistIds.Count(edits.Remove) > 0)
+            {
+                changed = true;
+                if (edits.Count == 0)
+                    _pendingFailures.Remove(failure);
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>Narrows this view model's failures for <paramref name="taskId"/> because another page's view
+    /// model just persisted the same fields or checklist items — replaying them here would overwrite the
+    /// newer write. Called by the <see cref="SaveFailureCoordinator"/> on a different instance than the one
+    /// that saved.</summary>
+    internal void SupersedeFailures(Guid taskId, TaskEditFields fields, IReadOnlyCollection<Guid> checklistIds)
     {
         bool changed;
         lock (this)
         {
-            changed = _pendingFailures.RemoveAll(p =>
-                p.TaskId == taskId
-                && p.Kind is SaveOperationKind.Metadata or SaveOperationKind.ChecklistSnapshot) > 0;
+            changed = NarrowFailures(taskId, fields, checklistIds);
             // Clear the 저장 실패 chip if this emptied the queue and nothing is still in flight.
             if (changed && _activeSaveCount == 0 && _pendingFailures.Count == 0)
                 CurrentSaveStatus = SaveStatus.Idle;
@@ -1331,80 +1474,64 @@ public partial class TaskDetailViewModel : ObservableObject
         });
     }
 
-    /// <summary>Persists the checklist after a tick / title edit through the store's atomic MutateAsync
-    /// (which preserves metadata edited concurrently). Does not reload the rows, so an in-progress edit
-    /// keeps focus. A tick/title edit only ever changes an existing item's IsChecked/Title — never the
-    /// list's membership (adds/removes run as independent <see cref="SaveOperationKind.ChecklistMutation"/>
-    /// ops) — so while the panel is still on this task the live rows are written wholesale, and after a
-    /// task switch the edit is merged by id onto the on-disk list instead. Serialized on the checklist
-    /// chain; failures are logged, not thrown.</summary>
+    /// <summary>Persists a tick / title edit through the store's atomic MutateAsync (which preserves metadata
+    /// edited concurrently). Does not reload the rows, so an in-progress edit keeps focus. A tick/title edit
+    /// only ever changes an existing item's IsChecked/Title — never the list's membership (adds/removes run
+    /// as independent <see cref="SaveOperationKind.ChecklistMutation"/> ops) — so only the items the user
+    /// changed are merged by id onto the on-disk list. An item ticked elsewhere, or added or removed since,
+    /// is left alone. Serialized on the checklist chain; failures are logged, not thrown.</summary>
     private void QueueChecklistSave()
     {
         if (_taskId is not { } id) return;
-        // Snapshot the rows synchronously (on the UI thread, before any await) so the edited values are
-        // bound to this edit and survive a task switch — after switching, the live Checklist holds another
-        // task's rows, so this frozen copy is the only record of what this edit changed.
-        var frozen = CaptureChecklistRows();
-        // A full snapshot supersedes an earlier failed snapshot for this task (see RecordOutcome) — only the
-        // latest is retained. Incremental add/remove mutations are tracked separately, so this never drops
-        // one of those.
+        // Capture synchronously (on the UI thread, before any await) so the edited values are bound to this
+        // edit and survive a task switch, after which the live Checklist holds another task's rows.
+        var edits = CaptureChecklistEdits();
+        if (edits.Count == 0) return;
         _ = EnqueueChecklistOp(SaveOperationKind.ChecklistSnapshot, id, async () =>
         {
-            TaskItem? saved;
-            if (_taskId == id)
+            var saved = await _store.MutateAsync<TaskItem>(id, task =>
             {
-                // Still on this task: the live UI reflects every tick, title edit, add, and remove, so its
-                // rows are authoritative. Re-capturing at write time (rather than replaying a possibly-stale
-                // queued snapshot) folds in any item added/removed since this edit was queued, so a retry
-                // can't clobber the newer list.
-                var rows = CaptureChecklistRows();
-                saved = await _store.MutateAsync<TaskItem>(id, task => { task.Checklist = rows; return true; });
-            }
-            else
-            {
-                // Switched away (or the panel closed): the live rows belong to a different task, so this
-                // task's current list can't be re-read from the UI. The frozen copy carries this edit's
-                // tick/title state but predates any add/remove that succeeded on disk since (those are
-                // independent ChecklistMutation ops). A snapshot only ever changes an existing item's
-                // IsChecked/Title, so merge the frozen field values onto the on-disk checklist by id — apply
-                // the edit to items that still exist and leave a concurrently added/removed one untouched —
-                // rather than overwriting the whole list with the stale copy.
-                var edits = frozen.ToDictionary(item => item.Id);
-                saved = await _store.MutateAsync<TaskItem>(id, task =>
-                {
-                    foreach (var item in task.Checklist)
-                        if (edits.TryGetValue(item.Id, out var edited))
-                        {
-                            item.Title = edited.Title;
-                            item.IsChecked = edited.IsChecked;
-                        }
-                    return true;
-                });
-            }
+                foreach (var item in task.Checklist)
+                    if (edits.TryGetValue(item.Id, out var edited))
+                    {
+                        item.Title = edited.Title;
+                        item.IsChecked = edited.IsChecked;
+                    }
+                return true;
+            });
             if (saved is not null) await _refreshOwner();
-        });
+        }, edits);
     }
 
-    /// <summary>Captures the panel's current checklist rows as fresh <see cref="ChecklistItem"/> values
-    /// (read synchronously on the UI thread). Used both to freeze a snapshot bound to the open task and to
-    /// re-read the live list when a snapshot save runs or is retried.</summary>
-    private List<ChecklistItem> CaptureChecklistRows()
-        => Checklist.Select(row => new ChecklistItem
+    /// <summary>The rows whose values differ from the last capture, as fresh <see cref="ChecklistItem"/>
+    /// values (read synchronously on the UI thread). Moves the baseline forward to what it returns.</summary>
+    private Dictionary<Guid, ChecklistItem> CaptureChecklistEdits()
+    {
+        var edits = new Dictionary<Guid, ChecklistItem>();
+        foreach (var row in Checklist)
         {
-            Id = row.Id,
-            Title = row.Title.Trim(),
-            IsChecked = row.IsChecked,
-        }).ToList();
+            var current = new ChecklistItem { Id = row.Id, Title = row.Title.Trim(), IsChecked = row.IsChecked };
+            if (_checklistBaseline.TryGetValue(row.Id, out var before)
+                && before.Title == current.Title
+                && before.IsChecked == current.IsChecked)
+            {
+                continue;
+            }
+            _checklistBaseline[row.Id] = current;
+            edits[row.Id] = current;
+        }
+        return edits;
+    }
 
     /// <summary>Appends one checklist operation to the serial checklist chain and returns its completion.
     /// Awaiting the previous link first keeps add/remove/tick/title writes strictly ordered; a prior
     /// link's failure is swallowed here so it can't stall the queue behind it (each op logs its own).
     /// Called on the UI thread, so the op's store write and owner refresh resume on the UI context. The
-    /// <paramref name="kind"/> and <paramref name="taskId"/> tag the op so a failure is retained and
-    /// superseded correctly (see <see cref="RecordOutcome"/>).</summary>
-    private Task EnqueueChecklistOp(SaveOperationKind kind, Guid taskId, Func<Task> op)
+    /// <paramref name="kind"/>, <paramref name="taskId"/>, and <paramref name="edits"/> tag the op so a
+    /// failure is retained and superseded correctly (see <see cref="RecordOutcome"/>).</summary>
+    private Task EnqueueChecklistOp(SaveOperationKind kind, Guid taskId, Func<Task> op, Dictionary<Guid, ChecklistItem>? edits = null)
     {
-        var save = new PendingSave(kind, taskId, op);
+        var save = new PendingSave(kind, taskId, op) { ChecklistEdits = edits };
         var next = ChainChecklistAsync(_checklistChain, () => RunSaveOperationWithRetryAsync(save));
         _checklistChain = next;
         ObserveTask(next);
@@ -1656,6 +1783,7 @@ public partial class TaskDetailViewModel : ObservableObject
     private void LoadChecklist(TaskItem task)
     {
         Checklist.Clear();
+        _checklistBaseline.Clear();
         foreach (var item in task.Checklist)
             Checklist.Add(CreateChecklistRow(item));
     }
@@ -1664,5 +1792,8 @@ public partial class TaskDetailViewModel : ObservableObject
     // records the row's edited values). The chain tail is tracked in _checklistChain, so the save is no
     // longer truly fire-and-forget — DrainPendingSaveAsync/FlushAsync wait for it on switch and close.
     private ChecklistItemViewModel CreateChecklistRow(ChecklistItem item)
-        => new(item, changed => QueueChecklistSave());
+    {
+        _checklistBaseline[item.Id] = new ChecklistItem { Id = item.Id, Title = item.Title.Trim(), IsChecked = item.IsChecked };
+        return new ChecklistItemViewModel(item, changed => QueueChecklistSave());
+    }
 }

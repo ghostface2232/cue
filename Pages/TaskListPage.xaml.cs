@@ -118,7 +118,7 @@ public sealed partial class TaskListPage : Page
         => await RunSafelyAsync(() => ViewModel.Detail.ReloadNavOptionsAsync());
 
     private async void OnTasksChangedExternally(object? sender, EventArgs e)
-        => await RunSafelyAsync(ViewModel.LoadAsync);
+        => await RunSafelyAsync(ViewModel.ReloadAfterExternalChangeAsync);
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {

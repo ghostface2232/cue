@@ -7,7 +7,7 @@ namespace Cue.ViewModels;
 /// failure on a different page silently overwrote the first — so the close prompt and the retry only ever saw
 /// the last page's view model. This coordinator instead tracks <i>every</i> view model with outstanding
 /// failures at once, aggregates the unsaved-task count across all of them, retries them all together, and lets
-/// a successful whole-slice write of a task supersede a stale failure for that same task held by another page's
+/// a successful write of a task's field supersede a stale failure for that same field held by another page's
 /// view model (the same task can be open in two lists — e.g. a group view and 오늘 할 일).
 /// </summary>
 /// <remarks>
@@ -66,17 +66,22 @@ public sealed class SaveFailureCoordinator
             Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>Announces that <paramref name="source"/> persisted the whole of <paramref name="taskId"/> to
-    /// disk, so any stale whole-slice failure for that same task still held by a <i>different</i> page's view
-    /// model is dropped — replaying its older snapshot would clobber the newer write. The source's own
-    /// bookkeeping already cleared its slice, so it is skipped here.</summary>
-    public void OnTaskPersisted(TaskDetailViewModel source, Guid taskId)
+    /// <summary>Announces that <paramref name="source"/> persisted these fields and checklist items of
+    /// <paramref name="taskId"/> to disk, so a <i>different</i> page's view model drops the same ones from any
+    /// stale failure it holds for that task — replaying them would clobber the newer write. Its failures for
+    /// other fields are still owed to disk. The source's own bookkeeping already narrowed its failures, so it
+    /// is skipped here.</summary>
+    public void OnTaskPersisted(
+        TaskDetailViewModel source,
+        Guid taskId,
+        TaskEditFields fields,
+        IReadOnlyCollection<Guid> checklistIds)
     {
         TaskDetailViewModel[] others;
         lock (_gate)
             others = _failing.Where(vm => !ReferenceEquals(vm, source)).ToArray();
         foreach (var vm in others)
-            vm.DropWholeSliceFailures(taskId); // each calls back into Update once its set settles
+            vm.SupersedeFailures(taskId, fields, checklistIds); // each calls back into Update once its set settles
     }
 
     /// <summary>Retries the outstanding saves on every registered view model, in a stable snapshot taken up
