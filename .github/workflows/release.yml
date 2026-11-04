@@ -80,6 +80,10 @@ jobs:
           }
           Write-Host "All $($refs.Count) manifest-referenced assets present."
 
+      # Pushing a tag doesn't otherwise run the tests, and the in-app updater offers whatever is published.
+      - name: Run tests
+        run: dotnet test Cue.Tests/Cue.Tests.csproj --configuration Release --nologo
+
       - name: Install Inno Setup 6
         run: choco install innosetup --no-progress -y
 

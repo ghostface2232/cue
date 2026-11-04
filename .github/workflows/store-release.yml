@@ -33,6 +33,9 @@ jobs:
           }
           Write-Host "Version $version matches Store tag ${{ github.ref_name }}."
 
+      - name: Run tests
+        run: dotnet test Cue.Tests/Cue.Tests.csproj --configuration Release --nologo
+
       - name: Build unsigned Store MSIX
         shell: pwsh
         run: pwsh -File build-msix.ps1
